@@ -1,11 +1,13 @@
-{
-  "version": 2,
-  "name": "tender-aggregator",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
-  ]
+﻿{
+    "version":  2,
+    "buildCommand":  "npm run build",
+    "outputDirectory":  "dist",
+    "installCommand":  "npm install",
+    "framework":  "vite",
+    "rewrites":  [
+                     {
+                         "source":  "/((?!api/).*)",
+                         "destination":  "/index.html"
+                     }
+                 ]
 }
