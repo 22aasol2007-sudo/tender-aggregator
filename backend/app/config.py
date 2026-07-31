@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     sqlite_fallback_url: str = (
         f"sqlite:///{Path(__file__).resolve().parents[1] / 'data' / 'tenders.db'}"
     )
+    # Off by default so a cold/unreachable Postgres never silently degrades to
+    # an empty ephemeral SQLite on Railway (looks like "DB broken").
+    allow_sqlite_fallback: bool = False
+    db_connect_timeout: int = 15
     db_pool_size: int = 5
     db_max_overflow: int = 10
     cors_origins: Annotated[list[str], NoDecode] = [

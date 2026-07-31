@@ -17,7 +17,7 @@ def _make_engine(url: str) -> Engine:
         pool_pre_ping=True,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
-        connect_args={"connect_timeout": 3},
+        connect_args={"connect_timeout": settings.db_connect_timeout},
     )
 
 
@@ -29,6 +29,8 @@ def _resolve_engine() -> Engine:
         return primary
     except Exception:
         if settings.database_url.startswith("sqlite"):
+            raise
+        if not settings.allow_sqlite_fallback:
             raise
         return _make_engine(settings.sqlite_fallback_url)
 
