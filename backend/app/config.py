@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "https://tender-aggregator-lac.vercel.app",
     ]
-    scrape_interval_minutes: int = 5
+    scrape_interval_minutes: int = 3
     scrape_concurrency: int = 5
     http_timeout: float = 12.0
     http_verify_ssl: bool = True

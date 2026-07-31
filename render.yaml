@@ -16,6 +16,8 @@ services:
         value: "true"
       - key: SCRAPE_VIA_WORKER
         value: "false"
+      - key: SCRAPE_INTERVAL_MINUTES
+        value: "3"
       - key: SCRAPE_CONCURRENCY
         value: "3"
       - key: ENRICH_ON_SCRAPE
