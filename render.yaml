@@ -1,0 +1,34 @@
+# Free Render Blueprint — SQLite (ephemeral). For durable DB set DATABASE_URL to Neon later.
+
+services:
+  - type: web
+    name: tender-aggregator-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/sources
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////tmp/tenders.db
+      - key: HTTP_VERIFY_SSL
+        value: "true"
+      - key: SCRAPE_VIA_WORKER
+        value: "false"
+      - key: SCRAPE_CONCURRENCY
+        value: "3"
+      - key: ENRICH_ON_SCRAPE
+        value: "false"
+      - key: ENRICH_NEW_ONLY
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DEFAULT_ADMIN_EMAIL
+        value: admin@tender.local
+      - key: DEFAULT_ADMIN_PASSWORD
+        value: admin123
+      - key: SEED_IF_EMPTY
+        value: "true"
+      - key: CORS_ORIGINS
+        value: '["https://tender-aggregator-lac.vercel.app","https://tender-aggregator-22aasol2007-sudos-projects.vercel.app","http://localhost:5173"]'

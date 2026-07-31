@@ -1,6 +1,16 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _normalize_database_url(url: str) -> str:
+    # Neon/Render often give postgres:// — SQLAlchemy+psycopg needs postgresql+psycopg://
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and "+psycopg" not in url:
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
 
 
 class Settings(BaseSettings):
@@ -11,9 +21,13 @@ class Settings(BaseSettings):
     sqlite_fallback_url: str = (
         f"sqlite:///{Path(__file__).resolve().parents[1] / 'data' / 'tenders.db'}"
     )
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://tender-aggregator-lac.vercel.app",
+    ]
     scrape_interval_minutes: int = 5
     scrape_concurrency: int = 5
     http_timeout: float = 12.0
@@ -38,7 +52,6 @@ class Settings(BaseSettings):
     default_admin_password: str = "admin123"
     telegram_bot_token: str | None = None
     telegram_enabled: bool = True
-    # Enrich only brand-new tenders (not every scrape touch)
     enrich_on_scrape: bool = False
     enrich_new_only: bool = True
     enrich_limit_per_scrape: int = 8
@@ -53,6 +66,11 @@ class Settings(BaseSettings):
     tenderland_api_token: str | None = None
     synapse_api_url: str | None = None
     synapse_api_token: str | None = None
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_db(cls, v: str) -> str:
+        return _normalize_database_url(str(v))
 
 
 settings = Settings()
