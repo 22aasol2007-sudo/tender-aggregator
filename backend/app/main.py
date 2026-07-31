@@ -22,7 +22,10 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         ensure_default_admin(db)
-        cleanup_polluted_tenders(db)
+        try:
+            cleanup_polluted_tenders(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
         if settings.seed_if_empty:
             seed_if_empty(db)
         seed_presets(db)

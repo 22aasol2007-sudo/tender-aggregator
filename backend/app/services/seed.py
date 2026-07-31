@@ -159,16 +159,30 @@ def cleanup_polluted_tenders(db: Session) -> int:
     """Remove demo rows and junk parser artifacts (sort-link IDs, header titles)."""
     from sqlalchemy import or_
 
+    from app.models import TenderChange, TenderWatch
+
     junk_titles = ["Опубликовано", "Название", "Наименование", "Заказчик", "Цена", "Статус"]
-    q = db.query(Tender).filter(
-        or_(
-            Tender.external_id.like("DEMO%"),
-            Tender.external_id.like("order_by%"),
-            Tender.title.in_(junk_titles),
+    ids = [
+        row[0]
+        for row in db.query(Tender.id)
+        .filter(
+            or_(
+                Tender.external_id.like("DEMO%"),
+                Tender.external_id.like("order_by%"),
+                Tender.title.in_(junk_titles),
+            )
         )
+        .all()
+    ]
+    if not ids:
+        return 0
+    # Clear self-FK and dependent rows before delete
+    db.query(Tender).filter(Tender.duplicate_of_id.in_(ids)).update(
+        {Tender.duplicate_of_id: None},
+        synchronize_session=False,
     )
-    count = q.count()
-    if count:
-        q.delete(synchronize_session=False)
-        db.commit()
-    return count
+    db.query(TenderChange).filter(TenderChange.tender_id.in_(ids)).delete(synchronize_session=False)
+    db.query(TenderWatch).filter(TenderWatch.tender_id.in_(ids)).delete(synchronize_session=False)
+    deleted = db.query(Tender).filter(Tender.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    return int(deleted or 0)
