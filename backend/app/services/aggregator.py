@@ -336,14 +336,16 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
         all_touched: list[int] = []
         sem = asyncio.Semaphore(settings.scrape_concurrency)
 
-        async def _guarded(sid: str) -> tuple[ScrapeRun, list[int], list[int]]:
+        async def _guarded(sid: str) -> tuple[int, list[int], list[int]]:
             async with sem:
                 # Each parallel task needs its own session for thread-safety
                 from app.database import SessionLocal
 
                 local = SessionLocal()
                 try:
-                    return await _scrape_one_source(local, sid)
+                    run, touched, new_ids = await _scrape_one_source(local, sid)
+                    # Capture PK while session is still open (close expires attrs)
+                    return int(run.id), touched, new_ids
                 finally:
                     local.close()
 
@@ -365,10 +367,10 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
                 record_source_run(db, run)
                 runs.append(run)
                 continue
-            run, touched, new_ids = result
-            # Parallel tasks close their own sessions — re-load in caller session
-            fresh = db.get(ScrapeRun, run.id) if getattr(run, "id", None) else None
-            runs.append(fresh or run)
+            run_id, touched, new_ids = result
+            fresh = db.get(ScrapeRun, run_id)
+            if fresh is not None:
+                runs.append(fresh)
             all_new.extend(new_ids)
             all_touched.extend(touched)
 
