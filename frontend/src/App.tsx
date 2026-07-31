@@ -91,6 +91,7 @@ export default function App() {
   const [related, setRelated] = useState<Tender[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchName, setSearchName] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const filterDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadAbort = useRef<AbortController | null>(null);
 
@@ -292,6 +293,139 @@ export default function App() {
   }
 
   const pages = Math.max(1, Math.ceil(total / 20));
+
+  const SORT_LABELS: Record<string, string> = {
+    published: "По дате",
+    relevance: "По релевантности",
+    changed: "С изменениями",
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    accepting: "Приём заявок",
+    completed: "Завершён",
+    cancelled: "Отменён",
+  };
+
+  function truncateText(value: string, max = 42) {
+    const t = value.trim();
+    if (!t) return "";
+    return t.length > max ? `${t.slice(0, max)}…` : t;
+  }
+
+  function resetToNicheDefaults() {
+    if (filterDebounce.current) clearTimeout(filterDebounce.current);
+    setDraft(emptyFilters);
+    setFilters(emptyFilters);
+    setPage(1);
+  }
+
+  function clearQueryOnly() {
+    setDraft((d) => ({ ...d, q: "" }));
+  }
+
+  const activeFilterChips: { key: string; label: string; onClear?: () => void }[] = [];
+  if (draft.q.trim()) {
+    activeFilterChips.push({
+      key: "q",
+      label: `Запрос: ${truncateText(draft.q)}`,
+      onClear: clearQueryOnly,
+    });
+  }
+  activeFilterChips.push({
+    key: "match",
+    label: draft.match_any ? "Режим: любое слово (OR)" : "Режим: все слова (AND)",
+  });
+  activeFilterChips.push({
+    key: "sort",
+    label: `Сортировка: ${SORT_LABELS[draft.sort] || draft.sort}`,
+  });
+  if (draft.exclude.trim()) {
+    activeFilterChips.push({
+      key: "exclude",
+      label: `Исключить: ${truncateText(draft.exclude, 28)}`,
+      onClear: () => setDraft((d) => ({ ...d, exclude: "" })),
+    });
+  }
+  if (draft.status_norm) {
+    activeFilterChips.push({
+      key: "status",
+      label: `Статус: ${STATUS_LABELS[draft.status_norm] || draft.status_norm}`,
+      onClear: () => setDraft((d) => ({ ...d, status_norm: "" })),
+    });
+  }
+  if (draft.source) {
+    const srcName = sources.find((s) => s.id === draft.source)?.name || draft.source;
+    activeFilterChips.push({
+      key: "source",
+      label: `Источник: ${srcName}`,
+      onClear: () => setDraft((d) => ({ ...d, source: "" })),
+    });
+  }
+  if (draft.region.trim()) {
+    activeFilterChips.push({
+      key: "region",
+      label: `Регион: ${truncateText(draft.region, 24)}`,
+      onClear: () => setDraft((d) => ({ ...d, region: "" })),
+    });
+  }
+  if (draft.method.trim()) {
+    activeFilterChips.push({
+      key: "method",
+      label: `Способ: ${truncateText(draft.method, 24)}`,
+      onClear: () => setDraft((d) => ({ ...d, method: "" })),
+    });
+  }
+  if (draft.okpd2.trim()) {
+    activeFilterChips.push({
+      key: "okpd2",
+      label: `ОКПД2: ${draft.okpd2}`,
+      onClear: () => setDraft((d) => ({ ...d, okpd2: "" })),
+    });
+  }
+  if (draft.law.trim()) {
+    activeFilterChips.push({
+      key: "law",
+      label: `Закон: ${draft.law}`,
+      onClear: () => setDraft((d) => ({ ...d, law: "" })),
+    });
+  }
+  if (draft.min_price || draft.max_price) {
+    activeFilterChips.push({
+      key: "price",
+      label: `НМЦК: ${draft.min_price || "…"} – ${draft.max_price || "…"}`,
+      onClear: () => setDraft((d) => ({ ...d, min_price: "", max_price: "" })),
+    });
+  }
+  if (draft.deadline_from || draft.deadline_to) {
+    activeFilterChips.push({
+      key: "deadline",
+      label: `Срок: ${draft.deadline_from || "…"} – ${draft.deadline_to || "…"}`,
+      onClear: () => setDraft((d) => ({ ...d, deadline_from: "", deadline_to: "" })),
+    });
+  }
+  if (draft.hide_outdated) {
+    activeFilterChips.push({ key: "hide_outdated", label: "Без устаревших" });
+  }
+  if (draft.hide_duplicates) {
+    activeFilterChips.push({ key: "hide_duplicates", label: "Без дублей" });
+  }
+
+  const advancedActiveCount = [
+    draft.exclude.trim(),
+    draft.source,
+    draft.law.trim(),
+    draft.region.trim(),
+    draft.method.trim(),
+    draft.okpd2.trim(),
+    draft.status_norm,
+    draft.min_price,
+    draft.max_price,
+    draft.deadline_from,
+    draft.deadline_to,
+    draft.sort !== "relevance" ? draft.sort : "",
+    !draft.match_any ? "and" : "",
+    !draft.hide_outdated ? "show_old" : "",
+    !draft.hide_duplicates ? "show_dups" : "",
+  ].filter(Boolean).length;
 
   return (
     <div className="app-shell">
@@ -697,90 +831,263 @@ export default function App() {
           </div>
 
           <form
-            className="filters filters-wide"
+            className="search-form"
             onSubmit={(e) => {
               e.preventDefault();
+              if (filterDebounce.current) clearTimeout(filterDebounce.current);
               setPage(1);
               setFilters(draft);
             }}
           >
-            <div className="field grow">
-              <label>Ключевые слова</label>
-              <input
-                value={draft.q}
-                onChange={(e) => setDraft({ ...draft, q: e.target.value })}
-                placeholder="рефрижератор, перевозка грузов — через запятую"
-              />
+            <div className="search-primary">
+              <div className="field grow">
+                <label htmlFor="search-q">Поиск тендеров</label>
+                <input
+                  id="search-q"
+                  value={draft.q}
+                  onChange={(e) => setDraft({ ...draft, q: e.target.value })}
+                  placeholder="рефрижератор, перевозка грузов — через запятую = отдельные фразы (ИЛИ)"
+                  autoComplete="off"
+                />
+                <span className="field-hint">
+                  Запятая разделяет фразы: подходит тендер с любой из них. Пустой запрос — без текстового фильтра.
+                </span>
+              </div>
+              <div className="search-primary-actions">
+                <button className="btn btn-primary" type="submit">
+                  Найти
+                </button>
+              </div>
             </div>
-            <div className="field grow">
-              <label>Исключить слова</label>
-              <input
-                value={draft.exclude}
-                onChange={(e) => setDraft({ ...draft, exclude: e.target.value })}
-                placeholder="ПО, канцелярия — убрать из выдачи"
-              />
+
+            <div className="active-filters" aria-label="Активные фильтры">
+              <div className="active-filters-chips">
+                {activeFilterChips.map((chip) => (
+                  <span key={chip.key} className="filter-chip">
+                    {chip.label}
+                    {chip.onClear ? (
+                      <button
+                        type="button"
+                        className="filter-chip-clear"
+                        aria-label={`Убрать: ${chip.label}`}
+                        onClick={chip.onClear}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={resetToNicheDefaults}>
+                Сбросить
+              </button>
             </div>
-            <div className="field">
-              <label>Источник</label>
-              <select value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })}>
-                <option value="">Все</option>
-                {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Сортировка</label>
-              <select value={draft.sort} onChange={(e) => setDraft({ ...draft, sort: e.target.value })}>
-                <option value="published">По дате</option>
-                <option value="relevance">По релевантности</option>
-                <option value="changed">С изменениями</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Регион</label>
-              <input list="regions" value={draft.region} onChange={(e) => setDraft({ ...draft, region: e.target.value })} />
-              <datalist id="regions">{regions.map((r) => <option key={r} value={r} />)}</datalist>
-            </div>
-            <div className="field">
-              <label>Способ</label>
-              <input list="methods" value={draft.method} onChange={(e) => setDraft({ ...draft, method: e.target.value })} />
-              <datalist id="methods">{methods.map((m) => <option key={m} value={m} />)}</datalist>
-            </div>
-            <div className="field">
-              <label>ОКПД2</label>
-              <input value={draft.okpd2} onChange={(e) => setDraft({ ...draft, okpd2: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Статус</label>
-              <select value={draft.status_norm} onChange={(e) => setDraft({ ...draft, status_norm: e.target.value })}>
-                <option value="">Все</option>
-                <option value="accepting">Приём заявок</option>
-                <option value="completed">Завершён</option>
-                <option value="cancelled">Отменён</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>НМЦК от</label>
-              <input type="number" value={draft.min_price} onChange={(e) => setDraft({ ...draft, min_price: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>НМЦК до</label>
-              <input type="number" value={draft.max_price} onChange={(e) => setDraft({ ...draft, max_price: e.target.value })} />
-            </div>
-            <div className="field checks">
-              <label className="check"><input type="checkbox" checked={draft.match_any} onChange={(e) => setDraft({ ...draft, match_any: e.target.checked })} />Любое из слов (OR)</label>
-              <label className="check"><input type="checkbox" checked={draft.hide_outdated} onChange={(e) => setDraft({ ...draft, hide_outdated: e.target.checked })} />Скрыть устаревшие</label>
-              <label className="check"><input type="checkbox" checked={draft.hide_duplicates} onChange={(e) => setDraft({ ...draft, hide_duplicates: e.target.checked })} />Без дублей</label>
-            </div>
-            <div className="field" style={{ justifyContent: "flex-end" }}>
-              <label>&nbsp;</label>
-              <button className="btn btn-primary" type="submit">Найти</button>
-            </div>
+
+            <button
+              type="button"
+              className={`advanced-toggle ${advancedOpen ? "open" : ""}`}
+              onClick={() => setAdvancedOpen((v) => !v)}
+              aria-expanded={advancedOpen}
+            >
+              <span>Дополнительно</span>
+              {advancedActiveCount > 0 && (
+                <span className="advanced-count">{advancedActiveCount}</span>
+              )}
+              <span className="advanced-chevron" aria-hidden>
+                {advancedOpen ? "▴" : "▾"}
+              </span>
+            </button>
+
+            {advancedOpen && (
+              <div className="filters-advanced">
+                <div className="field grow">
+                  <label htmlFor="search-exclude">Исключить слова</label>
+                  <input
+                    id="search-exclude"
+                    value={draft.exclude}
+                    onChange={(e) => setDraft({ ...draft, exclude: e.target.value })}
+                    placeholder="ПО, канцелярия — убрать из выдачи"
+                  />
+                  <span className="field-hint">Тендеры с этими словами не попадут в список (через запятую).</span>
+                </div>
+
+                <div className="field checks-block">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={draft.match_any}
+                      onChange={(e) => setDraft({ ...draft, match_any: e.target.checked })}
+                    />
+                    Любое из слов (OR)
+                  </label>
+                  <span className="field-hint">
+                    {draft.match_any
+                      ? "Достаточно совпадения с одной фразой из запроса."
+                      : "Нужны все фразы сразу (AND) — выдача уже."}
+                  </span>
+                </div>
+
+                <div className="field">
+                  <label>Сортировка</label>
+                  <select value={draft.sort} onChange={(e) => setDraft({ ...draft, sort: e.target.value })}>
+                    <option value="published">По дате</option>
+                    <option value="relevance">По релевантности</option>
+                    <option value="changed">С изменениями</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>Статус</label>
+                  <select value={draft.status_norm} onChange={(e) => setDraft({ ...draft, status_norm: e.target.value })}>
+                    <option value="">Все</option>
+                    <option value="accepting">Приём заявок</option>
+                    <option value="completed">Завершён</option>
+                    <option value="cancelled">Отменён</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>Источник</label>
+                  <select value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })}>
+                    <option value="">Все</option>
+                    {sources.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>Регион</label>
+                  <input
+                    list="regions"
+                    value={draft.region}
+                    onChange={(e) => setDraft({ ...draft, region: e.target.value })}
+                    placeholder="Например, Москва"
+                  />
+                  <datalist id="regions">{regions.map((r) => <option key={r} value={r} />)}</datalist>
+                </div>
+
+                <div className="field">
+                  <label>Способ закупки</label>
+                  <input
+                    list="methods"
+                    value={draft.method}
+                    onChange={(e) => setDraft({ ...draft, method: e.target.value })}
+                  />
+                  <datalist id="methods">{methods.map((m) => <option key={m} value={m} />)}</datalist>
+                </div>
+
+                <div className="field">
+                  <label>ОКПД2</label>
+                  <input
+                    value={draft.okpd2}
+                    onChange={(e) => setDraft({ ...draft, okpd2: e.target.value })}
+                    placeholder="49.41"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Закон</label>
+                  <select value={draft.law} onChange={(e) => setDraft({ ...draft, law: e.target.value })}>
+                    <option value="">Все</option>
+                    <option value="44-ФЗ">44-ФЗ</option>
+                    <option value="223-ФЗ">223-ФЗ</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>НМЦК от</label>
+                  <input
+                    type="number"
+                    value={draft.min_price}
+                    onChange={(e) => setDraft({ ...draft, min_price: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>НМЦК до</label>
+                  <input
+                    type="number"
+                    value={draft.max_price}
+                    onChange={(e) => setDraft({ ...draft, max_price: e.target.value })}
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Срок подачи с</label>
+                  <input
+                    type="date"
+                    value={draft.deadline_from}
+                    onChange={(e) => setDraft({ ...draft, deadline_from: e.target.value })}
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Срок подачи по</label>
+                  <input
+                    type="date"
+                    value={draft.deadline_to}
+                    onChange={(e) => setDraft({ ...draft, deadline_to: e.target.value })}
+                  />
+                </div>
+
+                <div className="field checks-block checks-row">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={draft.hide_outdated}
+                      onChange={(e) => setDraft({ ...draft, hide_outdated: e.target.checked })}
+                    />
+                    Скрыть устаревшие
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={draft.hide_duplicates}
+                      onChange={(e) => setDraft({ ...draft, hide_duplicates: e.target.checked })}
+                    />
+                    Без дублей
+                  </label>
+                  <span className="field-hint">Устаревшие — с прошедшим сроком; дубли — похожие лоты с разных площадок.</span>
+                </div>
+              </div>
+            )}
           </form>
 
           {loading && !items.length ? (
-            <div className="loading">Загрузка…</div>
+            <div className="loading">Ищем тендеры…</div>
           ) : items.length === 0 ? (
-            <div className="empty">Ничего не найдено</div>
+            <div className="empty">
+              <p className="empty-title">Ничего не найдено</p>
+              <p className="empty-hint">
+                Попробуйте убрать исключения, сменить OR на AND (или наоборот), расширить статус
+                или сбросить фильтры к нише «реф + грузы».
+              </p>
+              <div className="hero-actions" style={{ justifyContent: "center", marginTop: "0.85rem" }}>
+                <button className="btn btn-ghost" type="button" onClick={resetToNicheDefaults}>
+                  Сбросить к нише
+                </button>
+                {draft.exclude.trim() ? (
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={() => setDraft((d) => ({ ...d, exclude: "" }))}
+                  >
+                    Убрать исключения
+                  </button>
+                ) : null}
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => setDraft((d) => ({ ...d, match_any: !d.match_any }))}
+                >
+                  {draft.match_any ? "Включить AND" : "Включить OR"}
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="list">
               {items.map((t) => (
