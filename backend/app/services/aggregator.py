@@ -366,7 +366,9 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
                 runs.append(run)
                 continue
             run, touched, new_ids = result
-            runs.append(run)
+            # Parallel tasks close their own sessions — re-load in caller session
+            fresh = db.get(ScrapeRun, run.id) if getattr(run, "id", None) else None
+            runs.append(fresh or run)
             all_new.extend(new_ids)
             all_touched.extend(touched)
 
