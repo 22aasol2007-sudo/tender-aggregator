@@ -140,9 +140,9 @@ export default function App() {
     try {
       const list = await fetchTenders(nextFilters, nextPage, ac.signal);
       if (ac.signal.aborted) return;
-      setItems(list.items);
-      setTotal(list.total);
-      setPage(list.page);
+      setItems(list?.items ?? []);
+      setTotal(list?.total ?? 0);
+      setPage(list?.page ?? nextPage);
       if (withStats) await refreshStats();
     } catch (err) {
       if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
@@ -197,9 +197,9 @@ export default function App() {
       try {
         const list = await fetchTenders(filters, 1, ac.signal);
         if (ac.signal.aborted) return;
-        setItems(list.items);
-        setTotal(list.total);
-        setPage(list.page);
+        setItems(list?.items ?? []);
+        setTotal(list?.total ?? 0);
+        setPage(list?.page ?? 1);
       } catch (err) {
         if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         setError(err instanceof Error ? err.message : "Ошибка загрузки");
@@ -512,7 +512,31 @@ export default function App() {
         </form>
       )}
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error">
+          {error}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginLeft: 12 }}
+            onClick={() => {
+              setError(null);
+              if (tab === "feed") void load(page, filters, true);
+              else if (tab === "dashboard") void fetchDashboard().then(setDashboard).catch(() => setDashboard(null));
+              else if (tab === "monitor") {
+                void Promise.all([fetchSourceMetrics(), fetchMonitor()])
+                  .then(([m, mon]) => {
+                    setMetrics(m || []);
+                    setMonitor(mon);
+                  })
+                  .catch((err) => setError(err instanceof Error ? err.message : "Ошибка монитора"));
+              }
+            }}
+          >
+            Повторить
+          </button>
+        </div>
+      )}
 
       {tab === "monitor" && (
         <section className="panel">

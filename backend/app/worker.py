@@ -5,6 +5,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from app.config import settings
 from app.database import SessionLocal, init_db
 from app.models import Tender
 from app.services.aggregator import run_scrape
@@ -33,7 +34,10 @@ async def process_one(allowed_types: list[str] | None = None) -> bool:
         try:
             if job.job_type == "scrape":
                 sources = (job.payload or {}).get("sources")
-                runs = await run_scrape(db, sources)
+                runs = await asyncio.wait_for(
+                    run_scrape(db, sources),
+                    timeout=settings.scrape_job_timeout_seconds,
+                )
                 finish_job(
                     db,
                     job,
@@ -73,6 +77,13 @@ async def process_one(allowed_types: list[str] | None = None) -> bool:
                 )
             else:
                 finish_job(db, job, error=f"Unknown job type: {job.job_type}")
+        except TimeoutError:
+            logger.exception("Job %s timed out", job.id)
+            finish_job(
+                db,
+                job,
+                error=f"timeout after {settings.scrape_job_timeout_seconds}s",
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Job %s failed", job.id)
             finish_job(db, job, error=str(exc))

@@ -15,6 +15,7 @@ def _make_engine(url: str) -> Engine:
     return create_engine(
         url,
         pool_pre_ping=True,
+        pool_recycle=settings.db_pool_recycle,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
         connect_args={"connect_timeout": settings.db_connect_timeout},
@@ -22,16 +23,19 @@ def _make_engine(url: str) -> Engine:
 
 
 def _resolve_engine() -> Engine:
+    """Build engine without blocking import on a live DB ping.
+
+    pool_pre_ping validates connections at checkout. A hard connect here
+    made cold starts / brief Postgres blips crash the whole process.
+    """
     primary = _make_engine(settings.database_url)
+    if settings.database_url.startswith("sqlite") or not settings.allow_sqlite_fallback:
+        return primary
     try:
         with primary.connect() as conn:
             conn.execute(text("SELECT 1"))
         return primary
     except Exception:
-        if settings.database_url.startswith("sqlite"):
-            raise
-        if not settings.allow_sqlite_fallback:
-            raise
         return _make_engine(settings.sqlite_fallback_url)
 
 
@@ -61,6 +65,12 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
     finally:
         db.close()
 

@@ -9,7 +9,6 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _normalize_database_url(url: str) -> str:
-    # Neon/Render often give postgres:// — SQLAlchemy+psycopg needs postgresql+psycopg://
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://") :]
     if url.startswith("postgresql://") and "+psycopg" not in url:
@@ -25,12 +24,12 @@ class Settings(BaseSettings):
     sqlite_fallback_url: str = (
         f"sqlite:///{Path(__file__).resolve().parents[1] / 'data' / 'tenders.db'}"
     )
-    # Off by default so a cold/unreachable Postgres never silently degrades to
-    # an empty ephemeral SQLite on Railway (looks like "DB broken").
     allow_sqlite_fallback: bool = False
     db_connect_timeout: int = 15
     db_pool_size: int = 5
     db_max_overflow: int = 10
+    db_pool_recycle: int = 280
+    db_statement_retries: int = 2
     cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -38,9 +37,13 @@ class Settings(BaseSettings):
     ]
     scrape_interval_minutes: int = 3
     scrape_concurrency: int = 5
+    scrape_source_timeout_seconds: float = 90.0
+    scrape_job_timeout_seconds: float = 600.0
+    stale_running_job_minutes: int = 20
     http_timeout: float = 12.0
     http_verify_ssl: bool = True
-    http_retries: int = 2
+    http_retries: int = 3
+    http_retry_statuses: Annotated[list[int], NoDecode] = [429, 502, 503, 504]
     http_cache_ttl_seconds: float = 180.0
     http_max_connections: int = 40
     http_max_keepalive: int = 20
@@ -100,6 +103,23 @@ class Settings(BaseSettings):
             except json.JSONDecodeError:
                 pass
         return [part.strip() for part in text.split(",") if part.strip()]
+
+    @field_validator("http_retry_statuses", mode="before")
+    @classmethod
+    def parse_retry_statuses(cls, v):  # noqa: ANN001
+        if v is None or v == "":
+            return [429, 502, 503, 504]
+        if isinstance(v, list):
+            return [int(x) for x in v]
+        text = str(v).strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [int(x) for x in parsed]
+            except json.JSONDecodeError:
+                pass
+        return [int(part.strip()) for part in text.split(",") if part.strip()]
 
 
 settings = Settings()

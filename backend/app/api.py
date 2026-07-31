@@ -89,13 +89,37 @@ def _serialize_tender(
 
 
 @router.get("/health", response_model=HealthOut)
-def health(db: Session = Depends(get_db)) -> HealthOut:
-    return HealthOut(
-        status="ok",
-        app=settings.app_name,
-        tenders=db.query(Tender).count(),
-        database=_db_label(),
-    )
+def health() -> HealthOut:
+    from sqlalchemy import text
+
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        count = db.query(Tender).count()
+        return HealthOut(
+            status="ok",
+            app=settings.app_name,
+            tenders=count,
+            database=_db_label(),
+            db_ok=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return HealthOut(
+            status="degraded",
+            app=settings.app_name,
+            tenders=0,
+            database=_db_label(),
+            db_ok=False,
+            detail=str(exc)[:300],
+        )
+    finally:
+        db.close()
 
 
 @router.post("/auth/register", response_model=TokenOut)

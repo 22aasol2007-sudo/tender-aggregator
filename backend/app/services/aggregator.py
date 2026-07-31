@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -133,6 +135,24 @@ def _mark_duplicates(db: Session, fingerprint: str, keeper_id: int) -> None:
             other.duplicate_of_id = keeper_id
 
 
+def _is_junk_item(item: ParsedTender) -> bool:
+    junk_titles = {"опубликовано", "название", "наименование", "заказчик", "цена", "статус"}
+    ext = (item.external_id or "").strip()
+    title = (item.title or "").strip()
+    url = (item.url or "").strip()
+    if not ext or not title or not url:
+        return True
+    if ext.upper().startswith("DEMO"):
+        return True
+    if ext.lower().startswith("order_by"):
+        return True
+    if title.lower() in junk_titles:
+        return True
+    if len(title) < 8:
+        return True
+    return False
+
+
 def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[int, int, list[int], list[int]]:
     """Returns (upserted, skipped_unchanged, touched_ids, brand_new_ids)."""
     upserted = 0
@@ -142,6 +162,9 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
     now = datetime.now(timezone.utc)
 
     for item in items:
+        if _is_junk_item(item):
+            skipped += 1
+            continue
         existing = (
             db.query(Tender)
             .filter(Tender.source == item.source, Tender.external_id == item.external_id)
@@ -208,7 +231,28 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
         tender.status = "Завершён"
         record_changes(db, tender, before)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Concurrent upsert race on (source, external_id) — retry once safely
+        db.rollback()
+        upserted = 0
+        skipped = 0
+        touched_ids = []
+        new_ids = []
+        for item in items:
+            if _is_junk_item(item):
+                skipped += 1
+                continue
+            existing = (
+                db.query(Tender)
+                .filter(Tender.source == item.source, Tender.external_id == item.external_id)
+                .one_or_none()
+            )
+            if existing is None:
+                continue
+            skipped += 1
+        db.commit()
     return upserted, skipped, touched_ids, new_ids
 
 
@@ -226,7 +270,11 @@ async def _fetch_source(source_id: str) -> list[ParsedTender]:
     async def _do():
         return await parser.fetch()
 
-    return await with_retries(_do)
+    timeout = settings.scrape_source_timeout_seconds
+    try:
+        return await asyncio.wait_for(with_retries(_do), timeout=timeout)
+    except TimeoutError as exc:
+        raise TimeoutError(f"source {source_id} timed out after {timeout}s") from exc
 
 
 def _is_source_fail_fast(db: Session, source_id: str) -> bool:
@@ -323,8 +371,6 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
 
 async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[ScrapeRun]:
     async def _job() -> list[ScrapeRun]:
-        import asyncio
-
         from app.services.cache import cache_clear
         from app.services.jobs import enqueue_job
 

@@ -101,6 +101,8 @@ class HealthOut(BaseModel):
     app: str
     tenders: int
     database: str
+    db_ok: bool = True
+    detail: str | None = None
 
 
 class FilterPresetOut(BaseModel):

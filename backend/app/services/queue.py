@@ -26,7 +26,7 @@ async def with_retries(
             last_exc = exc
             if attempt >= attempts:
                 break
-            await asyncio.sleep(base_delay * attempt)
+            await asyncio.sleep(min(8.0, base_delay * (2 ** (attempt - 1))))
     assert last_exc is not None
     raise last_exc
 

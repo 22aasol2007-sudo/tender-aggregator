@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import is_postgres
 from app.models import WorkerJob
 
@@ -14,8 +15,6 @@ JOB_PRIORITIES = {
     "monitor": 100,
     "enrich": 200,
 }
-
-STALE_RUNNING_MINUTES = 30
 
 
 def _sources_key(payload: dict | None) -> str:
@@ -33,12 +32,15 @@ def enqueue_job(
     priority: int | None = None,
 ) -> WorkerJob:
     payload = payload or {}
-    # Avoid duplicate pending scrapes with the same sources set
+    # Avoid duplicate pending/running scrapes with the same sources set
     if job_type == "scrape":
         key = _sources_key(payload)
         pending_rows = (
             db.query(WorkerJob)
-            .filter(WorkerJob.job_type == "scrape", WorkerJob.status == "pending")
+            .filter(
+                WorkerJob.job_type == "scrape",
+                WorkerJob.status.in_(("pending", "running")),
+            )
             .order_by(WorkerJob.id.desc())
             .all()
         )
@@ -73,9 +75,16 @@ def enqueue_job(
     return job
 
 
-def reclaim_stale_jobs(db: Session, *, older_than_minutes: int = STALE_RUNNING_MINUTES) -> int:
-    """Reset jobs stuck in running (worker crash) back to pending."""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+def reclaim_stale_jobs(
+    db: Session,
+    *,
+    older_than_minutes: int | None = None,
+) -> int:
+    """Reset jobs stuck in running (worker crash / hung scrape) back to pending."""
+    minutes = older_than_minutes
+    if minutes is None:
+        minutes = settings.stale_running_job_minutes
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
     rows = (
         db.query(WorkerJob)
         .filter(
@@ -142,6 +151,8 @@ def claim_next_job(db: Session, allowed_types: list[str] | None = None) -> Worke
         db.refresh(job)
         return job
 
+    if job is None:
+        return None
     job.status = "running"
     job.started_at = datetime.now(timezone.utc)
     db.commit()

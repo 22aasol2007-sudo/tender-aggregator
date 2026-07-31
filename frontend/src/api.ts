@@ -178,22 +178,52 @@ function formatApiError(text: string, status: number): string {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...(init?.headers || {}),
-    },
-    signal: init?.signal,
-  });
-  if (!res.ok) {
-    if (res.status === 401) clearToken();
-    const text = await res.text();
-    throw new Error(formatApiError(text, res.status));
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${API}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+          ...(init?.headers || {}),
+        },
+        signal: init?.signal,
+      });
+      if (!res.ok) {
+        if (res.status === 401) clearToken();
+        const retryable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504;
+        if (retryable && attempt < maxAttempts && !init?.signal?.aborted) {
+          await new Promise((r) => setTimeout(r, 400 * attempt));
+          continue;
+        }
+        const text = await res.text();
+        throw new Error(formatApiError(text, res.status));
+      }
+      if (res.status === 204) return undefined as T;
+      return res.json();
+    } catch (err) {
+      if (init?.signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        throw err;
+      }
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Network blips — retry unless aborted
+      if (attempt < maxAttempts && !(err instanceof Error && err.message.startsWith("HTTP"))) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+      // Already formatted API errors should not silently retry further
+      if (attempt >= maxAttempts) break;
+      if (err instanceof Error && /HTTP (429|502|503|504)/.test(err.message)) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+      throw lastError;
+    }
   }
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  throw lastError || new Error("Request failed");
 }
 
 export async function login(email: string, password: string) {

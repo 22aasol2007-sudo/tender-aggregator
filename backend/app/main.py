@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router
@@ -47,6 +47,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router, prefix="/api")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    from fastapi import HTTPException
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    if isinstance(exc, (HTTPException, StarletteHTTPException, RequestValidationError)):
+        raise exc
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "path": str(request.url.path)},
+    )
 
 
 @app.get("/health")

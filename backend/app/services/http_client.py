@@ -37,6 +37,7 @@ def get_client() -> httpx.AsyncClient:
             headers={
                 "User-Agent": settings.user_agent,
                 "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
             },
             timeout=settings.http_timeout,
             follow_redirects=True,
@@ -78,6 +79,45 @@ def _cacheable_headers(headers: httpx.Headers) -> dict[str, str]:
     return out
 
 
+async def _get_with_retries(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    """GET with exponential backoff on transport errors and 429/502/503/504."""
+    client = get_client()
+    attempts = max(1, settings.http_retries)
+    retry_statuses = set(settings.http_retry_statuses or [429, 502, 503, 504])
+    last_exc: Exception | None = None
+    last_resp: httpx.Response | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code in retry_statuses and attempt < attempts:
+                last_resp = resp
+                delay = min(8.0, 0.6 * (2 ** (attempt - 1)))
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = max(delay, min(30.0, float(retry_after)))
+                    except ValueError:
+                        pass
+                await asyncio.sleep(delay)
+                continue
+            return resp
+        except (httpx.HTTPError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt >= attempts:
+                break
+            await asyncio.sleep(min(8.0, 0.6 * (2 ** (attempt - 1))))
+
+    if last_resp is not None:
+        return last_resp
+    assert last_exc is not None
+    raise last_exc
+
+
 async def cached_get(
     url: str,
     *,
@@ -100,12 +140,14 @@ async def cached_get(
                 encoding="utf-8",
             )
 
-    client = get_client()
-    resp = await client.get(url, headers=headers)
+    resp = await _get_with_retries(url, headers=headers)
     # Cache successful and empty-ish responses briefly to avoid hammering
     if resp.status_code < 500 and cache_ttl > 0:
         # Decode once via httpx, store UTF-8 bytes so replay never re-gunzips
-        body = resp.text.encode("utf-8")
+        try:
+            body = resp.text.encode("utf-8")
+        except Exception:
+            body = resp.content
         hdrs = _cacheable_headers(resp.headers)
         async with _cache_lock:
             _cache[url] = (now, resp.status_code, body, hdrs)

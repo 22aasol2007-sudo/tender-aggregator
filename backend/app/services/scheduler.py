@@ -44,6 +44,8 @@ def start_scheduler() -> None:
         id="scrape_all",
         replace_existing=True,
         max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
     )
     scheduler.add_job(
         _scheduled_monitor,
@@ -52,6 +54,8 @@ def start_scheduler() -> None:
         id="monitor_sources",
         replace_existing=True,
         max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
     )
     scheduler.start()
 
