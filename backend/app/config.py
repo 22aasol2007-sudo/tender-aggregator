@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _normalize_database_url(url: str) -> str:
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     )
     db_pool_size: int = 5
     db_max_overflow: int = 10
-    cors_origins: list[str] = [
+    cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://tender-aggregator-lac.vercel.app",
