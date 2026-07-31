@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -243,7 +244,7 @@ class EisRegistryParser:
                     href = self.base_url + href
                 items.append(
                     ParsedTender(
-                        external_id=f"{self.source}-{idx}-{abs(hash(title)) % 10_000_000}",
+                        external_id=f"{self.source}-{hashlib.sha1((title or href or str(idx)).encode()).hexdigest()[:12]}",
                         source=self.source,
                         title=title,
                         url=href or url,

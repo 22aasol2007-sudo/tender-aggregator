@@ -59,9 +59,9 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("admin@tender.local");
-  const [password, setPassword] = useState("admin123");
-  const [name, setName] = useState("Admin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [draft, setDraft] = useState<Filters>(emptyFilters);
@@ -91,6 +91,8 @@ export default function App() {
   const [related, setRelated] = useState<Tender[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchName, setSearchName] = useState("");
+  const filterDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -98,6 +100,7 @@ export default function App() {
         const me = await fetchMe();
         setUser(me);
       } catch {
+        logout();
         setUser(null);
       }
       try {
@@ -113,8 +116,8 @@ export default function App() {
         setMethods(meth);
         setRegions(reg);
         setStats(st);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить метаданные API");
       }
     })();
   }, []);
@@ -128,25 +131,27 @@ export default function App() {
   }, []);
 
   async function load(nextPage = page, nextFilters = filters, withStats = false) {
+    loadAbort.current?.abort();
+    const ac = new AbortController();
+    loadAbort.current = ac;
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchTenders(nextFilters, nextPage);
+      const list = await fetchTenders(nextFilters, nextPage, ac.signal);
+      if (ac.signal.aborted) return;
       setItems(list.items);
       setTotal(list.total);
       setPage(list.page);
       if (withStats) await refreshStats();
     } catch (err) {
+      if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(err instanceof Error ? err.message : "Ошибка загрузки");
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }
 
   // Single debounce: sync draft → filters then load (avoids double timers / stale match_any)
-  const filterDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadAbort = useRef<AbortController | null>(null);
-
   useEffect(() => {
     if (tab !== "feed") return;
     if (filterDebounce.current) clearTimeout(filterDebounce.current);
@@ -189,7 +194,7 @@ export default function App() {
       setLoading(true);
       setError(null);
       try {
-        const list = await fetchTenders(filters, 1);
+        const list = await fetchTenders(filters, 1, ac.signal);
         if (ac.signal.aborted) return;
         setItems(list.items);
         setTotal(list.total);
@@ -347,7 +352,7 @@ export default function App() {
       {!user && (
         <form className="auth-box" onSubmit={onAuth}>
           <h2>{authMode === "login" ? "Вход" : "Регистрация"}</h2>
-          <p className="muted">По умолчанию: admin@tender.local / admin123</p>
+          <p className="muted">Демо-аккаунт: admin@tender.local</p>
           {authMode === "register" && (
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя" />
           )}
@@ -524,9 +529,13 @@ export default function App() {
                   type="button"
                   onClick={async () => {
                     if (!searchName.trim()) return;
-                    await createSavedSearch(searchName.trim(), filtersToPayload(filters), true);
-                    setSearchName("");
-                    setSearches(await fetchSavedSearches());
+                    try {
+                      await createSavedSearch(searchName.trim(), filtersToPayload(draft), true);
+                      setSearchName("");
+                      setSearches(await fetchSavedSearches());
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Не удалось сохранить поиск");
+                    }
                   }}
                 >
                   Сохранить текущие фильтры
@@ -558,7 +567,11 @@ export default function App() {
                           setDraft(next);
                           setFilters(next);
                           setTab("feed");
-                          void ackSavedSearch(s.id).then(async () => setSearches(await fetchSavedSearches()));
+                          void ackSavedSearch(s.id)
+                            .then(async () => setSearches(await fetchSavedSearches()))
+                            .catch((err) =>
+                              setError(err instanceof Error ? err.message : "Ошибка подтверждения"),
+                            );
                         }}
                       >
                         Открыть
@@ -567,8 +580,12 @@ export default function App() {
                         className="btn btn-ghost"
                         type="button"
                         onClick={async () => {
-                          await deleteSavedSearch(s.id);
-                          setSearches(await fetchSavedSearches());
+                          try {
+                            await deleteSavedSearch(s.id);
+                            setSearches(await fetchSavedSearches());
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : "Не удалось удалить поиск");
+                          }
                         }}
                       >
                         Удалить
@@ -675,8 +692,8 @@ export default function App() {
                 {p.name}
               </button>
             ))}
-            <a className="preset-chip ghost" href={exportUrl(filters, "csv")}>CSV</a>
-            <a className="preset-chip ghost" href={exportUrl(filters, "xlsx")}>Excel</a>
+            <a className="preset-chip ghost" href={exportUrl(draft, "csv")}>CSV</a>
+            <a className="preset-chip ghost" href={exportUrl(draft, "xlsx")}>Excel</a>
           </div>
 
           <form

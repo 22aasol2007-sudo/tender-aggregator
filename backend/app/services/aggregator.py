@@ -22,7 +22,7 @@ from app.services.normalize import (
     normalize_text,
 )
 from app.services.queue import scrape_queue, with_retries
-from app.services.seed import build_demo_tenders, seed_if_empty, seed_presets
+from app.services.seed import seed_if_empty, seed_presets
 from app.services.telegram import notify_new_tenders
 
 
@@ -184,7 +184,8 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
         _apply_normalized_fields(existing, item, now)
         existing.is_duplicate = False
         db.flush()
-        _link_customer(db, existing, bump_stats=True)
+        # Updates must not re-increment customer counters / total_price
+        _link_customer(db, existing, bump_stats=False)
         record_changes(db, existing, before)
         _mark_duplicates(db, existing.fingerprint or "", existing.id)
         upserted += 1
@@ -290,45 +291,28 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
 
     try:
         items = await _fetch_source(source_id)
-        if not items:
-            items = [t for t in build_demo_tenders(8) if t.source == source_id]
-            if not items:
-                # Don't inject unrelated commercial demos into the niche feed
-                run.error = "Источник недоступен или пуст"
-                run.status = "fallback"
-                run.fetched = 0
-                run.upserted = 0
-                run.skipped = 0
-            else:
-                run.error = "Источник недоступен или пуст — загружены демо-данные"
         if items:
             upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
             run.fetched = len(items)
             run.upserted = upserted
             run.skipped = skipped
-            run.status = "ok" if not run.error else "fallback"
-        elif run.status == "running":
-            run.fetched = 0
-            run.upserted = 0
-            run.skipped = 0
             run.status = "ok"
-            run.error = "Источник пуст"
-    except Exception as exc:  # noqa: BLE001
-        items = [t for t in build_demo_tenders(8) if t.source == source_id]
-        if items:
-            upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
-            run.fetched = len(items)
-            run.upserted = upserted
-            run.skipped = skipped
-            run.status = "fallback"
-            run.error = str(exc)[:1000]
+            run.error = None
         else:
+            # Never upsert demo rows into production — seed_if_empty handles empty DB only
             touched, new_ids = [], []
             run.fetched = 0
             run.upserted = 0
             run.skipped = 0
-            run.status = "fallback"
-            run.error = str(exc)[:1000]
+            run.status = "empty"
+            run.error = "Источник недоступен или пуст"
+    except Exception as exc:  # noqa: BLE001
+        touched, new_ids = [], []
+        run.fetched = 0
+        run.upserted = 0
+        run.skipped = 0
+        run.status = "error"
+        run.error = str(exc)[:1000]
 
     run.finished_at = datetime.now(timezone.utc)
     db.commit()

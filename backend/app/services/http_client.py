@@ -11,8 +11,17 @@ import httpx
 from app.config import settings
 
 _client: httpx.AsyncClient | None = None
-_cache: dict[str, tuple[float, int, str, dict[str, str]]] = {}
+# (cached_at, status, body_bytes, headers) — body is already decoded UTF-8 text as bytes
+_cache: dict[str, tuple[float, int, bytes, dict[str, str]]] = {}
 _cache_lock = asyncio.Lock()
+
+_HOP_BY_HOP = {
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+}
 
 
 def _ssl_verify() -> bool | str:
@@ -52,39 +61,54 @@ async def shared_client() -> AsyncIterator[httpx.AsyncClient]:
     yield get_client()
 
 
+def _cacheable_headers(headers: httpx.Headers) -> dict[str, str]:
+    """Strip compression/length headers; force UTF-8 charset for replay."""
+    out: dict[str, str] = {}
+    for key, value in headers.items():
+        low = key.lower()
+        if low in _HOP_BY_HOP:
+            continue
+        if low == "content-type":
+            base = value.split(";")[0].strip() or "text/html"
+            out[key] = f"{base}; charset=utf-8"
+        else:
+            out[key] = value
+    if "content-type" not in {k.lower() for k in out}:
+        out["Content-Type"] = "text/html; charset=utf-8"
+    return out
+
+
 async def cached_get(
     url: str,
     *,
     headers: dict[str, str] | None = None,
     ttl: float | None = None,
 ) -> httpx.Response:
-    """GET with in-memory TTL cache (body text + status)."""
+    """GET with in-memory TTL cache (decoded UTF-8 body + status)."""
     cache_ttl = settings.http_cache_ttl_seconds if ttl is None else ttl
     now = time.monotonic()
     async with _cache_lock:
         hit = _cache.get(url)
         if hit and now - hit[0] < cache_ttl:
-            cached_at, status, text, hdrs = hit
+            _cached_at, status, body, hdrs = hit
             request = get_client().build_request("GET", url, headers=headers)
             return httpx.Response(
                 status,
-                content=text.encode("utf-8"),
+                content=body,
                 request=request,
                 headers=hdrs,
+                encoding="utf-8",
             )
 
     client = get_client()
     resp = await client.get(url, headers=headers)
     # Cache successful and empty-ish responses briefly to avoid hammering
     if resp.status_code < 500 and cache_ttl > 0:
+        # Decode once via httpx, store UTF-8 bytes so replay never re-gunzips
+        body = resp.text.encode("utf-8")
+        hdrs = _cacheable_headers(resp.headers)
         async with _cache_lock:
-            _cache[url] = (
-                now,
-                resp.status_code,
-                resp.text,
-                dict(resp.headers),
-            )
-            # Bound cache size
+            _cache[url] = (now, resp.status_code, body, hdrs)
             if len(_cache) > 500:
                 oldest = sorted(_cache.items(), key=lambda x: x[1][0])[:100]
                 for key, _ in oldest:

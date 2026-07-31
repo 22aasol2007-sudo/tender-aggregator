@@ -98,7 +98,7 @@ def filters_from_dict(raw: dict) -> dict:
     return {
         "q": fstr("q"),
         "exclude": fstr("exclude"),
-        "match_any": fbool("match_any", False),
+        "match_any": fbool("match_any", True),
         "source": fstr("source"),
         "law": fstr("law"),
         "region": fstr("region"),

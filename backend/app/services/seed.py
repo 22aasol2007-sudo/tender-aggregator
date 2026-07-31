@@ -153,3 +153,22 @@ def seed_presets(db: Session) -> None:
                 )
             )
     db.commit()
+
+
+def cleanup_polluted_tenders(db: Session) -> int:
+    """Remove demo rows and junk parser artifacts (sort-link IDs, header titles)."""
+    from sqlalchemy import or_
+
+    junk_titles = ["Опубликовано", "Название", "Наименование", "Заказчик", "Цена", "Статус"]
+    q = db.query(Tender).filter(
+        or_(
+            Tender.external_id.like("DEMO%"),
+            Tender.external_id.like("order_by%"),
+            Tender.title.in_(junk_titles),
+        )
+    )
+    count = q.count()
+    if count:
+        q.delete(synchronize_session=False)
+        db.commit()
+    return count

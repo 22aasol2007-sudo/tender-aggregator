@@ -47,13 +47,23 @@ def get_current_user_optional(
 ) -> User | None:
     if creds is None:
         return None
-    user_id = decode_token(creds.credentials)
+    try:
+        user_id = decode_token(creds.credentials)
+    except HTTPException:
+        # Stale/invalid JWT must not break public endpoints
+        return None
     return db.get(User, user_id)
 
 
 def get_current_user(user: User | None = Depends(get_current_user_optional)) -> User:
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Auth required")
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
     return user
 
 

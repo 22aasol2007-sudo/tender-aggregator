@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,6 +14,8 @@ JOB_PRIORITIES = {
     "monitor": 100,
     "enrich": 200,
 }
+
+STALE_RUNNING_MINUTES = 30
 
 
 def _sources_key(payload: dict | None) -> str:
@@ -71,7 +73,29 @@ def enqueue_job(
     return job
 
 
+def reclaim_stale_jobs(db: Session, *, older_than_minutes: int = STALE_RUNNING_MINUTES) -> int:
+    """Reset jobs stuck in running (worker crash) back to pending."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+    rows = (
+        db.query(WorkerJob)
+        .filter(
+            WorkerJob.status == "running",
+            WorkerJob.started_at.isnot(None),
+            WorkerJob.started_at < cutoff,
+        )
+        .all()
+    )
+    for job in rows:
+        job.status = "pending"
+        job.started_at = None
+        job.error = "reclaimed: stale running"
+    if rows:
+        db.commit()
+    return len(rows)
+
+
 def claim_next_job(db: Session, allowed_types: list[str] | None = None) -> WorkerJob | None:
+    reclaim_stale_jobs(db)
     if is_postgres():
         type_clause = ""
         params: dict = {}
@@ -94,12 +118,29 @@ def claim_next_job(db: Session, allowed_types: list[str] | None = None) -> Worke
             return None
         job = db.get(WorkerJob, row[0])
     else:
+        # Compare-and-update to reduce double-claim under SQLite
         q = db.query(WorkerJob).filter(WorkerJob.status == "pending")
         if allowed_types:
             q = q.filter(WorkerJob.job_type.in_(allowed_types))
         job = q.order_by(WorkerJob.priority.asc(), WorkerJob.id.asc()).first()
         if not job:
             return None
+        updated = (
+            db.query(WorkerJob)
+            .filter(WorkerJob.id == job.id, WorkerJob.status == "pending")
+            .update(
+                {
+                    "status": "running",
+                    "started_at": datetime.now(timezone.utc),
+                },
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if not updated:
+            return None
+        db.refresh(job)
+        return job
 
     job.status = "running"
     job.started_at = datetime.now(timezone.utc)

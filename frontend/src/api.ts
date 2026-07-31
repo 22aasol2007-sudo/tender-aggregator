@@ -158,6 +158,25 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function clearToken() {
+  localStorage.removeItem("token");
+}
+
+function formatApiError(text: string, status: number): string {
+  try {
+    const data = JSON.parse(text) as { detail?: unknown };
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail
+        .map((d) => (typeof d === "object" && d && "msg" in d ? String((d as { msg: unknown }).msg) : String(d)))
+        .join("; ");
+    }
+  } catch {
+    /* not JSON */
+  }
+  return text.trim() || `HTTP ${status}`;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     ...init,
@@ -166,10 +185,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       ...authHeaders(),
       ...(init?.headers || {}),
     },
+    signal: init?.signal,
   });
   if (!res.ok) {
+    if (res.status === 401) clearToken();
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new Error(formatApiError(text, res.status));
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -198,10 +219,14 @@ export async function fetchMe(): Promise<User> {
 }
 
 export function logout() {
-  localStorage.removeItem("token");
+  clearToken();
 }
 
-export async function fetchTenders(filters: Filters, page: number): Promise<TenderListResponse> {
+export async function fetchTenders(
+  filters: Filters,
+  page: number,
+  signal?: AbortSignal,
+): Promise<TenderListResponse> {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", "20");
@@ -221,7 +246,7 @@ export async function fetchTenders(filters: Filters, page: number): Promise<Tend
   if (filters.max_price) params.set("max_price", filters.max_price);
   if (filters.deadline_from) params.set("deadline_from", filters.deadline_from);
   if (filters.deadline_to) params.set("deadline_to", filters.deadline_to);
-  return api(`/tenders?${params}`);
+  return api(`/tenders?${params}`, { signal });
 }
 
 export async function fetchTender(id: number): Promise<Tender> {

@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     http_max_connections: int = 40
     http_max_keepalive: int = 20
     api_cache_ttl_seconds: float = 45.0
-    approximate_count: bool = True
+    approximate_count: bool = False
     fail_fast_failures: int = 3
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

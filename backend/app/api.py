@@ -55,6 +55,7 @@ from app.services.auth import (
     get_current_user,
     get_current_user_optional,
     hash_password,
+    require_admin,
     verify_password,
 )
 from app.services.compliance import check_compliance, check_tender_compliance
@@ -228,7 +229,7 @@ def dashboard(db: Session = Depends(get_db)) -> DashboardOut:
 def list_tenders(
     q: str | None = None,
     exclude: str | None = None,
-    match_any: bool = False,
+    match_any: bool = True,
     source: str | None = None,
     law: str | None = None,
     region: str | None = None,
@@ -374,7 +375,7 @@ def export_tenders(
     format: str = Query("csv", pattern="^(csv|xlsx)$"),
     q: str | None = None,
     exclude: str | None = None,
-    match_any: bool = False,
+    match_any: bool = True,
     source: str | None = None,
     law: str | None = None,
     region: str | None = None,
@@ -497,7 +498,11 @@ def related_tenders(
 
 
 @router.post("/tenders/{tender_id}/enrich", response_model=TenderOut)
-async def enrich_tender_endpoint(tender_id: int, db: Session = Depends(get_db)) -> TenderOut:
+async def enrich_tender_endpoint(
+    tender_id: int,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TenderOut:
     tender = db.get(Tender, tender_id)
     if tender is None:
         raise HTTPException(status_code=404, detail="Tender not found")
@@ -622,6 +627,7 @@ def delete_saved_search(
 async def scrape(
     body: ScrapeRequest | None = None,
     sync: bool = False,
+    _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ScrapeEnqueueOut:
     sources_req = body.sources if body else None
@@ -633,7 +639,11 @@ async def scrape(
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
-def get_job(job_id: int, db: Session = Depends(get_db)) -> JobOut:
+def get_job(
+    job_id: int,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> JobOut:
     job = db.get(WorkerJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -641,13 +651,21 @@ def get_job(job_id: int, db: Session = Depends(get_db)) -> JobOut:
 
 
 @router.get("/jobs", response_model=list[JobOut])
-def list_jobs(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)) -> list[JobOut]:
+def list_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[JobOut]:
     rows = db.query(WorkerJob).order_by(WorkerJob.id.desc()).limit(limit).all()
     return [JobOut.model_validate(r) for r in rows]
 
 
 @router.get("/scrape/runs", response_model=list[ScrapeRunOut])
-def scrape_runs(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)) -> list[ScrapeRunOut]:
+def scrape_runs(
+    limit: int = Query(20, ge=1, le=100),
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ScrapeRunOut]:
     rows = db.query(ScrapeRun).order_by(ScrapeRun.id.desc()).limit(limit).all()
     return [ScrapeRunOut.model_validate(r) for r in rows]
 
@@ -666,8 +684,14 @@ def metrics_sources(db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.get("/monitor")
-async def monitor(db: Session = Depends(get_db), alert: bool = False) -> dict:
+async def monitor(
+    db: Session = Depends(get_db),
+    alert: bool = False,
+    user: User | None = Depends(get_current_user_optional),
+) -> dict:
     if alert:
+        if user is None or not user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin required for alerts")
         return await run_monitor_and_alert(db)
     return monitor_snapshot(db)
 
@@ -703,6 +727,7 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerDet
 def compliance_check(
     inn: str | None = None,
     name: str | None = None,
+    _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     if not inn and not name:
@@ -711,7 +736,11 @@ def compliance_check(
 
 
 @router.post("/tenders/{tender_id}/compliance")
-async def tender_compliance(tender_id: int, db: Session = Depends(get_db)) -> dict:
+async def tender_compliance(
+    tender_id: int,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     tender = db.get(Tender, tender_id)
     if tender is None:
         raise HTTPException(status_code=404, detail="Tender not found")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from random import choice, randint, uniform
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
 import certifi
 import httpx
@@ -12,6 +13,30 @@ from dateutil import parser as date_parser
 
 from app.config import settings
 from app.parsers.base import ParsedTender
+
+_JUNK_TITLES = {
+    "опубликовано",
+    "название",
+    "наименование",
+    "заказчик",
+    "цена",
+    "статус",
+    "номер",
+    "дата",
+    "регион",
+    "площадка",
+}
+_TRACKING_PARAMS = {
+    "sqh",
+    "tsid",
+    "sid",
+    "session",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+}
 
 
 def _ssl_verify() -> bool | str:
@@ -41,6 +66,61 @@ def _parse_price(text: str | None) -> float | None:
     except ValueError:
         return None
     return value if value > 0 else None
+
+
+def _is_junk_row(href: str, title: str) -> bool:
+    low = title.strip().lower()
+    if low in _JUNK_TITLES or len(title.strip()) < 12:
+        return True
+    if re.search(r"[?&]order_by=|[?&]order_dir=|[?&]sort=|/login|/register|javascript:", href, re.I):
+        return True
+    if href.rstrip("/").endswith("#") or href.strip() == "#":
+        return True
+    return False
+
+
+def _extract_external_id(href: str, source: str, idx: int) -> str | None:
+    """Stable tender id from URL; None if the link is not a detail page."""
+    parsed = urlparse(href)
+    path = parsed.path or ""
+    qs = parse_qs(parsed.query)
+
+    for key in ("id", "tender_id", "procedure_id", "noticeId", "regNumber", "notice_id"):
+        vals = qs.get(key) or []
+        if vals:
+            val = re.sub(r"\W+", "", str(vals[0]))
+            if len(val) >= 3:
+                return val[:64]
+
+    patterns = [
+        r"tender[_/-]?(\d{4,})",
+        r"/(\d{5,})-tender",
+        r"/tenders?/(\d+)",
+        r"/procedures?/(\d+)",
+        r"/auction/(\d+)",
+        r"regNumber[=/](\d+)",
+        r"/lot/(\d+)",
+        r"[?&]id=(\d{4,})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, href, re.I)
+        if m:
+            return m.group(1)
+
+    # Listing/sort pages with no numeric id — skip
+    if re.search(r"[?&]order_by=|/market/?$", href, re.I) and not re.search(r"\d{4,}", path):
+        return None
+    if path in ("", "/") or path.count("/") < 2:
+        return None
+
+    kept = {
+        k: v[0]
+        for k, v in sorted(qs.items())
+        if k.lower() not in _TRACKING_PARAMS and v
+    }
+    clean_q = "&".join(f"{k}={v}" for k, v in kept.items())
+    clean = urlunparse((parsed.scheme, parsed.netloc, path.rstrip("/"), "", clean_q, ""))
+    return hashlib.sha1(f"{source}:{clean}".encode()).hexdigest()[:16]
 
 
 SAMPLE_BY_SOURCE = {
@@ -276,18 +356,23 @@ class CommercialHtmlParser:
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
         items: list[ParsedTender] = []
-        cards = soup.select("article, .tender, .procedure, .search-result, .lot, tr")[:40]
+        cards = soup.select("article, .tender, .procedure, .search-result, .lot, tr")[:60]
         for idx, card in enumerate(cards):
             link = card.select_one("a[href]")
             if not link:
                 continue
             href = link.get("href") or ""
             title = link.get_text(" ", strip=True)
-            if not title or len(title) < 8:
+            if not title:
                 continue
             if href.startswith("/"):
                 href = urljoin(self.base_url, href)
             elif not href.startswith("http"):
+                continue
+            if _is_junk_row(href, title):
+                continue
+            ext = _extract_external_id(href, self.source, idx)
+            if not ext:
                 continue
             text = card.get_text(" ", strip=True)
             price = _parse_price(text)
@@ -296,13 +381,12 @@ class CommercialHtmlParser:
                 published = _parse_dt(m.group(0))
                 if published:
                     break
-            ext = re.sub(r"\W+", "", href[-24:]) or f"{self.source}-{idx}"
             items.append(
                 ParsedTender(
                     external_id=ext[:64],
                     source=self.source,
                     title=title[:500],
-                    url=href,
+                    url=href.split("#")[0],
                     price=price,
                     status="Подача заявок",
                     description=text[:1500],

@@ -13,7 +13,7 @@ from app.database import SessionLocal, init_db
 from app.services.auth import ensure_default_admin
 from app.services.http_client import close_client
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.services.seed import seed_if_empty, seed_presets
+from app.services.seed import cleanup_polluted_tenders, seed_if_empty, seed_presets
 
 
 @asynccontextmanager
@@ -22,6 +22,7 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         ensure_default_admin(db)
+        cleanup_polluted_tenders(db)
         if settings.seed_if_empty:
             seed_if_empty(db)
         seed_presets(db)
@@ -43,6 +44,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router, prefix="/api")
+
+
+@app.get("/health")
+def root_health() -> dict[str, str]:
+    """Lightweight liveness probe (no DB) for Railway/Render."""
+    return {"status": "ok"}
+
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if FRONTEND_DIST.exists():

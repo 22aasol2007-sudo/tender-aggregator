@@ -181,6 +181,22 @@ def _migrate_postgres_columns() -> None:
         return
     stmts = [
         "ALTER TABLE worker_jobs ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 100",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS customer_inn VARCHAR(16)",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS status_norm VARCHAR(32) DEFAULT 'unknown'",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS okpd2 VARCHAR(32)",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS documents JSONB",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS lots JSONB",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS fingerprint VARCHAR(64)",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS duplicate_of_id INTEGER",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMPTZ",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS changed_at TIMESTAMPTZ",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS customer_id INTEGER",
+        "ALTER TABLE tenders ADD COLUMN IF NOT EXISTS customer_kpp VARCHAR(16)",
+        "ALTER TABLE filter_presets ADD COLUMN IF NOT EXISTS user_id INTEGER",
+        "ALTER TABLE filter_presets ADD COLUMN IF NOT EXISTS is_shared BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS skipped INTEGER DEFAULT 0",
     ]
     with engine.begin() as conn:
         for stmt in stmts:
