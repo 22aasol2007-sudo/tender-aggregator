@@ -1,0 +1,79 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tender
+      POSTGRES_PASSWORD: tender
+      POSTGRES_DB: tenders
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tender -d tenders"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://tender:tender@db:5432/tenders
+      HTTP_VERIFY_SSL: "true"
+      SCRAPE_VIA_WORKER: "true"
+      SCRAPE_CONCURRENCY: "5"
+      DB_POOL_SIZE: "10"
+      DB_MAX_OVERFLOW: "20"
+      API_CACHE_TTL_SECONDS: "45"
+      HTTP_CACHE_TTL_SECONDS: "180"
+      HTTP_TIMEOUT: "12"
+      ENRICH_ON_SCRAPE: "false"
+      ENRICH_NEW_ONLY: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Internal only — nginx fronts it
+    expose:
+      - "8000"
+
+  worker-scrape:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker", "--mode", "scrape"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://tender:tender@db:5432/tenders
+      HTTP_VERIFY_SSL: "true"
+      SCRAPE_CONCURRENCY: "5"
+      ENRICH_ON_SCRAPE: "false"
+      ENRICH_NEW_ONLY: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker-enrich:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker", "--mode", "enrich"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://tender:tender@db:5432/tenders
+      HTTP_VERIFY_SSL: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

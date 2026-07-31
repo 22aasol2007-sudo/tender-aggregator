@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from app.config import settings
+from app.database import SessionLocal
+from app.services.aggregator import run_scrape
+from app.services.jobs import enqueue_job
+from app.services.monitor import run_monitor_and_alert
+
+
+scheduler = AsyncIOScheduler()
+
+
+async def _scheduled_scrape() -> None:
+    db = SessionLocal()
+    try:
+        if settings.scrape_via_worker:
+            enqueue_job(db, "scrape", {})
+        else:
+            await run_scrape(db)
+    finally:
+        db.close()
+
+
+async def _scheduled_monitor() -> None:
+    db = SessionLocal()
+    try:
+        if settings.scrape_via_worker:
+            enqueue_job(db, "monitor", {})
+        else:
+            await run_monitor_and_alert(db)
+    finally:
+        db.close()
+
+
+def start_scheduler() -> None:
+    if scheduler.running:
+        return
+    scheduler.add_job(
+        _scheduled_scrape,
+        "interval",
+        minutes=settings.scrape_interval_minutes,
+        id="scrape_all",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _scheduled_monitor,
+        "interval",
+        minutes=max(5, settings.source_silence_minutes // 2),
+        id="monitor_sources",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()
+
+
+def stop_scheduler() -> None:
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
