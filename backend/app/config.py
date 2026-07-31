@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
 from pydantic import field_validator
@@ -71,6 +74,27 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_db(cls, v: str) -> str:
         return _normalize_database_url(str(v))
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors(cls, v):  # noqa: ANN001
+        if v is None or v == "":
+            return [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "https://tender-aggregator-lac.vercel.app",
+            ]
+        if isinstance(v, list):
+            return v
+        text = str(v).strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(x) for x in parsed]
+            except json.JSONDecodeError:
+                pass
+        return [part.strip() for part in text.split(",") if part.strip()]
 
 
 settings = Settings()
