@@ -84,6 +84,17 @@ def filters_from_dict(raw: dict) -> dict:
             return val.strip().lower() in {"1", "true", "yes", "on"}
         return bool(val)
 
+    def fdt(key: str):
+        val = raw.get(key)
+        if val in (None, ""):
+            return None
+        if isinstance(val, datetime):
+            return val
+        try:
+            return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
     return {
         "q": fstr("q"),
         "exclude": fstr("exclude"),
@@ -96,6 +107,8 @@ def filters_from_dict(raw: dict) -> dict:
         "status_norm": fstr("status_norm"),
         "min_price": fnum("min_price"),
         "max_price": fnum("max_price"),
+        "deadline_from": fdt("deadline_from"),
+        "deadline_to": fdt("deadline_to"),
         "hide_outdated": fbool("hide_outdated", True),
         "hide_duplicates": fbool("hide_duplicates", True),
     }

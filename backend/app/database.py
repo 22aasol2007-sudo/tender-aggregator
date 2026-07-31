@@ -70,7 +70,7 @@ def _ensure_composite_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_tenders_region_status ON tenders (region, status_norm)",
         "CREATE INDEX IF NOT EXISTS ix_tenders_dup_published ON tenders (is_duplicate, published_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_tenders_customer_id_pub ON tenders (customer_id, published_at DESC)",
-        "CREATE INDEX IF NOT EXISTS ix_worker_jobs_claim ON worker_jobs (status, priority DESC, id ASC)",
+        "CREATE INDEX IF NOT EXISTS ix_worker_jobs_claim ON worker_jobs (status, priority ASC, id ASC)",
     ]
     with engine.begin() as conn:
         for stmt in stmts:
@@ -101,6 +101,8 @@ def _ensure_postgres_fts() -> None:
             setweight(to_tsvector('russian', coalesce(NEW.customer, '')), 'B') ||
             setweight(to_tsvector('russian', coalesce(NEW.description, '')), 'C') ||
             setweight(to_tsvector('russian', coalesce(NEW.okpd2, '')), 'B') ||
+            setweight(to_tsvector('russian', coalesce(NEW.region, '')), 'C') ||
+            setweight(to_tsvector('russian', coalesce(NEW.method, '')), 'C') ||
             setweight(to_tsvector('russian', coalesce(NEW.external_id, '')), 'A');
           RETURN NEW;
         END
@@ -111,7 +113,7 @@ def _ensure_postgres_fts() -> None:
         """,
         """
         CREATE TRIGGER tenders_search_vector_trigger
-        BEFORE INSERT OR UPDATE OF title, customer, description, okpd2, external_id
+        BEFORE INSERT OR UPDATE OF title, customer, description, okpd2, region, method, external_id
         ON tenders
         FOR EACH ROW EXECUTE PROCEDURE tenders_search_vector_update()
         """,

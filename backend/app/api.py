@@ -383,6 +383,8 @@ def export_tenders(
     status_norm: str | None = None,
     min_price: float | None = None,
     max_price: float | None = None,
+    deadline_from: datetime | None = None,
+    deadline_to: datetime | None = None,
     hide_outdated: bool | None = None,
     hide_duplicates: bool = True,
     db: Session = Depends(get_db),
@@ -400,6 +402,8 @@ def export_tenders(
         status_norm=status_norm,
         min_price=min_price,
         max_price=max_price,
+        deadline_from=deadline_from,
+        deadline_to=deadline_to,
         hide_outdated=hide_outdated,
         hide_duplicates=hide_duplicates,
     )

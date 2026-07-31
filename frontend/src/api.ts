@@ -127,9 +127,9 @@ export type Filters = {
   sort: string;
 };
 
-/** Default niche: refrigerated + general cargo (comma = phrase OR terms). */
+/** Keep in sync with backend/app/services/niche.py TRANSPORT_* (comma = phrase OR terms). */
 export const TRANSPORT_DEFAULT_Q =
-  "рефрижератор, рефтранспорт, хладотранспорт, изотерм, температурный режим, температурн, скоропортящ, холодовая цепь, холодная цепь, охлаждённ, охлажденн, замороженн, рефрижераторн, reefer, грузоперевоз, перевозка грузов, перевозки грузов, автоперевоз, доставка грузов, транспортные услуги, транспортно-экспедиц, экспедирован, фрахт, логистическ, логистик, автотранспортн, автомобильным транспортом, перевозка продукции, перевозка товаров, услуги по перевозке, контейнерные перевоз, тентованн, негабаритн, сборных грузов, 49.41, 49.4, 52.29";
+  "рефрижератор, рефтранспорт, хладотранспорт, изотерм, температурный режим, температурн, скоропортящ, холодовая цепь, холодная цепь, охлаждённ, охлажденн, замороженн, рефрижераторн, reefer, грузоперевоз, перевозка грузов, перевозки грузов, перевозку грузов, автоперевоз, доставка грузов, доставке грузов, транспортные услуги, транспортных услуг, транспортно-экспедиц, экспедирован, экспедиторск, фрахт, логистическ, логистик, автотранспортн, грузовым автомобил, автомобильным транспортом, перевозка продукции, перевозки продукции, перевозка товаров, перевозки товаров, услуги по перевозке, оказание услуг по перевозке, контейнерные перевоз, контейнерных перевоз, тентованн, негабаритн, сборных грузов, сборный груз, 49.41, 49.4, 52.29";
 
 export const TRANSPORT_DEFAULT_EXCLUDE =
   "программное обеспечение, разработка сайта, лицензия ПО, антивирус, серверное оборудование, оргтехника, канцеляр, офисная мебель, уборка помещений, охранные услуги";
@@ -418,7 +418,19 @@ export function exportUrl(filters: Filters, format: "csv" | "xlsx"): string {
   if (filters.status_norm) params.set("status_norm", filters.status_norm);
   if (filters.min_price) params.set("min_price", filters.min_price);
   if (filters.max_price) params.set("max_price", filters.max_price);
+  if (filters.deadline_from) params.set("deadline_from", filters.deadline_from);
+  if (filters.deadline_to) params.set("deadline_to", filters.deadline_to);
   return `${API}/tenders/export?${params}`;
+}
+
+export function asBool(value: unknown, defaultValue: boolean): boolean {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const s = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(s)) return true;
+  if (["0", "false", "no", "off"].includes(s)) return false;
+  return defaultValue;
 }
 
 export function presetToFilters(preset: FilterPreset): Filters {
@@ -427,18 +439,20 @@ export function presetToFilters(preset: FilterPreset): Filters {
     ...emptyFilters,
     q: String(f.q ?? emptyFilters.q),
     exclude: String(f.exclude ?? emptyFilters.exclude),
-    match_any: f.match_any !== false && f.match_any !== "false",
+    match_any: asBool(f.match_any, emptyFilters.match_any),
     source: String(f.source ?? ""),
     law: String(f.law ?? ""),
     region: String(f.region ?? ""),
     method: String(f.method ?? ""),
     okpd2: String(f.okpd2 ?? ""),
     status_norm: String(f.status_norm ?? "accepting"),
-    min_price: f.min_price != null ? String(f.min_price) : "",
-    max_price: f.max_price != null ? String(f.max_price) : "",
-    hide_outdated: f.hide_outdated !== false,
-    hide_duplicates: f.hide_duplicates !== false,
-    sort: "relevance",
+    min_price: f.min_price != null && f.min_price !== "" ? String(f.min_price) : "",
+    max_price: f.max_price != null && f.max_price !== "" ? String(f.max_price) : "",
+    deadline_from: f.deadline_from != null ? String(f.deadline_from) : "",
+    deadline_to: f.deadline_to != null ? String(f.deadline_to) : "",
+    hide_outdated: asBool(f.hide_outdated, true),
+    hide_duplicates: asBool(f.hide_duplicates, true),
+    sort: String(f.sort ?? emptyFilters.sort),
   };
 }
 
@@ -455,8 +469,11 @@ export function filtersToPayload(filters: Filters): Record<string, unknown> {
     status_norm: filters.status_norm || undefined,
     min_price: filters.min_price || undefined,
     max_price: filters.max_price || undefined,
+    deadline_from: filters.deadline_from || undefined,
+    deadline_to: filters.deadline_to || undefined,
     hide_outdated: filters.hide_outdated,
     hide_duplicates: filters.hide_duplicates,
+    sort: filters.sort || undefined,
   };
 }
 

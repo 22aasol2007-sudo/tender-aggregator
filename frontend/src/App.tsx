@@ -143,42 +143,67 @@ export default function App() {
     }
   }
 
-  // Debounced feed reload when filters change (search typing via draft→filters apply)
+  // Single debounce: sync draft → filters then load (avoids double timers / stale match_any)
   const filterDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadAbort = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (tab !== "feed") return;
     if (filterDebounce.current) clearTimeout(filterDebounce.current);
     filterDebounce.current = setTimeout(() => {
-      void load(1, filters, false);
-    }, 280);
+      setFilters((prev) => {
+        const next = { ...prev, ...draft };
+        // Keep identity if nothing changed to avoid extra loops
+        const same =
+          prev.q === next.q &&
+          prev.exclude === next.exclude &&
+          prev.match_any === next.match_any &&
+          prev.source === next.source &&
+          prev.sort === next.sort &&
+          prev.hide_outdated === next.hide_outdated &&
+          prev.hide_duplicates === next.hide_duplicates &&
+          prev.status_norm === next.status_norm &&
+          prev.min_price === next.min_price &&
+          prev.max_price === next.max_price &&
+          prev.region === next.region &&
+          prev.method === next.method &&
+          prev.okpd2 === next.okpd2 &&
+          prev.law === next.law &&
+          prev.deadline_from === next.deadline_from &&
+          prev.deadline_to === next.deadline_to;
+        return same ? prev : next;
+      });
+    }, 350);
     return () => {
       if (filterDebounce.current) clearTimeout(filterDebounce.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, tab]);
+  }, [draft, tab]);
 
-  // Live debounce for search field: apply q/exclude from draft after pause
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (tab !== "feed") return;
-    if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => {
-      setFilters((prev) => {
-        if (
-          prev.q === draft.q &&
-          prev.exclude === draft.exclude &&
-          prev.match_any === draft.match_any
-        ) {
-          return prev;
-        }
-        return { ...prev, q: draft.q, exclude: draft.exclude, match_any: draft.match_any };
-      });
-    }, 400);
-    return () => {
-      if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    };
+    loadAbort.current?.abort();
+    const ac = new AbortController();
+    loadAbort.current = ac;
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const list = await fetchTenders(filters, 1);
+        if (ac.signal.aborted) return;
+        setItems(list.items);
+        setTotal(list.total);
+        setPage(list.page);
+      } catch (err) {
+        if (ac.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+        setError(err instanceof Error ? err.message : "Ошибка загрузки");
+      } finally {
+        if (!ac.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.q, draft.exclude, draft.match_any, tab]);
+  }, [filters, tab]);
 
   useEffect(() => {
     if (tab === "dashboard") {

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.database import is_postgres
 from app.models import WorkerJob
 
 # Lower number = higher priority
@@ -14,6 +16,13 @@ JOB_PRIORITIES = {
 }
 
 
+def _sources_key(payload: dict | None) -> str:
+    sources = (payload or {}).get("sources")
+    if not sources:
+        return "*"
+    return ",".join(sorted(str(s) for s in sources))
+
+
 def enqueue_job(
     db: Session,
     job_type: str,
@@ -21,18 +30,20 @@ def enqueue_job(
     *,
     priority: int | None = None,
 ) -> WorkerJob:
-    # Avoid duplicate pending scrapes with same payload sources
+    payload = payload or {}
+    # Avoid duplicate pending scrapes with the same sources set
     if job_type == "scrape":
-        pending = (
+        key = _sources_key(payload)
+        pending_rows = (
             db.query(WorkerJob)
             .filter(WorkerJob.job_type == "scrape", WorkerJob.status == "pending")
             .order_by(WorkerJob.id.desc())
-            .first()
+            .all()
         )
-        if pending:
-            return pending
+        for pending in pending_rows:
+            if _sources_key(pending.payload) == key:
+                return pending
     if job_type == "enrich":
-        # Merge into pending enrich if exists
         pending = (
             db.query(WorkerJob)
             .filter(WorkerJob.job_type == "enrich", WorkerJob.status == "pending")
@@ -41,7 +52,7 @@ def enqueue_job(
         )
         if pending:
             existing_ids = list((pending.payload or {}).get("tender_ids") or [])
-            incoming = list((payload or {}).get("tender_ids") or [])
+            incoming = list(payload.get("tender_ids") or [])
             merged = list(dict.fromkeys(existing_ids + incoming))[:50]
             pending.payload = {**(pending.payload or {}), "tender_ids": merged}
             db.commit()
@@ -50,7 +61,7 @@ def enqueue_job(
 
     job = WorkerJob(
         job_type=job_type,
-        payload=payload or {},
+        payload=payload,
         status="pending",
         priority=priority if priority is not None else JOB_PRIORITIES.get(job_type, 100),
     )
@@ -61,12 +72,35 @@ def enqueue_job(
 
 
 def claim_next_job(db: Session, allowed_types: list[str] | None = None) -> WorkerJob | None:
-    q = db.query(WorkerJob).filter(WorkerJob.status == "pending")
-    if allowed_types:
-        q = q.filter(WorkerJob.job_type.in_(allowed_types))
-    job = q.order_by(WorkerJob.priority.asc(), WorkerJob.id.asc()).first()
-    if not job:
-        return None
+    if is_postgres():
+        type_clause = ""
+        params: dict = {}
+        if allowed_types:
+            type_clause = " AND job_type = ANY(:types)"
+            params["types"] = allowed_types
+        row = db.execute(
+            text(
+                f"""
+                SELECT id FROM worker_jobs
+                WHERE status = 'pending'{type_clause}
+                ORDER BY priority ASC, id ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+                """
+            ),
+            params,
+        ).first()
+        if not row:
+            return None
+        job = db.get(WorkerJob, row[0])
+    else:
+        q = db.query(WorkerJob).filter(WorkerJob.status == "pending")
+        if allowed_types:
+            q = q.filter(WorkerJob.job_type.in_(allowed_types))
+        job = q.order_by(WorkerJob.priority.asc(), WorkerJob.id.asc()).first()
+        if not job:
+            return None
+
     job.status = "running"
     job.started_at = datetime.now(timezone.utc)
     db.commit()
