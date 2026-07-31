@@ -8,14 +8,36 @@ from sqlalchemy.orm import Query
 from app.database import is_postgres
 from app.models import Tender
 
-TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
+# Prefer comma/semicolon so multi-word phrases stay intact.
+# Fall back to whitespace when the user typed a simple space-separated query.
+COMMA_SPLIT_RE = re.compile(r"[,;]+")
+SPACE_SPLIT_RE = re.compile(r"\s+")
 
 
 def split_terms(value: str | None) -> list[str]:
     if not value:
         return []
-    parts = TOKEN_SPLIT_RE.split(value.strip())
-    return [p for p in parts if p]
+    raw = value.strip()
+    if not raw:
+        return []
+    if "," in raw or ";" in raw:
+        parts = COMMA_SPLIT_RE.split(raw)
+    else:
+        parts = SPACE_SPLIT_RE.split(raw)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _field_hit(term: str):
+    like = f"%{term}%"
+    return or_(
+        Tender.title.ilike(like),
+        Tender.customer.ilike(like),
+        Tender.description.ilike(like),
+        Tender.external_id.ilike(like),
+        Tender.okpd2.ilike(like),
+        Tender.region.ilike(like),
+        Tender.method.ilike(like),
+    )
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
@@ -25,35 +47,48 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
 
     if is_postgres():
         if match_any:
-            # OR: any include term may match
-            parts = []
+            parts: list[str] = []
             params: dict[str, str] = {}
             for i, term in enumerate(terms):
                 param = f"q_inc_{i}"
-                parts.append(f"tenders.search_vector @@ plainto_tsquery('russian', :{param})")
+                # Phrase-aware FTS + ILIKE fallback for stems/ОКПД like 49.41
+                if " " in term:
+                    parts.append(
+                        f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
+                        f"OR tenders.title ILIKE :{param}_like "
+                        f"OR tenders.description ILIKE :{param}_like "
+                        f"OR tenders.okpd2 ILIKE :{param}_like)"
+                    )
+                else:
+                    parts.append(
+                        f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
+                        f"OR tenders.title ILIKE :{param}_like "
+                        f"OR tenders.description ILIKE :{param}_like "
+                        f"OR tenders.okpd2 ILIKE :{param}_like)"
+                    )
                 params[param] = term
+                params[f"{param}_like"] = f"%{term}%"
             return query.filter(text("(" + " OR ".join(parts) + ")")).params(**params)
 
-        # AND: each include term must match
         for i, term in enumerate(terms):
             param = f"q_inc_{i}"
-            query = query.filter(
-                text(f"tenders.search_vector @@ plainto_tsquery('russian', :{param})")
-            ).params(**{param: term})
+            if " " in term:
+                query = query.filter(
+                    text(
+                        f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
+                        f"OR tenders.title ILIKE :{param}_like "
+                        f"OR tenders.description ILIKE :{param}_like)"
+                    )
+                ).params(**{param: term, f"{param}_like": f"%{term}%"})
+            else:
+                query = query.filter(
+                    text(
+                        f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
+                        f"OR tenders.title ILIKE :{param}_like "
+                        f"OR tenders.okpd2 ILIKE :{param}_like)"
+                    )
+                ).params(**{param: term, f"{param}_like": f"%{term}%"})
         return query
-
-    # SQLite
-    def _field_hit(term: str):
-        like = f"%{term}%"
-        return or_(
-            Tender.title.ilike(like),
-            Tender.customer.ilike(like),
-            Tender.description.ilike(like),
-            Tender.external_id.ilike(like),
-            Tender.okpd2.ilike(like),
-            Tender.region.ilike(like),
-            Tender.method.ilike(like),
-        )
 
     if match_any:
         return query.filter(or_(*[_field_hit(term) for term in terms]))
@@ -69,37 +104,26 @@ def apply_exclusions(query: Query, exclude: str | None) -> Query:
     if not terms:
         return query
 
-    for i, term in enumerate(terms):
-        like = f"%{term}%"
-        # NOT (title OR customer OR description OR ...)
-        hit = or_(
-            Tender.title.ilike(like),
-            Tender.customer.ilike(like),
-            Tender.description.ilike(like),
-            Tender.external_id.ilike(like),
-            Tender.okpd2.ilike(like),
-            Tender.region.ilike(like),
-            Tender.method.ilike(like),
-        )
-        query = query.filter(not_(hit))
-
-        if is_postgres():
-            # Also exclude via FTS when vector is present.
-            param = f"q_exc_{i}"
-            query = query.filter(
-                text(
-                    f"(tenders.search_vector IS NULL OR NOT "
-                    f"(tenders.search_vector @@ plainto_tsquery('russian', :{param})))"
-                )
-            ).params(**{param: term})
+    for term in terms:
+        query = query.filter(not_(_field_hit(term)))
     return query
 
 
-def fulltext_order_clause(q: str | None):
+def fulltext_order_clause(q: str | None, *, match_any: bool = False):
     terms = split_terms(q)
     if not terms or not is_postgres():
         return None
-    # Rank by the full phrase for stable ordering.
+    if match_any:
+        # OR-rank: sum of per-term ranks
+        parts = []
+        params: dict[str, str] = {}
+        for i, term in enumerate(terms[:20]):  # bound cost
+            param = f"q_rank_{i}"
+            parts.append(f"ts_rank(tenders.search_vector, plainto_tsquery('russian', :{param}))")
+            params[param] = term
+        expr = " + ".join(parts) + " DESC"
+        return text(expr).params(**params)
+
     joined = " ".join(terms)
     return text("ts_rank(tenders.search_vector, plainto_tsquery('russian', :q_rank)) DESC").params(
         q_rank=joined

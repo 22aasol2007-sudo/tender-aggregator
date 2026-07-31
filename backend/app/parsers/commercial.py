@@ -271,7 +271,7 @@ class CommercialHtmlParser:
             items.extend(self._parse_soup(soup, url))
             if items:
                 break
-        return items or _demo_for(self.source)
+        return items
 
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:

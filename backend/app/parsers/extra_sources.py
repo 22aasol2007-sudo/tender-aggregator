@@ -10,7 +10,6 @@ from app.config import settings
 from app.parsers.base import ParsedTender
 from app.parsers.commercial import (
     CommercialHtmlParser,
-    _demo_for,
     _parse_dt,
     _parse_price,
     _ssl_verify,
@@ -254,7 +253,7 @@ class EisRegistryParser:
                 )
             if items:
                 break
-        return items or _demo_for(self.source)
+        return items
 
 
 class RnpParser(EisRegistryParser):

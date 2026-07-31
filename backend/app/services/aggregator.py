@@ -190,12 +190,22 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
         upserted += 1
         touched_ids.append(existing.id)
 
-    for tender in db.query(Tender).filter(Tender.status_norm == "accepting").all():
-        if _deadline_passed(tender.deadline_at, now):
-            before = _snapshot(tender)
-            tender.status_norm = "completed"
-            tender.status = "Завершён"
-            record_changes(db, tender, before)
+    now = datetime.now(timezone.utc)
+    overdue = (
+        db.query(Tender)
+        .filter(
+            Tender.status_norm == "accepting",
+            Tender.deadline_at.isnot(None),
+            Tender.deadline_at < now,
+        )
+        .limit(500)
+        .all()
+    )
+    for tender in overdue:
+        before = _snapshot(tender)
+        tender.status_norm = "completed"
+        tender.status = "Завершён"
+        record_changes(db, tender, before)
 
     db.commit()
     return upserted, skipped, touched_ids, new_ids
@@ -283,31 +293,42 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
         if not items:
             items = [t for t in build_demo_tenders(8) if t.source == source_id]
             if not items:
-                from app.parsers.commercial import SAMPLE_BY_SOURCE, _demo_for
-
-                if source_id in SAMPLE_BY_SOURCE:
-                    items = _demo_for(source_id)
-            run.error = "Источник недоступен или пуст — загружены демо-данные"
-        upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
-        run.fetched = len(items)
-        run.upserted = upserted
-        run.skipped = skipped
-        run.status = "ok" if not run.error else "fallback"
+                # Don't inject unrelated commercial demos into the niche feed
+                run.error = "Источник недоступен или пуст"
+                run.status = "fallback"
+                run.fetched = 0
+                run.upserted = 0
+                run.skipped = 0
+            else:
+                run.error = "Источник недоступен или пуст — загружены демо-данные"
+        if items:
+            upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
+            run.fetched = len(items)
+            run.upserted = upserted
+            run.skipped = skipped
+            run.status = "ok" if not run.error else "fallback"
+        elif run.status == "running":
+            run.fetched = 0
+            run.upserted = 0
+            run.skipped = 0
+            run.status = "ok"
+            run.error = "Источник пуст"
     except Exception as exc:  # noqa: BLE001
         items = [t for t in build_demo_tenders(8) if t.source == source_id]
-        if not items:
-            from app.parsers.commercial import SAMPLE_BY_SOURCE, _demo_for
-
-            if source_id in SAMPLE_BY_SOURCE:
-                items = _demo_for(source_id)
-        upserted, skipped, touched, new_ids = (
-            upsert_tenders_collect_new(db, items) if items else (0, 0, [], [])
-        )
-        run.fetched = len(items)
-        run.upserted = upserted
-        run.skipped = skipped
-        run.status = "fallback"
-        run.error = str(exc)[:1000]
+        if items:
+            upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
+            run.fetched = len(items)
+            run.upserted = upserted
+            run.skipped = skipped
+            run.status = "fallback"
+            run.error = str(exc)[:1000]
+        else:
+            touched, new_ids = [], []
+            run.fetched = 0
+            run.upserted = 0
+            run.skipped = 0
+            run.status = "fallback"
+            run.error = str(exc)[:1000]
 
     run.finished_at = datetime.now(timezone.utc)
     db.commit()

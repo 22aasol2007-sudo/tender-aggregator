@@ -303,7 +303,7 @@ def list_tenders(
     if settings.approximate_count and page > 1 and not q and not exclude:
         # Estimate: at least current offset + page; refined if short page
         total = page * page_size  # provisional; adjusted after fetch
-        rank_order = fulltext_order_clause(q)
+        rank_order = fulltext_order_clause(q, match_any=match_any)
         if sort == "changed":
             items = (
                 query.order_by(Tender.changed_at.desc(), Tender.id.desc())
@@ -330,7 +330,7 @@ def list_tenders(
         total = (page - 1) * page_size + len(items) + (page_size if has_more else 0)
     else:
         total = query.count()
-        rank_order = fulltext_order_clause(q)
+        rank_order = fulltext_order_clause(q, match_any=match_any)
         if sort == "changed":
             items = (
                 query.order_by(Tender.changed_at.desc(), Tender.id.desc())

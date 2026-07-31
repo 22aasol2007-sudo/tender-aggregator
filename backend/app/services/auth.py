@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import CompanyProfile, User
-from app.services.niche import TRANSPORT_PROFILE_KEYWORDS, TRANSPORT_PROFILE_OKPD
+from app.services.niche import LEGACY_IT_KEYWORDS, TRANSPORT_PROFILE_KEYWORDS, TRANSPORT_PROFILE_OKPD
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer = HTTPBearer(auto_error=False)
@@ -62,10 +62,13 @@ def ensure_default_admin(db: Session) -> User:
     if user:
         profile = db.query(CompanyProfile).filter(CompanyProfile.user_id == user.id).one_or_none()
         if profile:
-            profile.company_name = profile.company_name or "Грузоперевозки / рефрижератор"
-            profile.okpd_prefixes = TRANSPORT_PROFILE_OKPD
-            profile.keywords = TRANSPORT_PROFILE_KEYWORDS
-            db.commit()
+            existing_kw = {str(k).lower() for k in (profile.keywords or [])}
+            # Migrate only legacy IT/construction profiles — never clobber custom edits
+            if not existing_kw or existing_kw & {k.lower() for k in LEGACY_IT_KEYWORDS}:
+                profile.company_name = profile.company_name or "Грузоперевозки / рефрижератор"
+                profile.okpd_prefixes = TRANSPORT_PROFILE_OKPD
+                profile.keywords = TRANSPORT_PROFILE_KEYWORDS
+                db.commit()
         return user
     user = User(
         email=settings.default_admin_email,

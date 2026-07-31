@@ -164,15 +164,21 @@ export default function App() {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
       setFilters((prev) => {
-        if (prev.q === draft.q && prev.exclude === draft.exclude) return prev;
-        return { ...prev, q: draft.q, exclude: draft.exclude };
+        if (
+          prev.q === draft.q &&
+          prev.exclude === draft.exclude &&
+          prev.match_any === draft.match_any
+        ) {
+          return prev;
+        }
+        return { ...prev, q: draft.q, exclude: draft.exclude, match_any: draft.match_any };
       });
     }, 400);
     return () => {
       if (searchDebounce.current) clearTimeout(searchDebounce.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.q, draft.exclude, tab]);
+  }, [draft.q, draft.exclude, draft.match_any, tab]);
 
   useEffect(() => {
     if (tab === "dashboard") {
@@ -661,7 +667,7 @@ export default function App() {
               <input
                 value={draft.q}
                 onChange={(e) => setDraft({ ...draft, q: e.target.value })}
-                placeholder="рефрижератор, грузоперевозки, логистика…"
+                placeholder="рефрижератор, перевозка грузов — через запятую"
               />
             </div>
             <div className="field grow">
