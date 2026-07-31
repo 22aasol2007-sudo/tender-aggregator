@@ -18,13 +18,23 @@ def split_terms(value: str | None) -> list[str]:
     return [p for p in parts if p]
 
 
-def apply_fulltext(query: Query, q: str | None) -> Query:
+def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
     terms = split_terms(q)
     if not terms:
         return query
 
     if is_postgres():
-        # Each include term must match (AND of plainto_tsquery).
+        if match_any:
+            # OR: any include term may match
+            parts = []
+            params: dict[str, str] = {}
+            for i, term in enumerate(terms):
+                param = f"q_inc_{i}"
+                parts.append(f"tenders.search_vector @@ plainto_tsquery('russian', :{param})")
+                params[param] = term
+            return query.filter(text("(" + " OR ".join(parts) + ")")).params(**params)
+
+        # AND: each include term must match
         for i, term in enumerate(terms):
             param = f"q_inc_{i}"
             query = query.filter(
@@ -32,20 +42,24 @@ def apply_fulltext(query: Query, q: str | None) -> Query:
             ).params(**{param: term})
         return query
 
-    # SQLite: every include term must appear in at least one searchable field.
-    for term in terms:
+    # SQLite
+    def _field_hit(term: str):
         like = f"%{term}%"
-        query = query.filter(
-            or_(
-                Tender.title.ilike(like),
-                Tender.customer.ilike(like),
-                Tender.description.ilike(like),
-                Tender.external_id.ilike(like),
-                Tender.okpd2.ilike(like),
-                Tender.region.ilike(like),
-                Tender.method.ilike(like),
-            )
+        return or_(
+            Tender.title.ilike(like),
+            Tender.customer.ilike(like),
+            Tender.description.ilike(like),
+            Tender.external_id.ilike(like),
+            Tender.okpd2.ilike(like),
+            Tender.region.ilike(like),
+            Tender.method.ilike(like),
         )
+
+    if match_any:
+        return query.filter(or_(*[_field_hit(term) for term in terms]))
+
+    for term in terms:
+        query = query.filter(_field_hit(term))
     return query
 
 

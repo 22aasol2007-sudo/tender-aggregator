@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import CompanyProfile, User
+from app.services.niche import TRANSPORT_PROFILE_KEYWORDS, TRANSPORT_PROFILE_OKPD
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer = HTTPBearer(auto_error=False)
@@ -59,6 +60,12 @@ def get_current_user(user: User | None = Depends(get_current_user_optional)) -> 
 def ensure_default_admin(db: Session) -> User:
     user = db.query(User).filter(User.email == settings.default_admin_email).one_or_none()
     if user:
+        profile = db.query(CompanyProfile).filter(CompanyProfile.user_id == user.id).one_or_none()
+        if profile:
+            profile.company_name = profile.company_name or "Грузоперевозки / рефрижератор"
+            profile.okpd_prefixes = TRANSPORT_PROFILE_OKPD
+            profile.keywords = TRANSPORT_PROFILE_KEYWORDS
+            db.commit()
         return user
     user = User(
         email=settings.default_admin_email,
@@ -71,12 +78,12 @@ def ensure_default_admin(db: Session) -> User:
     db.add(
         CompanyProfile(
             user_id=user.id,
-            company_name="Моя компания",
-            okpd_prefixes=["62", "41", "43"],
-            regions=["Москва", "Московская область", "Санкт-Петербург"],
-            keywords=["программ", "сервер", "строитель", "ремонт", "ИТ"],
-            min_price=100_000,
-            max_price=50_000_000,
+            company_name="Грузоперевозки / рефрижератор",
+            okpd_prefixes=TRANSPORT_PROFILE_OKPD,
+            regions=["Москва", "Московская область", "Санкт-Петербург", "Краснодарский край"],
+            keywords=TRANSPORT_PROFILE_KEYWORDS,
+            min_price=50_000,
+            max_price=30_000_000,
         )
     )
     db.commit()

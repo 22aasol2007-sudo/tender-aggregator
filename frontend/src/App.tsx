@@ -661,7 +661,7 @@ export default function App() {
               <input
                 value={draft.q}
                 onChange={(e) => setDraft({ ...draft, q: e.target.value })}
-                placeholder="сервер, ПО, ИТ — все слова обязательны"
+                placeholder="рефрижератор, грузоперевозки, логистика…"
               />
             </div>
             <div className="field grow">
@@ -669,7 +669,7 @@ export default function App() {
               <input
                 value={draft.exclude}
                 onChange={(e) => setDraft({ ...draft, exclude: e.target.value })}
-                placeholder="мебель, продукты — убрать из выдачи"
+                placeholder="ПО, канцелярия — убрать из выдачи"
               />
             </div>
             <div className="field">
@@ -719,6 +719,7 @@ export default function App() {
               <input type="number" value={draft.max_price} onChange={(e) => setDraft({ ...draft, max_price: e.target.value })} />
             </div>
             <div className="field checks">
+              <label className="check"><input type="checkbox" checked={draft.match_any} onChange={(e) => setDraft({ ...draft, match_any: e.target.checked })} />Любое из слов (OR)</label>
               <label className="check"><input type="checkbox" checked={draft.hide_outdated} onChange={(e) => setDraft({ ...draft, hide_outdated: e.target.checked })} />Скрыть устаревшие</label>
               <label className="check"><input type="checkbox" checked={draft.hide_duplicates} onChange={(e) => setDraft({ ...draft, hide_duplicates: e.target.checked })} />Без дублей</label>
             </div>

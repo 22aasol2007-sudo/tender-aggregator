@@ -14,6 +14,7 @@ def apply_tender_filters(
     *,
     q: str | None = None,
     exclude: str | None = None,
+    match_any: bool = False,
     source: str | None = None,
     law: str | None = None,
     region: str | None = None,
@@ -30,7 +31,7 @@ def apply_tender_filters(
     if hide_outdated is None:
         hide_outdated = settings.hide_outdated_default
 
-    query = apply_fulltext(query, q)
+    query = apply_fulltext(query, q, match_any=match_any)
     query = apply_exclusions(query, exclude)
     if source:
         query = query.filter(Tender.source == source)
@@ -78,11 +79,15 @@ def filters_from_dict(raw: dict) -> dict:
     def fbool(key: str, default: bool):
         if key not in raw:
             return default
-        return bool(raw[key])
+        val = raw[key]
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(val)
 
     return {
         "q": fstr("q"),
         "exclude": fstr("exclude"),
+        "match_any": fbool("match_any", False),
         "source": fstr("source"),
         "law": fstr("law"),
         "region": fstr("region"),

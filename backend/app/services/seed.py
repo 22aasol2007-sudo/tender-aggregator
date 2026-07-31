@@ -7,30 +7,31 @@ from sqlalchemy.orm import Session
 
 from app.models import FilterPreset, Tender
 from app.parsers.base import ParsedTender
+from app.services.niche import TRANSPORT_EXCLUDE, TRANSPORT_PRESET_FILTERS, TRANSPORT_Q
 
 
 SAMPLE_TITLES = [
-    "Поставка серверного оборудования и СХД",
-    "Оказание услуг по сопровождению ИС",
-    "Закупка канцелярских товаров",
-    "Поставка лекарственных препаратов",
-    "Выполнение работ по ремонту кровли",
-    "Оказание охранных услуг",
-    "Поставка легковых автомобилей",
-    "Услуги связи и передачи данных",
-    "Поставка продуктов питания",
-    "Разработка программного обеспечения",
-    "Техническое обслуживание зданий",
-    "Поставка офисной мебели",
+    "Оказание услуг по перевозке грузов автомобильным транспортом",
+    "Перевозка продуктов питания рефрижератором",
+    "Транспортно-экспедиционные услуги по доставке грузов",
+    "Услуги грузоперевозок изотермическим транспортом",
+    "Перевозка скоропортящихся грузов с температурным режимом",
+    "Автоперевозка товаров по маршруту заказчика",
+    "Фрахт рефрижераторной фуры",
+    "Логистические услуги и экспедирование грузов",
+    "Перевозка замороженной продукции рефтранспортом",
+    "Услуги по перевозке сборных грузов",
+    "Контейнерные перевозки автомобильным транспортом",
+    "Доставка грузов тентованным транспортом",
 ]
 
 CUSTOMERS = [
-    "ГБУ «Городская поликлиника №12»",
-    "Министерство цифрового развития региона",
-    "МУП «Водоканал»",
-    "ФГБОУ ВО «Технический университет»",
-    "Администрация городского округа",
-    "ГУП «Дорожное хозяйство»",
+    "ООО «Торговый дом Продукты»",
+    "АО «Региональный распределительный центр»",
+    "ГБУ «Комбинат школьного питания»",
+    "ООО «ХолодЛогистик»",
+    "МУП «Городской рынок»",
+    "ООО «АгроПоставка»",
 ]
 
 REGIONS = [
@@ -52,22 +53,21 @@ METHODS = [
 
 BUILTIN_PRESETS = [
     {
-        "name": "ИТ",
-        "description": "ПО, серверы, связь и цифровые услуги",
+        "name": "Грузоперевозки + реф",
+        "description": "Рефрижератор и общие грузоперевозки (расширенные ключевые слова, OR)",
         "filters": {
-            "q": "программ сервер ИТ информацион",
-            "okpd2": "62",
-            "status_norm": "accepting",
-            "hide_outdated": True,
-            "hide_duplicates": True,
+            **TRANSPORT_PRESET_FILTERS,
+            "q": TRANSPORT_Q,
+            "exclude": TRANSPORT_EXCLUDE,
         },
     },
     {
-        "name": "Строительство",
-        "description": "Строительные и ремонтные работы",
+        "name": "Только рефрижератор",
+        "description": "Температурный режим, холодная цепь, изотерм",
         "filters": {
-            "q": "строитель ремонт кровл дорог",
-            "okpd2": "41",
+            "q": "рефрижератор рефтранспор хладотранспор изотерм температурн скоропортящ охлажд заморож холодн",
+            "exclude": "программн серверн канцеляр мебел",
+            "match_any": True,
             "status_norm": "accepting",
             "hide_outdated": True,
             "hide_duplicates": True,
@@ -84,7 +84,11 @@ def build_demo_tenders(count: int = 24) -> list[ParsedTender]:
         source = "zakupki_44" if law == "44-ФЗ" else "zakupki_223"
         ext = f"DEMO{100000 + i}"
         title = choice(SAMPLE_TITLES)
-        okpd = "62.01" if "программ" in title.lower() or "сервер" in title.lower() or "ИС" in title else "41.20"
+        low = title.lower()
+        if any(x in low for x in ("реф", "изотерм", "скоропорт", "заморож", "температур", "холод")):
+            okpd = "49.41.1"
+        else:
+            okpd = "49.41"
         items.append(
             ParsedTender(
                 external_id=ext,
@@ -118,6 +122,15 @@ def seed_if_empty(db: Session) -> int:
 
 
 def seed_presets(db: Session) -> None:
+    wanted = {p["name"] for p in BUILTIN_PRESETS}
+    obsolete = (
+        db.query(FilterPreset)
+        .filter(FilterPreset.is_builtin.is_(True), FilterPreset.name.notin_(wanted))
+        .all()
+    )
+    for row in obsolete:
+        db.delete(row)
+
     for preset in BUILTIN_PRESETS:
         existing = (
             db.query(FilterPreset)

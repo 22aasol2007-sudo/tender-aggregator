@@ -111,6 +111,7 @@ export type TenderChange = {
 export type Filters = {
   q: string;
   exclude: string;
+  match_any: boolean;
   source: string;
   law: string;
   region: string;
@@ -126,9 +127,17 @@ export type Filters = {
   sort: string;
 };
 
+/** Default niche: refrigerated + general cargo (OR keywords). */
+export const TRANSPORT_DEFAULT_Q =
+  "рефрижератор рефтранспор хладотранспор изотерм температурн скоропортящ холодов охлажд заморож мороз грузоперевоз перевозк груз автоперевоз доставк груз транспортн услуг транспортно-экспедиц экспедирован фрахт логистик автотранспортн грузов автомоб перевозк автомобил перевозк продукц перевозк товар услуг по перевозк контейнерн перевоз фуры тентован трал негабаритн перевоз сборн груз 49.41 49.4 52.29";
+
+export const TRANSPORT_DEFAULT_EXCLUDE =
+  "программн обеспечен разработк сайт лицензи ПО антивирус серверн оборудов оргтехник канцеляр мебел офис уборк помещен охранн услуг";
+
 export const emptyFilters: Filters = {
-  q: "",
-  exclude: "",
+  q: TRANSPORT_DEFAULT_Q,
+  exclude: TRANSPORT_DEFAULT_EXCLUDE,
+  match_any: true,
   source: "",
   law: "",
   region: "",
@@ -141,7 +150,7 @@ export const emptyFilters: Filters = {
   deadline_to: "",
   hide_outdated: true,
   hide_duplicates: true,
-  sort: "published",
+  sort: "relevance",
 };
 
 function authHeaders(): HeadersInit {
@@ -201,6 +210,7 @@ export async function fetchTenders(filters: Filters, page: number): Promise<Tend
   params.set("sort", filters.sort || "published");
   if (filters.q.trim()) params.set("q", filters.q.trim());
   if (filters.exclude.trim()) params.set("exclude", filters.exclude.trim());
+  if (filters.match_any) params.set("match_any", "true");
   if (filters.source) params.set("source", filters.source);
   if (filters.law) params.set("law", filters.law);
   if (filters.region.trim()) params.set("region", filters.region.trim());
@@ -399,6 +409,7 @@ export function exportUrl(filters: Filters, format: "csv" | "xlsx"): string {
   params.set("hide_duplicates", String(filters.hide_duplicates));
   if (filters.q.trim()) params.set("q", filters.q.trim());
   if (filters.exclude.trim()) params.set("exclude", filters.exclude.trim());
+  if (filters.match_any) params.set("match_any", "true");
   if (filters.source) params.set("source", filters.source);
   if (filters.law) params.set("law", filters.law);
   if (filters.region.trim()) params.set("region", filters.region.trim());
@@ -414,14 +425,15 @@ export function presetToFilters(preset: FilterPreset): Filters {
   const f = preset.filters || {};
   return {
     ...emptyFilters,
-    q: String(f.q ?? ""),
-    exclude: String(f.exclude ?? ""),
+    q: String(f.q ?? emptyFilters.q),
+    exclude: String(f.exclude ?? emptyFilters.exclude),
+    match_any: f.match_any !== false && f.match_any !== "false",
     source: String(f.source ?? ""),
     law: String(f.law ?? ""),
     region: String(f.region ?? ""),
     method: String(f.method ?? ""),
     okpd2: String(f.okpd2 ?? ""),
-    status_norm: String(f.status_norm ?? ""),
+    status_norm: String(f.status_norm ?? "accepting"),
     min_price: f.min_price != null ? String(f.min_price) : "",
     max_price: f.max_price != null ? String(f.max_price) : "",
     hide_outdated: f.hide_outdated !== false,
@@ -434,6 +446,7 @@ export function filtersToPayload(filters: Filters): Record<string, unknown> {
   return {
     q: filters.q || undefined,
     exclude: filters.exclude || undefined,
+    match_any: filters.match_any,
     source: filters.source || undefined,
     law: filters.law || undefined,
     region: filters.region || undefined,
