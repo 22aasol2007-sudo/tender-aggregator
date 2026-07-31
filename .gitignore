@@ -11,3 +11,7 @@ frontend/dist/
 *.log
 .idea/
 .vscode/
+
+frontend/.env.neon
+.env.neon
+

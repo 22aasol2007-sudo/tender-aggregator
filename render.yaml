@@ -1,4 +1,4 @@
-# Free Render Blueprint — SQLite (ephemeral). For durable DB set DATABASE_URL to Neon later.
+﻿# Free Render Blueprint — Neon Postgres via DATABASE_URL secret
 
 services:
   - type: web
@@ -11,7 +11,7 @@ services:
     healthCheckPath: /api/sources
     envVars:
       - key: DATABASE_URL
-        value: sqlite:////tmp/tenders.db
+        sync: false
       - key: HTTP_VERIFY_SSL
         value: "true"
       - key: SCRAPE_VIA_WORKER
