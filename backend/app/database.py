@@ -18,6 +18,7 @@ def _make_engine(url: str) -> Engine:
         pool_recycle=settings.db_pool_recycle,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
         connect_args={"connect_timeout": settings.db_connect_timeout},
     )
 

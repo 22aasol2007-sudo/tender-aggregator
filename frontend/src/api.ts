@@ -209,8 +209,24 @@ function formatApiError(text: string, status: number): string {
   return text.trim() || `HTTP ${status}`;
 }
 
+function humanizeNetworkError(err: unknown): Error {
+  if (err instanceof ApiError) return err;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
+    return new Error(
+      "Нет связи с API (сеть или сервер недоступен). Проверьте интернет и попробуйте снова.",
+    );
+  }
+  if (/timeout|timed out|aborted/i.test(msg)) {
+    return new Error("Сервер не ответил вовремя. Попробуйте ещё раз через минуту.");
+  }
+  return err instanceof Error ? err : new Error(msg || "Ошибка запроса");
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const maxAttempts = 3;
+  // Auth should fail fast — don't burn ~3× retries on a dead API during login
+  const isAuth = path.startsWith("/auth/");
+  const maxAttempts = isAuth ? 1 : 3;
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -232,7 +248,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
           continue;
         }
         const text = await res.text();
-        throw new ApiError(formatApiError(text, res.status), res.status);
+        const detail = formatApiError(text, res.status);
+        if (res.status === 401 && isAuth) {
+          throw new ApiError("Неверный email или пароль", 401);
+        }
+        throw new ApiError(detail, res.status);
       }
       if (res.status === 204) return undefined as T;
       return res.json();
@@ -240,8 +260,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       if (init?.signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
         throw err;
       }
-      lastError = err instanceof Error ? err : new Error(String(err));
-      // Network blips — retry unless aborted
+      lastError = humanizeNetworkError(err);
+      // Network blips — retry unless aborted / auth
       if (attempt < maxAttempts && !(err instanceof ApiError)) {
         await new Promise((r) => setTimeout(r, 400 * attempt));
         continue;

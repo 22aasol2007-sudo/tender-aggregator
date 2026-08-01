@@ -415,10 +415,25 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
     return run, touched, new_ids
 
 
-async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[ScrapeRun]:
+async def run_scrape(db: Session | None = None, source_ids: list[str] | None = None) -> list[ScrapeRun]:
+    """Scrape sources without holding a caller session across the whole job.
+
+    Parallel source tasks use short-lived sessions. A parent connection is only
+    checked out for post-gather bookkeeping so login/API stay responsive.
+    The optional ``db`` arg is accepted for callers but not held during gather.
+    """
+
     async def _job() -> list[ScrapeRun]:
+        from app.database import SessionLocal
         from app.services.cache import cache_clear
         from app.services.jobs import enqueue_job
+
+        # Return any caller-held connection to the pool before long parallel I/O
+        if db is not None:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass
 
         parsers = get_parsers()
         selected = source_ids or list(parsers.keys())
@@ -446,8 +461,6 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
         async def _guarded(sid: str) -> tuple[int, list[int], list[int]]:
             async with sem:
                 # Each parallel task needs its own session for thread-safety
-                from app.database import SessionLocal
-
                 local = SessionLocal()
                 try:
                     run, touched, new_ids = await _scrape_one_source(local, sid)
@@ -457,53 +470,58 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
                     local.close()
 
         results = await asyncio.gather(*[_guarded(sid) for sid in selected], return_exceptions=True)
-        for sid, result in zip(selected, results):
-            if isinstance(result, BaseException):
-                run = ScrapeRun(
-                    source=sid,
-                    status="fallback",
-                    fetched=0,
-                    upserted=0,
-                    skipped=0,
-                    error=str(result)[:1000],
-                    finished_at=datetime.now(timezone.utc),
+
+        own = SessionLocal()
+        try:
+            for sid, result in zip(selected, results):
+                if isinstance(result, BaseException):
+                    run = ScrapeRun(
+                        source=sid,
+                        status="fallback",
+                        fetched=0,
+                        upserted=0,
+                        skipped=0,
+                        error=str(result)[:1000],
+                        finished_at=datetime.now(timezone.utc),
+                    )
+                    own.add(run)
+                    own.commit()
+                    own.refresh(run)
+                    record_source_run(own, run)
+                    runs.append(run)
+                    continue
+                run_id, touched, new_ids = result
+                fresh = own.get(ScrapeRun, run_id)
+                if fresh is not None:
+                    runs.append(fresh)
+                all_new.extend(new_ids)
+                all_touched.extend(touched)
+
+            enrich_ids = all_new if settings.enrich_new_only else all_touched
+            if settings.enrich_on_scrape and enrich_ids:
+                for tender_id in enrich_ids[: settings.enrich_limit_per_scrape]:
+                    tender = own.get(Tender, tender_id)
+                    if tender and tender.source.startswith("zakupki"):
+                        try:
+                            await enrich_tender(own, tender, force=False)
+                        except Exception:  # noqa: BLE001
+                            pass
+            elif enrich_ids:
+                # Queue enrich separately with lower priority
+                enqueue_job(
+                    own,
+                    "enrich",
+                    {"tender_ids": enrich_ids[: settings.enrich_limit_per_scrape]},
+                    priority=200,
                 )
-                db.add(run)
-                db.commit()
-                db.refresh(run)
-                record_source_run(db, run)
-                runs.append(run)
-                continue
-            run_id, touched, new_ids = result
-            fresh = db.get(ScrapeRun, run_id)
-            if fresh is not None:
-                runs.append(fresh)
-            all_new.extend(new_ids)
-            all_touched.extend(touched)
 
-        enrich_ids = all_new if settings.enrich_new_only else all_touched
-        if settings.enrich_on_scrape and enrich_ids:
-            for tender_id in enrich_ids[: settings.enrich_limit_per_scrape]:
-                tender = db.get(Tender, tender_id)
-                if tender and tender.source.startswith("zakupki"):
-                    try:
-                        await enrich_tender(db, tender, force=False)
-                    except Exception:  # noqa: BLE001
-                        pass
-        elif enrich_ids:
-            # Queue enrich separately with lower priority
-            enqueue_job(
-                db,
-                "enrich",
-                {"tender_ids": enrich_ids[: settings.enrich_limit_per_scrape]},
-                priority=200,
-            )
-
-        seed_if_empty(db)
-        seed_presets(db)
-        await _update_saved_searches_and_notify(db)
-        cache_clear("api:")
-        return runs
+            seed_if_empty(own)
+            seed_presets(own)
+            await _update_saved_searches_and_notify(own)
+            cache_clear("api:")
+            return runs
+        finally:
+            own.close()
 
     return await scrape_queue.run(_job)
 

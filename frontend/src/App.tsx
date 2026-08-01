@@ -94,6 +94,7 @@ export default function App() {
   const [credMsg, setCredMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Tender | null>(null);
@@ -281,15 +282,24 @@ export default function App() {
 
   async function onAuth(e: FormEvent) {
     e.preventDefault();
+    if (authBusy) return;
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("Укажите email и пароль");
+      return;
+    }
+    setAuthBusy(true);
     setError(null);
     try {
       const u =
         authMode === "login"
-          ? await login(email, password)
-          : await register(email, password, name);
+          ? await login(trimmedEmail, password)
+          : await register(trimmedEmail, password, name.trim() || "Пользователь");
       setUser(u);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");
+    } finally {
+      setAuthBusy(false);
     }
   }
 
@@ -604,15 +614,27 @@ export default function App() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль"
+            autoComplete={authMode === "login" ? "current-password" : "new-password"}
           />
+          {error && <p className="muted" style={{ color: "var(--danger, #c45c4a)", margin: 0 }}>{error}</p>}
           <div className="hero-actions">
-            <button className="btn btn-primary" type="submit">
-              {authMode === "login" ? "Войти" : "Создать аккаунт"}
+            <button className="btn btn-primary" type="submit" disabled={authBusy}>
+              {authBusy
+                ? authMode === "login"
+                  ? "Входим…"
+                  : "Создаём…"
+                : authMode === "login"
+                  ? "Войти"
+                  : "Создать аккаунт"}
             </button>
             <button
               className="btn btn-ghost"
               type="button"
-              onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
+              disabled={authBusy}
+              onClick={() => {
+                setError(null);
+                setAuthMode(authMode === "login" ? "register" : "login");
+              }}
             >
               {authMode === "login" ? "Регистрация" : "У меня есть аккаунт"}
             </button>

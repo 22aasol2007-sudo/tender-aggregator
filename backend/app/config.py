@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     db_connect_timeout: int = 15
     db_pool_size: int = 5
     db_max_overflow: int = 10
+    # Fail checkout fast so auth/API don't hang when scrapes saturate the pool
+    db_pool_timeout: float = 10.0
     db_pool_recycle: int = 280
     db_statement_retries: int = 2
     cors_origins: Annotated[list[str], NoDecode] = [

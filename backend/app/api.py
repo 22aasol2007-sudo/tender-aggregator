@@ -684,7 +684,12 @@ async def scrape(
 ) -> ScrapeEnqueueOut:
     sources_req = body.sources if body else None
     if sync or not settings.scrape_via_worker:
-        runs = await run_scrape(db, sources_req)
+        # Release request-scoped session (shared with require_admin) before multi-minute scrape
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+        runs = await run_scrape(None, sources_req)
         return ScrapeEnqueueOut(mode="sync", runs=[ScrapeRunOut.model_validate(r) for r in runs])
     job = enqueue_job(db, "scrape", {"sources": sources_req})
     return ScrapeEnqueueOut(mode="queued", job=JobOut.model_validate(job))
