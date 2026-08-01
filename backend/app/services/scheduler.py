@@ -15,12 +15,21 @@ scheduler = AsyncIOScheduler()
 
 
 async def _scheduled_scrape() -> None:
+    import asyncio
+
     db = SessionLocal()
     try:
         if settings.scrape_via_worker:
             enqueue_job(db, "scrape", {})
         else:
-            await run_scrape(db)
+            # Hard ceiling so a stuck RU host can't block the interval forever
+            await asyncio.wait_for(
+                run_scrape(db),
+                timeout=float(settings.scrape_job_timeout_seconds),
+            )
+    except TimeoutError:
+        # Logged by uvicorn; next interval will retry
+        pass
     finally:
         db.close()
 

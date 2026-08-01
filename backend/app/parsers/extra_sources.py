@@ -185,7 +185,6 @@ class OtcParser(CommercialHtmlParser):
         self.search_urls = [
             "https://etp.otc.ru/tenders-search",
             "https://etp.otc.ru/tenders/223-fz",
-            "https://www.otc.ru/tenders-search/223-fz",
         ]
 
 

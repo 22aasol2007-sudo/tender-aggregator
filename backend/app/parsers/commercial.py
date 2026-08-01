@@ -557,10 +557,9 @@ class RoseltorgParser(CommercialHtmlParser):
         self.display_name = "Росэлторг"
         self.base_url = "https://www.roseltorg.ru"
         self.search_urls = [
-            # status 5 = приём заявок; also try without filter + page HTML fallback
+            # status 5 = приём заявок (AJAX HTML partial)
             "https://www.roseltorg.ru/procedures/search_ajax?page=1&status%5B%5D=5",
             "https://www.roseltorg.ru/procedures/search_ajax?page=1",
-            "https://www.roseltorg.ru/procedures/search?status[]=5",
         ]
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:

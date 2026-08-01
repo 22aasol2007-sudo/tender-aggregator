@@ -423,6 +423,21 @@ async def run_scrape(db: Session, source_ids: list[str] | None = None) -> list[S
         parsers = get_parsers()
         selected = source_ids or list(parsers.keys())
         selected = [s for s in selected if s in parsers]
+        # Fast path first: needs_api / SPA skips finish instantly; put slow RU hosts later
+        def _priority(sid: str) -> tuple[int, str]:
+            p = parsers.get(sid)
+            if p is None:
+                return (9, sid)
+            if getattr(p, "requires_api", False) and not getattr(p, "api_ready", False):
+                return (0, sid)
+            if not getattr(p, "public_listing", True):
+                return (1, sid)
+            # Known geo-heavy EIS last
+            if sid.startswith("zakupki") or sid in {"rnp", "bank_guarantees"}:
+                return (5, sid)
+            return (3, sid)
+
+        selected = sorted(selected, key=_priority)
         runs: list[ScrapeRun] = []
         all_new: list[int] = []
         all_touched: list[int] = []
