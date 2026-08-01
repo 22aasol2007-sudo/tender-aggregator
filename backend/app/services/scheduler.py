@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
@@ -46,6 +48,15 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=120,
+    )
+    # One-shot shortly after boot so fail-fast reset takes effect immediately
+    scheduler.add_job(
+        _scheduled_scrape,
+        "date",
+        run_date=datetime.now(timezone.utc) + timedelta(seconds=20),
+        id="scrape_all_startup",
+        replace_existing=True,
+        max_instances=1,
     )
     scheduler.add_job(
         _scheduled_monitor,
