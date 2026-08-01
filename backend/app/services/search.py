@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import func, not_, or_, text
+from sqlalchemy import func, literal_column, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -19,6 +19,9 @@ RANK_TERM_LIMIT = 40
 
 # OKPD-like codes first so they are never dropped when the query is long.
 _OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
+
+# SQL literal empty string — avoid bindparam collisions when OR-ing many _field_hit() clauses.
+_EMPTY = literal_column("''")
 
 
 def split_terms(value: str | None) -> list[str]:
@@ -59,19 +62,18 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
 def _field_hit(term: str):
     """True when any searchable field contains term.
 
-    COALESCE is required so NULLs do not poison OR/NOT expressions:
-    in SQL, `FALSE OR NULL` is NULL, and `NOT NULL` drops the row — which made
-    any exclude filter return zero tenders.
+    COALESCE uses a SQL literal empty string (not a bound '') so OR-ing many
+    term clauses does not collide bind parameter names and silently match nothing.
     """
     like = f"%{term}%"
     return or_(
-        func.coalesce(Tender.title, "").ilike(like),
-        func.coalesce(Tender.customer, "").ilike(like),
-        func.coalesce(Tender.description, "").ilike(like),
-        func.coalesce(Tender.external_id, "").ilike(like),
-        func.coalesce(Tender.okpd2, "").ilike(like),
-        func.coalesce(Tender.region, "").ilike(like),
-        func.coalesce(Tender.method, "").ilike(like),
+        func.coalesce(Tender.title, _EMPTY).ilike(like),
+        func.coalesce(Tender.customer, _EMPTY).ilike(like),
+        func.coalesce(Tender.description, _EMPTY).ilike(like),
+        func.coalesce(Tender.external_id, _EMPTY).ilike(like),
+        func.coalesce(Tender.okpd2, _EMPTY).ilike(like),
+        func.coalesce(Tender.region, _EMPTY).ilike(like),
+        func.coalesce(Tender.method, _EMPTY).ilike(like),
     )
 
 
@@ -83,6 +85,10 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
 
     if match_any:
         selected = prioritize_search_terms(terms, limit=MATCH_ANY_TERM_LIMIT)
+        if not selected:
+            return query
+        if len(selected) == 1:
+            return query.filter(_field_hit(selected[0]))
         return query.filter(or_(*[_field_hit(term) for term in selected]))
 
     for term in terms:
