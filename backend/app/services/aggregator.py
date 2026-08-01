@@ -566,7 +566,17 @@ async def run_scrape(db: Session | None = None, source_ids: list[str] | None = N
             seed_presets(own)
             await _update_saved_searches_and_notify(own)
             cache_clear("api:")
-            return runs
+            # Refresh + expunge so callers can serialize after this session closes
+            # (expire_on_commit + close otherwise raises DetachedInstanceError → HTTP 500).
+            safe: list[ScrapeRun] = []
+            for run in runs:
+                try:
+                    own.refresh(run)
+                except Exception:  # noqa: BLE001
+                    pass
+                own.expunge(run)
+                safe.append(run)
+            return safe
         finally:
             own.close()
 
