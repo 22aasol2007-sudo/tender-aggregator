@@ -34,8 +34,9 @@ class TekTorgParser(CommercialHtmlParser):
         self.source = "tektorg"
         self.display_name = "ТЕК-Торг"
         self.base_url = "https://www.tektorg.ru"
-        self.public_listing = True
-        self.unavailable_reason = None
+        # From EU/AMS: anti-bot page, not usable HTML/Next data without RU egress
+        self.public_listing = False
+        self.unavailable_reason = "ТЕК-Торг: антибот/DDoS с EU; нужен RU-прокси"
         self.search_urls = [
             "https://www.tektorg.ru/223-fz/procedures",
             "https://www.tektorg.ru/44-fz/procedures",
@@ -517,9 +518,10 @@ class RnpParser(EisRegistryParser):
     def __init__(self) -> None:
         self.source = "rnp"
         self.display_name = "РНП (ЕИС)"
+        self.public_listing = False
+        self.unavailable_reason = "РНП (ЕИС): zakupki.gov.ru недоступен из EU без RU-прокси"
         self.search_urls = [
             "https://zakupki.gov.ru/epz/dishonestsupplier/search/results.html",
-            "https://zakupki.gov.ru/epz/dishonestsupplier/quicksearch/search.html",
         ]
 
 
@@ -527,9 +529,10 @@ class BankGuaranteesParser(EisRegistryParser):
     def __init__(self) -> None:
         self.source = "bank_guarantees"
         self.display_name = "Банк гарантий (ЕИС)"
+        self.public_listing = False
+        self.unavailable_reason = "Банк гарантий (ЕИС): zakupki.gov.ru недоступен из EU без RU-прокси"
         self.search_urls = [
             "https://zakupki.gov.ru/epz/bankguarantee/search/results.html",
-            "https://zakupki.gov.ru/",
         ]
 
 

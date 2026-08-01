@@ -47,13 +47,13 @@ def monitor_snapshot(db: Session) -> dict:
         silent = False
         silent_for = None
 
-        # needs_api / SPA unavailable / fail-fast skip → clear status, not silence alarm
+        # needs_api / SPA unavailable / fail-fast skip → never «молчит»
         if status in _NON_SILENT_STATUSES or not flags["scrape_capable"]:
             silent = False
             silent_for = None
         elif last_ok is None:
-            # Expected-to-work scrape source that never succeeded after a run
-            silent = row["last_run_at"] is not None
+            # Never succeeded: only alarm critical EIS (geo/proxy gap), not every empty ETP
+            silent = row["source"] in CRITICAL_SOURCES and row["last_run_at"] is not None
             silent_for = None
         else:
             delta = now - (last_ok if last_ok.tzinfo else last_ok.replace(tzinfo=timezone.utc))

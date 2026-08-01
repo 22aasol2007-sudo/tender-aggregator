@@ -134,6 +134,15 @@ class ZakupkiParser:
         if tenders:
             self.last_fetch_note = None
             return tenders
+        # Skip slow HTML if RSS already hit transport/geo failure
+        note = (self.last_fetch_note or "").lower()
+        if any(x in note for x in ("connect", "timeout", "ssl", "geo", "captcha")):
+            if not self.last_fetch_note:
+                self.last_fetch_note = (
+                    f"ЕИС {self.law}-ФЗ недоступен из-за рубежа (SSL/geo). "
+                    "Нужен SCRAPE_PROXY_URL (RU-прокси)"
+                )
+            return []
         html_items = await self._from_html()
         if html_items:
             self.last_fetch_note = None
@@ -211,31 +220,23 @@ class ZakupkiParser:
 
         items: list[ParsedTender] = []
         notes: list[str] = []
-        bases = [self.BASE]
-        # One page first; second only if the first returned a full-ish page
-        for base in bases:
-            for page in (1, 2):
-                url = self._rss_url(page, base=base)
-                try:
-                    response = await cached_get(url, headers=headers)
-                except httpx.HTTPError as exc:
-                    notes.append(f"RSS {type(exc).__name__}")
-                    break
-                if response.status_code != 200:
-                    notes.append(f"RSS HTTP {response.status_code}")
-                    break
-                # Captcha / block pages are HTML without <item>
-                if "<item" not in response.text.lower() and "<entry" not in response.text.lower():
-                    notes.append("RSS без item (geo/captcha?)")
-                    break
-                feed = feedparser.parse(response.text)
-                page_items = self._parse_rss_feed(feed)
-                items.extend(page_items)
-                # EIS RSS often returns ~50; stop early on empty / short pages
-                if len(page_items) < 10:
-                    break
-            if items:
+        # One RSS page only — second page burns budget when EIS is geo-blocked from AMS
+        for page in (1,):
+            url = self._rss_url(page)
+            try:
+                response = await cached_get(url, headers=headers)
+            except httpx.HTTPError as exc:
+                notes.append(f"RSS {type(exc).__name__}")
                 break
+            if response.status_code != 200:
+                notes.append(f"RSS HTTP {response.status_code}")
+                break
+            if "<item" not in response.text.lower() and "<entry" not in response.text.lower():
+                notes.append("RSS без item (geo/captcha?)")
+                break
+            feed = feedparser.parse(response.text)
+            page_items = self._parse_rss_feed(feed)
+            items.extend(page_items)
         if notes and not items:
             self.last_fetch_note = "; ".join(notes[:3])
         return self._dedupe(items)
