@@ -398,12 +398,21 @@ class CommercialHtmlParser:
 
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.5",
         }
         items: list[ParsedTender] = []
         notes: list[str] = []
         for url in self.search_urls:
             try:
-                resp = await cached_get(url, headers=headers)
+                # AJAX endpoints on commercial ETPs often need X-Requested-With
+                call_headers = dict(headers)
+                if "ajax" in url.lower() or "search_ajax" in url.lower():
+                    call_headers["X-Requested-With"] = "XMLHttpRequest"
+                    call_headers["Accept"] = "text/html,application/json,*/*;q=0.8"
+                    call_headers["Sec-Fetch-Mode"] = "cors"
+                    call_headers["Sec-Fetch-Dest"] = "empty"
+                    call_headers["Sec-Fetch-Site"] = "same-origin"
+                resp = await cached_get(url, headers=call_headers)
             except httpx.HTTPError as exc:
                 notes.append(f"{urlparse(url).path or url}: {type(exc).__name__}")
                 continue

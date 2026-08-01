@@ -117,20 +117,22 @@ class ZakupkiParser:
     async def fetch(self) -> list[ParsedTender]:
         headers = {
             "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.5",
         }
-        from app.services.http_client import cached_get, get_client
-
-        client = get_client()
-        # Use shared client; RSS via cached_get for TTL
+        # RSS first (works better from abroad than full HTML search UI)
         tenders = await self._from_rss_cached(headers)
         if tenders:
             return tenders
-        return await self._from_html(client)
+        return await self._from_html()
 
     async def _from_rss(self, client: httpx.AsyncClient) -> list[ParsedTender]:
+        """Legacy path kept for tests; prefer _from_rss_cached in production."""
         items: list[ParsedTender] = []
         for page in (1, 2):
-            response = await client.get(self._rss_url(page))
+            try:
+                response = await client.get(self._rss_url(page))
+            except httpx.HTTPError:
+                continue
             if response.status_code != 200:
                 continue
             feed = feedparser.parse(response.text)
@@ -188,23 +190,37 @@ class ZakupkiParser:
         from app.services.http_client import cached_get
 
         items: list[ParsedTender] = []
+        # One page first; second only if the first returned a full-ish page
         for page in (1, 2):
-            response = await cached_get(self._rss_url(page), headers=headers)
+            try:
+                response = await cached_get(self._rss_url(page), headers=headers)
+            except httpx.HTTPError:
+                break
             if response.status_code != 200:
-                continue
+                break
             feed = feedparser.parse(response.text)
             page_items = self._parse_rss_feed(feed)
             items.extend(page_items)
-            if not page_items:
+            # EIS RSS often returns ~50; stop early on empty / short pages
+            if len(page_items) < 10:
                 break
         return self._dedupe(items)
 
-    async def _from_html(self, client: httpx.AsyncClient) -> list[ParsedTender]:
+    async def _from_html(self) -> list[ParsedTender]:
+        from app.services.http_client import cached_get
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.5",
+        }
         items: list[ParsedTender] = []
         for page in (1, 2):
-            response = await client.get(self._html_url(page))
+            try:
+                response = await cached_get(self._html_url(page), headers=headers)
+            except httpx.HTTPError:
+                break
             if response.status_code != 200:
-                continue
+                break
             soup = BeautifulSoup(response.text, "lxml")
             blocks = soup.select(".search-registry-entry-block") or soup.select(
                 "div.registry-entry__form"
@@ -244,6 +260,8 @@ class ZakupkiParser:
                         status="Размещено",
                     )
                 )
+            if not blocks:
+                break
         seen: set[str] = set()
         unique: list[ParsedTender] = []
         for item in items:

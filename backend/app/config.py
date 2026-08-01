@@ -37,16 +37,27 @@ class Settings(BaseSettings):
     ]
     scrape_interval_minutes: int = 3
     scrape_concurrency: int = 5
-    scrape_source_timeout_seconds: float = 120.0
+    scrape_source_timeout_seconds: float = 150.0
     scrape_job_timeout_seconds: float = 600.0
     stale_running_job_minutes: int = 20
-    http_timeout: float = 15.0
+    # Legacy single timeout (used as default read if http_read_timeout unset)
+    http_timeout: float = 45.0
+    http_connect_timeout: float = 12.0
+    http_read_timeout: float = 45.0
+    # Extra read budget for .gov.ru / commercial ETPs from abroad (US/EU→RU)
+    http_ru_read_timeout: float = 60.0
     http_verify_ssl: bool = True
-    http_retries: int = 2
+    # Total GET attempts (not "extra" retries). 3 helps geo-flaky RU routes.
+    http_retries: int = 3
     http_retry_statuses: Annotated[list[int], NoDecode] = [429, 502, 503, 504]
     http_cache_ttl_seconds: float = 180.0
     http_max_connections: int = 40
     http_max_keepalive: int = 20
+    # Optional egress proxy for RU hosts (http://user:pass@host:port or socks5://…)
+    scrape_proxy_url: str | None = None
+    http_proxy: str | None = None
+    https_proxy: str | None = None
+    all_proxy: str | None = None
     api_cache_ttl_seconds: float = 45.0
     approximate_count: bool = False
     fail_fast_failures: int = 3

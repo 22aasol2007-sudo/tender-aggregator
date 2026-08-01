@@ -121,12 +121,11 @@ async def enrich_tender(db: Session, tender: Tender, force: bool = False) -> Ten
     )
     html_url = tender.url
 
-    from app.services.http_client import get_client
+    from app.services.http_client import cached_get
 
-    client = get_client()
     xml_text = None
     try:
-        resp = await client.get(xml_url, headers=headers)
+        resp = await cached_get(xml_url, headers=headers)
         if resp.status_code == 200 and "<" in resp.text[:200]:
             xml_text = resp.text
     except httpx.HTTPError:
@@ -181,7 +180,7 @@ async def enrich_tender(db: Session, tender: Tender, force: bool = False) -> Ten
 
     if not tender.documents:
         try:
-            page = await client.get(html_url, headers=headers)
+            page = await cached_get(html_url, headers=headers)
             if page.status_code == 200:
                 soup = BeautifulSoup(page.text, "lxml")
                 docs = []

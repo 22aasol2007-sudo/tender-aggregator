@@ -273,7 +273,9 @@ async def _fetch_source(source_id: str) -> list[ParsedTender]:
 
     timeout = settings.scrape_source_timeout_seconds
     try:
-        return await asyncio.wait_for(with_retries(_do), timeout=timeout)
+        # URL-level retries live in http_client; only one fetch-level retry to
+        # avoid burning the source budget on stacked US→RU stalls.
+        return await asyncio.wait_for(with_retries(_do, retries=1), timeout=timeout)
     except TimeoutError as exc:
         raise TimeoutError(f"source {source_id} timed out after {timeout}s") from exc
 
