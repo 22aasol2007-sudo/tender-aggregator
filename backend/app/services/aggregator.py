@@ -339,8 +339,12 @@ def _source_empty_message(source_id: str) -> tuple[str, str]:
     return "empty", "Источник недоступен или пуст"
 
 
-async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, list[int], list[int]]:
-    """Scrape a single source; returns run, touched ids, brand-new ids."""
+async def _scrape_one_source(db: Session, source_id: str) -> tuple[int, list[int], list[int]]:
+    """Scrape a single source; returns run id, touched ids, brand-new ids.
+
+    Never returns a live ORM instance — callers reopen by PK so closed sessions
+    / expire_on_commit cannot raise DetachedInstanceError and fake ``fallback``.
+    """
     from app.database import SessionLocal
 
     run = ScrapeRun(source=source_id, status="running", fetched=0, upserted=0, skipped=0)
@@ -351,6 +355,13 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
     touched: list[int] = []
     new_ids: list[int] = []
 
+    def _finish(session: Session, row: ScrapeRun) -> tuple[int, list[int], list[int]]:
+        """Persist health metrics and return detached-safe ids only."""
+        session.commit()
+        session.refresh(row)
+        record_source_run(session, row)
+        return int(row.id), touched, new_ids
+
     parser = get_parsers().get(source_id)
     # API-only sources without credentials: mark clearly, don't burn fail-fast budget
     if parser is not None and getattr(parser, "requires_api", False) and not getattr(parser, "api_ready", False):
@@ -360,10 +371,7 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ"
         )[:1000]
         run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(run)
-        record_source_run(db, run)
-        return run, touched, new_ids
+        return _finish(db, run)
 
     # Known SPA / login walls: skip without spending the source timeout budget
     if parser is not None and not getattr(parser, "public_listing", True):
@@ -373,19 +381,13 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             or f"{getattr(parser, 'display_name', source_id)}: публичный список недоступен"
         )[:1000]
         run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(run)
-        record_source_run(db, run)
-        return run, touched, new_ids
+        return _finish(db, run)
 
     if _is_source_fail_fast(db, source_id):
         run.status = "skipped"
         run.error = f"fail-fast: {settings.fail_fast_failures}+ consecutive failures"
         run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(run)
-        record_source_run(db, run)
-        return run, touched, new_ids
+        return _finish(db, run)
 
     # Release pool connection during slow external HTTP (up to source timeout)
     db.close()
@@ -403,6 +405,7 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             run = ScrapeRun(source=source_id, status="error", fetched=0, upserted=0, skipped=0)
             db.add(run)
             db.flush()
+            run_id = int(run.id)
 
         if fetch_error:
             touched, new_ids = [], []
@@ -426,10 +429,7 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             run.status, run.error = _source_empty_message(source_id)
 
         run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(run)
-        record_source_run(db, run)
-        return run, touched, new_ids
+        return _finish(db, run)
     finally:
         db.close()
 
@@ -482,9 +482,7 @@ async def run_scrape(db: Session | None = None, source_ids: list[str] | None = N
                 # Each parallel task needs its own session for thread-safety
                 local = SessionLocal()
                 try:
-                    run, touched, new_ids = await _scrape_one_source(local, sid)
-                    # Capture PK while session is still open (close expires attrs)
-                    return int(run.id), touched, new_ids
+                    return await _scrape_one_source(local, sid)
                 finally:
                     local.close()
 
@@ -494,6 +492,36 @@ async def run_scrape(db: Session | None = None, source_ids: list[str] | None = N
         try:
             for sid, result in zip(selected, results):
                 if isinstance(result, BaseException):
+                    latest = (
+                        own.query(ScrapeRun)
+                        .filter(ScrapeRun.source == sid)
+                        .order_by(ScrapeRun.id.desc())
+                        .first()
+                    )
+                    # Post-commit ORM noise (historically DetachedInstanceError) must not
+                    # invent a second "fallback" row that overwrites real ok/empty in monitor.
+                    orm_noise = type(result).__name__ in {
+                        "DetachedInstanceError",
+                        "ObjectDeletedError",
+                        "InvalidRequestError",
+                    }
+                    if (
+                        orm_noise
+                        and latest is not None
+                        and latest.status != "running"
+                        and latest.finished_at is not None
+                    ):
+                        runs.append(latest)
+                        continue
+                    if latest is not None and latest.status == "running":
+                        latest.status = "fallback"
+                        latest.error = str(result)[:1000]
+                        latest.finished_at = datetime.now(timezone.utc)
+                        own.commit()
+                        own.refresh(latest)
+                        record_source_run(own, latest)
+                        runs.append(latest)
+                        continue
                     run = ScrapeRun(
                         source=sid,
                         status="fallback",

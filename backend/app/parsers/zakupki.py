@@ -134,14 +134,22 @@ class ZakupkiParser:
         if tenders:
             self.last_fetch_note = None
             return tenders
-        # Skip slow HTML if RSS already hit transport/geo failure
+        # Skip HTML only on hard transport failures. Soft RSS bodies
+        # ("без item", HTTP 403, captcha HTML) may still parse via HTML + RU proxy.
         note = (self.last_fetch_note or "").lower()
-        if any(x in note for x in ("connect", "timeout", "ssl", "geo", "captcha")):
-            if not self.last_fetch_note:
-                self.last_fetch_note = (
-                    f"ЕИС {self.law}-ФЗ недоступен из-за рубежа (SSL/geo). "
-                    "Нужен SCRAPE_PROXY_URL (RU-прокси)"
-                )
+        hard_transport = any(
+            x in note
+            for x in (
+                "connecterror",
+                "connecttimeout",
+                "readtimeout",
+                "timeout",
+                "sslerror",
+                "proxyerror",
+                "networkerror",
+            )
+        )
+        if hard_transport:
             return []
         html_items = await self._from_html()
         if html_items:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from random import choice, randint, uniform
@@ -423,6 +424,7 @@ class CommercialHtmlParser:
                     call_headers["Sec-Fetch-Mode"] = "cors"
                     call_headers["Sec-Fetch-Dest"] = "empty"
                     call_headers["Sec-Fetch-Site"] = "same-origin"
+                    call_headers["Referer"] = f"{urlparse(url).scheme}://{urlparse(url).netloc}/procedures/"
                 resp = await cached_get(url, headers=call_headers)
             except httpx.HTTPError as exc:
                 notes.append(f"{urlparse(url).path or url}: {type(exc).__name__}")
@@ -430,7 +432,22 @@ class CommercialHtmlParser:
             if resp.status_code != 200:
                 notes.append(f"{urlparse(url).netloc}{urlparse(url).path}: HTTP {resp.status_code}")
                 continue
-            soup = BeautifulSoup(resp.text, "lxml")
+            body = resp.text
+            # Some ETP AJAX endpoints wrap HTML in a JSON string/object
+            if body.lstrip()[:1] in "{[":
+                try:
+                    payload = json.loads(body)
+                    if isinstance(payload, str):
+                        body = payload
+                    elif isinstance(payload, dict):
+                        for key in ("html", "content", "data", "result"):
+                            val = payload.get(key)
+                            if isinstance(val, str) and ("<" in val or "procedure" in val.lower()):
+                                body = val
+                                break
+                except Exception:  # noqa: BLE001
+                    pass
+            soup = BeautifulSoup(body, "lxml")
             page_items = self._parse_soup(soup, url)
             if not page_items:
                 page_items = self._parse_links(soup, url)
@@ -568,6 +585,7 @@ class RoseltorgParser(CommercialHtmlParser):
             # status 5 = приём заявок (AJAX HTML partial)
             "https://www.roseltorg.ru/procedures/search_ajax?page=1&status%5B%5D=5",
             "https://www.roseltorg.ru/procedures/search_ajax?page=1",
+            "https://www.roseltorg.ru/procedures",
         ]
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
