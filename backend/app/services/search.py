@@ -4,7 +4,6 @@ import re
 
 from sqlalchemy import not_, or_, text
 from sqlalchemy.orm import Query
-from sqlalchemy.sql.elements import TextClause
 
 from app.database import is_postgres
 from app.models import Tender
@@ -41,50 +40,19 @@ def _field_hit(term: str):
     )
 
 
-def _pg_term_clause(term: str, *, prefix: str, index: int) -> TextClause:
-    """FTS + ILIKE clause with params bound on the Text() itself.
-
-    Important: do NOT use Query.params() — later filters (e.g. exclusions) can drop
-    those binds and the FTS clause silently matches nothing.
-    """
-    param = f"{prefix}_{index}"
-    like_param = f"{param}_like"
-    if " " in term:
-        clause = text(
-            f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
-            f"OR tenders.title ILIKE :{like_param} "
-            f"OR tenders.description ILIKE :{like_param} "
-            f"OR tenders.okpd2 ILIKE :{like_param})"
-        )
-    else:
-        clause = text(
-            f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
-            f"OR tenders.title ILIKE :{like_param} "
-            f"OR tenders.description ILIKE :{like_param} "
-            f"OR tenders.okpd2 ILIKE :{like_param})"
-        )
-    return clause.bindparams(**{param: term, like_param: f"%{term}%"})
-
-
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
+    """Filter by search terms.
+
+    Uses ORM ILIKE (not raw text().params) so later filters like exclusions
+    cannot drop bind parameters and silently zero out results.
+    """
     terms = split_terms(q)
     if not terms:
         return query
 
-    if is_postgres():
-        if match_any:
-            # Cap extreme OR fan-out to keep queries responsive
-            use_terms = terms[:40]
-            return query.filter(
-                or_(*[_pg_term_clause(term, prefix="q_inc", index=i) for i, term in enumerate(use_terms)])
-            )
-
-        for i, term in enumerate(terms):
-            query = query.filter(_pg_term_clause(term, prefix="q_inc", index=i))
-        return query
-
+    # Cap OR fan-out for huge niche defaults
     if match_any:
-        return query.filter(or_(*[_field_hit(term) for term in terms]))
+        return query.filter(or_(*[_field_hit(term) for term in terms[:40]]))
 
     for term in terms:
         query = query.filter(_field_hit(term))
@@ -103,14 +71,14 @@ def apply_exclusions(query: Query, exclude: str | None) -> Query:
 
 
 def fulltext_order_clause(q: str | None, *, match_any: bool = False):
+    """Optional Postgres relevance ORDER BY (bindparams stay on the clause)."""
     terms = split_terms(q)
     if not terms or not is_postgres():
         return None
     if match_any:
-        # OR-rank: sum of per-term ranks
         parts = []
         binds: dict[str, str] = {}
-        for i, term in enumerate(terms[:20]):  # bound cost
+        for i, term in enumerate(terms[:20]):
             param = f"q_rank_{i}"
             parts.append(f"ts_rank(tenders.search_vector, plainto_tsquery('russian', :{param}))")
             binds[param] = term
