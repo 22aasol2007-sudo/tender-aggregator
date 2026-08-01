@@ -188,3 +188,15 @@ def cleanup_polluted_tenders(db: Session) -> int:
     deleted = db.query(Tender).filter(Tender.id.in_(ids)).delete(synchronize_session=False)
     db.commit()
     return int(deleted or 0)
+
+
+def reset_fail_fast_streaks(db: Session) -> int:
+    """Clear consecutive_failures so a fresh deploy can re-probe sources."""
+    from app.models import SourceHealth
+
+    rows = db.query(SourceHealth).filter(SourceHealth.consecutive_failures > 0).all()
+    for row in rows:
+        row.consecutive_failures = 0
+    if rows:
+        db.commit()
+    return len(rows)

@@ -13,7 +13,7 @@ from app.database import SessionLocal, init_db
 from app.services.auth import ensure_default_admin
 from app.services.http_client import close_client
 from app.services.scheduler import start_scheduler, stop_scheduler
-from app.services.seed import cleanup_polluted_tenders, seed_if_empty, seed_presets
+from app.services.seed import cleanup_polluted_tenders, reset_fail_fast_streaks, seed_if_empty, seed_presets
 
 
 @asynccontextmanager
@@ -24,6 +24,10 @@ async def lifespan(_: FastAPI):
         ensure_default_admin(db)
         try:
             cleanup_polluted_tenders(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        try:
+            reset_fail_fast_streaks(db)
         except Exception:  # noqa: BLE001
             db.rollback()
         if settings.seed_if_empty:
