@@ -53,21 +53,29 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
         return unique
     okpd = [t for t in unique if _OKPD_TERM_RE.match(t)]
     rest = [t for t in unique if not _OKPD_TERM_RE.match(t)]
-    # Longer phrases next (more specific), then shorter stems
     rest.sort(key=lambda t: (-len(t), unique.index(t)))
-    ordered = okpd + rest
-    return ordered[:limit]
+    return (okpd + rest)[:limit]
 
 
-def _field_hit(term: str):
+def _field_hit(term: str, *, null_safe: bool = False):
     """True when any searchable field contains term.
 
-    Each call uses uniquely named bindparams so OR-ing many terms does not
-    collide empty-string / pattern binds (which previously made multi-term q
-    match nothing on Postgres).
+    Positive match (null_safe=False): plain ILIKE OR — safe to combine many terms.
+    Exclude path (null_safe=True): COALESCE so NOT(field_hit) does not drop rows on NULL.
+    Unique bindparam names avoid Postgres multi-term OR collapsing to zero matches.
     """
     n = next(_bind_seq)
     like = bindparam(f"ft_like_{n}", f"%{term}%")
+    if not null_safe:
+        return or_(
+            Tender.title.ilike(like),
+            Tender.customer.ilike(like),
+            Tender.description.ilike(like),
+            Tender.external_id.ilike(like),
+            Tender.okpd2.ilike(like),
+            Tender.region.ilike(like),
+            Tender.method.ilike(like),
+        )
     empty = bindparam(f"ft_empty_{n}", "")
     return or_(
         func.coalesce(Tender.title, empty).ilike(like),
@@ -91,11 +99,11 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
         if not selected:
             return query
         if len(selected) == 1:
-            return query.filter(_field_hit(selected[0]))
-        return query.filter(or_(*[_field_hit(term) for term in selected]))
+            return query.filter(_field_hit(selected[0], null_safe=False))
+        return query.filter(or_(*[_field_hit(term, null_safe=False) for term in selected]))
 
     for term in terms:
-        query = query.filter(_field_hit(term))
+        query = query.filter(_field_hit(term, null_safe=False))
     return query
 
 
@@ -106,7 +114,7 @@ def apply_exclusions(query: Query, exclude: str | None) -> Query:
         return query
 
     for term in terms:
-        query = query.filter(not_(_field_hit(term)))
+        query = query.filter(not_(_field_hit(term, null_safe=True)))
     return query
 
 
