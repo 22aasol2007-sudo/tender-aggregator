@@ -4,6 +4,7 @@ import re
 
 from sqlalchemy import not_, or_, text
 from sqlalchemy.orm import Query
+from sqlalchemy.sql.elements import TextClause
 
 from app.database import is_postgres
 from app.models import Tender
@@ -40,6 +41,31 @@ def _field_hit(term: str):
     )
 
 
+def _pg_term_clause(term: str, *, prefix: str, index: int) -> TextClause:
+    """FTS + ILIKE clause with params bound on the Text() itself.
+
+    Important: do NOT use Query.params() — later filters (e.g. exclusions) can drop
+    those binds and the FTS clause silently matches nothing.
+    """
+    param = f"{prefix}_{index}"
+    like_param = f"{param}_like"
+    if " " in term:
+        clause = text(
+            f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
+            f"OR tenders.title ILIKE :{like_param} "
+            f"OR tenders.description ILIKE :{like_param} "
+            f"OR tenders.okpd2 ILIKE :{like_param})"
+        )
+    else:
+        clause = text(
+            f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
+            f"OR tenders.title ILIKE :{like_param} "
+            f"OR tenders.description ILIKE :{like_param} "
+            f"OR tenders.okpd2 ILIKE :{like_param})"
+        )
+    return clause.bindparams(**{param: term, like_param: f"%{term}%"})
+
+
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
     terms = split_terms(q)
     if not terms:
@@ -47,47 +73,14 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
 
     if is_postgres():
         if match_any:
-            parts: list[str] = []
-            params: dict[str, str] = {}
-            for i, term in enumerate(terms):
-                param = f"q_inc_{i}"
-                # Phrase-aware FTS + ILIKE fallback for stems/ОКПД like 49.41
-                if " " in term:
-                    parts.append(
-                        f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
-                        f"OR tenders.title ILIKE :{param}_like "
-                        f"OR tenders.description ILIKE :{param}_like "
-                        f"OR tenders.okpd2 ILIKE :{param}_like)"
-                    )
-                else:
-                    parts.append(
-                        f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
-                        f"OR tenders.title ILIKE :{param}_like "
-                        f"OR tenders.description ILIKE :{param}_like "
-                        f"OR tenders.okpd2 ILIKE :{param}_like)"
-                    )
-                params[param] = term
-                params[f"{param}_like"] = f"%{term}%"
-            return query.filter(text("(" + " OR ".join(parts) + ")")).params(**params)
+            # Cap extreme OR fan-out to keep queries responsive
+            use_terms = terms[:40]
+            return query.filter(
+                or_(*[_pg_term_clause(term, prefix="q_inc", index=i) for i, term in enumerate(use_terms)])
+            )
 
         for i, term in enumerate(terms):
-            param = f"q_inc_{i}"
-            if " " in term:
-                query = query.filter(
-                    text(
-                        f"(tenders.search_vector @@ phraseto_tsquery('russian', :{param}) "
-                        f"OR tenders.title ILIKE :{param}_like "
-                        f"OR tenders.description ILIKE :{param}_like)"
-                    )
-                ).params(**{param: term, f"{param}_like": f"%{term}%"})
-            else:
-                query = query.filter(
-                    text(
-                        f"(tenders.search_vector @@ plainto_tsquery('russian', :{param}) "
-                        f"OR tenders.title ILIKE :{param}_like "
-                        f"OR tenders.okpd2 ILIKE :{param}_like)"
-                    )
-                ).params(**{param: term, f"{param}_like": f"%{term}%"})
+            query = query.filter(_pg_term_clause(term, prefix="q_inc", index=i))
         return query
 
     if match_any:
@@ -116,15 +109,15 @@ def fulltext_order_clause(q: str | None, *, match_any: bool = False):
     if match_any:
         # OR-rank: sum of per-term ranks
         parts = []
-        params: dict[str, str] = {}
+        binds: dict[str, str] = {}
         for i, term in enumerate(terms[:20]):  # bound cost
             param = f"q_rank_{i}"
             parts.append(f"ts_rank(tenders.search_vector, plainto_tsquery('russian', :{param}))")
-            params[param] = term
+            binds[param] = term
         expr = " + ".join(parts) + " DESC"
-        return text(expr).params(**params)
+        return text(expr).bindparams(**binds)
 
     joined = " ".join(terms)
-    return text("ts_rank(tenders.search_vector, plainto_tsquery('russian', :q_rank)) DESC").params(
-        q_rank=joined
-    )
+    return text(
+        "ts_rank(tenders.search_vector, plainto_tsquery('russian', :q_rank)) DESC"
+    ).bindparams(q_rank=joined)
