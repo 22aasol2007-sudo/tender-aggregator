@@ -387,6 +387,13 @@ class CommercialHtmlParser:
         return False
 
     async def fetch(self) -> list[ParsedTender]:
+        # Known SPA/login walls: do not spend the source timeout budget on dead HTML
+        if not self.public_listing:
+            self.last_fetch_note = self.unavailable_reason or "Публичный HTML недоступен"
+            return []
+        return await self._fetch_html()
+
+    async def _fetch_html(self) -> list[ParsedTender]:
         from app.services.http_client import cached_get
 
         headers = {
@@ -411,9 +418,7 @@ class CommercialHtmlParser:
             if items:
                 break
         self.last_fetch_note = "; ".join(notes[:3]) if notes else None
-        if not items and not self.public_listing and self.unavailable_reason:
-            self.last_fetch_note = self.unavailable_reason
-        elif not items and self.unavailable_reason and not self.last_fetch_note:
+        if not items and self.unavailable_reason and not self.last_fetch_note:
             self.last_fetch_note = self.unavailable_reason
         return items
 
@@ -534,7 +539,6 @@ class RoseltorgParser(CommercialHtmlParser):
         self.search_urls = [
             "https://www.roseltorg.ru/procedures/search_ajax?page=1&status%5B%5D=5",
             "https://www.roseltorg.ru/procedures/search?status[]=5",
-            "https://www.roseltorg.ru/procedures/search",
         ]
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:

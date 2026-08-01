@@ -37,12 +37,12 @@ class Settings(BaseSettings):
     ]
     scrape_interval_minutes: int = 3
     scrape_concurrency: int = 5
-    scrape_source_timeout_seconds: float = 90.0
+    scrape_source_timeout_seconds: float = 120.0
     scrape_job_timeout_seconds: float = 600.0
     stale_running_job_minutes: int = 20
-    http_timeout: float = 12.0
+    http_timeout: float = 15.0
     http_verify_ssl: bool = True
-    http_retries: int = 3
+    http_retries: int = 2
     http_retry_statuses: Annotated[list[int], NoDecode] = [429, 502, 503, 504]
     http_cache_ttl_seconds: float = 180.0
     http_max_connections: int = 40

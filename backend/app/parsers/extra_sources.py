@@ -48,7 +48,6 @@ class FabrikantParser(CommercialHtmlParser):
         self.search_urls = [
             "https://fabrikant.ru/procedure/search/purchases",
             "https://www.fabrikant.ru/trades/procedure/search/",
-            "https://fabrikant.ru/procedure/search",
         ]
 
 
