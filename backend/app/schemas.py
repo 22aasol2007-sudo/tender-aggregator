@@ -78,6 +78,7 @@ class NicheOut(BaseModel):
     exclude: str
     okpd: list[str] = Field(default_factory=list)
     eis_search_passes: list[str] = Field(default_factory=list)
+    search_engine: str | None = None
     presets: dict[str, NichePresetOut] = Field(default_factory=dict)
 
 
