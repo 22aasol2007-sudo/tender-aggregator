@@ -341,10 +341,13 @@ def _source_empty_message(source_id: str) -> tuple[str, str]:
 
 async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, list[int], list[int]]:
     """Scrape a single source; returns run, touched ids, brand-new ids."""
+    from app.database import SessionLocal
+
     run = ScrapeRun(source=source_id, status="running", fetched=0, upserted=0, skipped=0)
     db.add(run)
     db.commit()
     db.refresh(run)
+    run_id = int(run.id)
     touched: list[int] = []
     new_ids: list[int] = []
 
@@ -384,9 +387,31 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
         record_source_run(db, run)
         return run, touched, new_ids
 
+    # Release pool connection during slow external HTTP (up to source timeout)
+    db.close()
+    fetch_error: str | None = None
+    items: list = []
     try:
         items = await _fetch_source(source_id)
-        if items:
+    except Exception as exc:  # noqa: BLE001
+        fetch_error = str(exc)[:1000]
+
+    db = SessionLocal()
+    try:
+        run = db.get(ScrapeRun, run_id)
+        if run is None:
+            run = ScrapeRun(source=source_id, status="error", fetched=0, upserted=0, skipped=0)
+            db.add(run)
+            db.flush()
+
+        if fetch_error:
+            touched, new_ids = [], []
+            run.fetched = 0
+            run.upserted = 0
+            run.skipped = 0
+            run.status = "error"
+            run.error = fetch_error
+        elif items:
             upserted, skipped, touched, new_ids = upsert_tenders_collect_new(db, items)
             run.fetched = len(items)
             run.upserted = upserted
@@ -394,25 +419,19 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             run.status = "ok"
             run.error = None
         else:
-            # Never upsert demo rows into production — seed_if_empty handles empty DB only
             touched, new_ids = [], []
             run.fetched = 0
             run.upserted = 0
             run.skipped = 0
             run.status, run.error = _source_empty_message(source_id)
-    except Exception as exc:  # noqa: BLE001
-        touched, new_ids = [], []
-        run.fetched = 0
-        run.upserted = 0
-        run.skipped = 0
-        run.status = "error"
-        run.error = str(exc)[:1000]
 
-    run.finished_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(run)
-    record_source_run(db, run)
-    return run, touched, new_ids
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(run)
+        record_source_run(db, run)
+        return run, touched, new_ids
+    finally:
+        db.close()
 
 
 async def run_scrape(db: Session | None = None, source_ids: list[str] | None = None) -> list[ScrapeRun]:

@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     )
     allow_sqlite_fallback: bool = False
     db_connect_timeout: int = 15
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    db_pool_size: int = 8
+    db_max_overflow: int = 12
     # Fail checkout fast so auth/API don't hang when scrapes saturate the pool
-    db_pool_timeout: float = 10.0
+    db_pool_timeout: float = 8.0
     db_pool_recycle: int = 280
     db_statement_retries: int = 2
     cors_origins: Annotated[list[str], NoDecode] = [
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         "https://tender-aggregator-22aasol2007-sudo-22aasol2007-sudos-projects.vercel.app",
     ]
     scrape_interval_minutes: int = 3
-    scrape_concurrency: int = 3
+    scrape_concurrency: int = 1
     scrape_source_timeout_seconds: float = 100.0
     scrape_job_timeout_seconds: float = 600.0
     stale_running_job_minutes: int = 20
