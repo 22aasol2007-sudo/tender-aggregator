@@ -156,7 +156,7 @@ def seed_presets(db: Session) -> None:
 
 
 def cleanup_polluted_tenders(db: Session) -> int:
-    """Remove demo rows and junk parser artifacts (sort-link IDs, header titles)."""
+    """Remove demo rows and junk parser artifacts (sort-link IDs, tsid, header titles)."""
     from sqlalchemy import or_
 
     from app.models import TenderChange, TenderWatch
@@ -169,6 +169,8 @@ def cleanup_polluted_tenders(db: Session) -> int:
             or_(
                 Tender.external_id.like("DEMO%"),
                 Tender.external_id.like("order_by%"),
+                Tender.external_id.ilike("%tsid%"),
+                Tender.external_id.ilike("tsid%"),
                 Tender.title.in_(junk_titles),
             )
         )

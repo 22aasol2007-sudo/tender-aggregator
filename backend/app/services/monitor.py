@@ -43,7 +43,12 @@ def monitor_snapshot(db: Session) -> dict:
                 }
             )
 
-    unhealthy = [m for m in metrics if m["last_status"] in {"fallback", "error"} or m["consecutive_failures"] >= 3]
+    unhealthy = [
+        m
+        for m in metrics
+        if m["last_status"] in {"fallback", "error"}
+        or (m["consecutive_failures"] >= 3 and m["last_status"] not in {"needs_api", "skipped"})
+    ]
     return {
         "checked_at": now.isoformat(),
         "silence_minutes": silence_minutes,

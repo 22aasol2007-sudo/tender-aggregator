@@ -45,8 +45,18 @@ def record_source_run(db: Session, run: ScrapeRun) -> SourceHealth:
         row.success_count = (row.success_count or 0) + 1
         row.last_ok_at = now
         row.consecutive_failures = 0
-        if (run.fetched or 0) == 0:
-            row.empty_count = (row.empty_count or 0) + 1
+    elif run.status == "empty":
+        row.empty_count = (row.empty_count or 0) + 1
+        parser = get_parsers().get(run.source)
+        # Known SPA/login sources: record empty truthfully but don't fail-fast lock
+        if parser is not None and not getattr(parser, "public_listing", True):
+            row.consecutive_failures = 0
+        else:
+            row.consecutive_failures = (row.consecutive_failures or 0) + 1
+    elif run.status == "needs_api":
+        # Credentials gap — not a transport error; don't inflate error_count / fail-fast
+        row.empty_count = (row.empty_count or 0) + 1
+        row.consecutive_failures = 0
     elif run.status == "fallback":
         row.fallback_count = (row.fallback_count or 0) + 1
         row.consecutive_failures = (row.consecutive_failures or 0) + 1
@@ -66,7 +76,7 @@ def source_metrics(db: Session) -> list[dict]:
     rows = db.query(SourceHealth).order_by(SourceHealth.source).all()
     out = []
     for row in rows:
-        total = (row.success_count or 0) + (row.fallback_count or 0) + (row.error_count or 0)
+        total = (row.success_count or 0) + (row.fallback_count or 0) + (row.error_count or 0) + (row.empty_count or 0)
         success_rate = round(100.0 * (row.success_count or 0) / total, 1) if total else 0.0
         out.append(
             {

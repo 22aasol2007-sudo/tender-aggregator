@@ -25,18 +25,51 @@ _JUNK_TITLES = {
     "дата",
     "регион",
     "площадка",
+    "подробнее",
+    "далее",
+    "читать",
 }
 _TRACKING_PARAMS = {
     "sqh",
     "tsid",
     "sid",
     "session",
+    "btid",
+    "mst",
+    "miid",
     "utm_source",
     "utm_medium",
     "utm_campaign",
     "utm_content",
     "utm_term",
 }
+
+# Whole-page fallback: detail URLs that usually mean a real procedure.
+_DETAIL_HREF_RE = re.compile(
+    r"(?:"
+    r"/procedure/[A-Za-z0-9][A-Za-z0-9_-]{3,}"
+    r"|/procedures?/\d+"
+    r"|/v2/trades/procedure/view/[A-Za-z0-9_-]+"
+    r"|/tender-\d+"
+    r"|/\d{5,}-tender"
+    r"|/region/[^\"'#?\s]+/\d{5,}-tender[^\"'#?\s]*"
+    r"|/app/market-next/[^\"'#?\s]+/tender-\d+"
+    r"|/market/[^\"'#?\s]+/tender-\d+"
+    r")",
+    re.I,
+)
+
+_CARD_SELECTORS = (
+    "article",
+    ".tender-row",
+    ".search-results__item",
+    ".search-result",
+    ".procedure",
+    ".tender",
+    ".lot",
+    ".registry-entry",
+    "tr",
+)
 
 
 def _ssl_verify() -> bool | str:
@@ -72,9 +105,13 @@ def _is_junk_row(href: str, title: str) -> bool:
     low = title.strip().lower()
     if low in _JUNK_TITLES or len(title.strip()) < 12:
         return True
+    if re.match(r"^лот\s*\d+\b", low):
+        return True
     if re.search(r"[?&]order_by=|[?&]order_dir=|[?&]sort=|/login|/register|javascript:", href, re.I):
         return True
     if href.rstrip("/").endswith("#") or href.strip() == "#":
+        return True
+    if re.search(r"/procedures?/search|/procedure/search|/market/\?|/extsearch/?$", href, re.I):
         return True
     return False
 
@@ -93,6 +130,9 @@ def _extract_external_id(href: str, source: str, idx: int) -> str | None:
                 return val[:64]
 
     patterns = [
+        r"/v2/trades/procedure/view/([A-Za-z0-9_-]{8,})",
+        r"/procedure/[A-Za-z]{1,6}\d*/(\d{10,})",
+        r"/procedure/([A-Za-z0-9][A-Za-z0-9_-]{5,})",
         r"tender[_/-]?(\d{4,})",
         r"/(\d{5,})-tender",
         r"/tenders?/(\d+)",
@@ -101,16 +141,21 @@ def _extract_external_id(href: str, source: str, idx: int) -> str | None:
         r"regNumber[=/](\d+)",
         r"/lot/(\d+)",
         r"[?&]id=(\d{4,})",
+        r"/Notice/(\d{4,})",
     ]
     for pat in patterns:
         m = re.search(pat, href, re.I)
         if m:
-            return m.group(1)
+            return m.group(1)[:64]
 
     # Listing/sort pages with no numeric id — skip
     if re.search(r"[?&]order_by=|/market/?$", href, re.I) and not re.search(r"\d{4,}", path):
         return None
     if path in ("", "/") or path.count("/") < 2:
+        return None
+    # Reject tracking-looking ids
+    leaf = path.rstrip("/").split("/")[-1].lower()
+    if leaf in _TRACKING_PARAMS or leaf.startswith("tsid") or leaf.startswith("order_by"):
         return None
 
     kept = {
@@ -323,46 +368,71 @@ def _demo_for(source: str, count: int = 8) -> list[ParsedTender]:
 
 
 class CommercialHtmlParser:
-    """Базовый адаптер коммерческих ЭТП: пробует публичный HTML, иначе demo."""
+    """Базовый адаптер коммерческих ЭТП: публичный HTML, без demo-pollution."""
 
     source: str
     display_name: str
     search_urls: list[str]
     base_url: str
+    requires_api: bool = False
+    public_listing: bool = True
+    unavailable_reason: str | None = None
+    last_fetch_note: str | None = None
 
     def __init__(self) -> None:
         raise NotImplementedError
+
+    @property
+    def api_ready(self) -> bool:
+        return False
 
     async def fetch(self) -> list[ParsedTender]:
         from app.services.http_client import cached_get
 
         headers = {
-            "Accept": "text/html,application/xhtml+xml",
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
         }
         items: list[ParsedTender] = []
+        notes: list[str] = []
         for url in self.search_urls:
             try:
                 resp = await cached_get(url, headers=headers)
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                notes.append(f"{urlparse(url).path or url}: {type(exc).__name__}")
                 continue
             if resp.status_code != 200:
+                notes.append(f"{urlparse(url).netloc}{urlparse(url).path}: HTTP {resp.status_code}")
                 continue
             soup = BeautifulSoup(resp.text, "lxml")
-            items.extend(self._parse_soup(soup, url))
+            page_items = self._parse_soup(soup, url)
+            if not page_items:
+                page_items = self._parse_links(soup, url)
+            items.extend(page_items)
             if items:
                 break
+        self.last_fetch_note = "; ".join(notes[:3]) if notes else None
+        if not items and not self.public_listing and self.unavailable_reason:
+            self.last_fetch_note = self.unavailable_reason
+        elif not items and self.unavailable_reason and not self.last_fetch_note:
+            self.last_fetch_note = self.unavailable_reason
         return items
-
 
     def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
         items: list[ParsedTender] = []
-        cards = soup.select("article, .tender, .procedure, .search-result, .lot, tr")[:60]
+        cards = soup.select(", ".join(_CARD_SELECTORS))[:80]
         for idx, card in enumerate(cards):
-            link = card.select_one("a[href]")
+            link = card.select_one(
+                "a[href*='procedure'], a[href*='tender'], a[href*='Notice'], a.search-results__link, a[href]"
+            )
             if not link:
                 continue
             href = link.get("href") or ""
             title = link.get_text(" ", strip=True)
+            if not title or len(title) < 12:
+                # Rostender / cards: title may sit in a sibling block
+                title_el = card.select_one(".tender__title, .search-results__subject, .title, h2, h3")
+                if title_el:
+                    title = title_el.get_text(" ", strip=True)
             if not title:
                 continue
             if href.startswith("/"):
@@ -394,15 +464,53 @@ class CommercialHtmlParser:
                     law="223-ФЗ" if self.source != "b2b_center" else None,
                 )
             )
-        # de-dupe by external_id
-        seen: set[str] = set()
-        unique: list[ParsedTender] = []
-        for item in items:
-            if item.external_id in seen:
+        return self._dedupe(items)
+
+    def _parse_links(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
+        """Fallback: harvest detail anchors when card selectors miss SPA-ish markup."""
+        items: list[ParsedTender] = []
+        for idx, link in enumerate(soup.select("a[href]")):
+            href = link.get("href") or ""
+            if not _DETAIL_HREF_RE.search(href):
                 continue
-            seen.add(item.external_id)
-            unique.append(item)
-        return unique[:30]
+            title = link.get_text(" ", strip=True)
+            if not title or len(title) < 12:
+                continue
+            if href.startswith("/"):
+                href = urljoin(self.base_url, href)
+            elif not href.startswith("http"):
+                continue
+            if _is_junk_row(href, title):
+                continue
+            ext = _extract_external_id(href, self.source, idx)
+            if not ext:
+                continue
+            parent_text = ""
+            parent = link.find_parent(["article", "div", "li", "tr"])
+            if parent is not None:
+                parent_text = parent.get_text(" ", strip=True)[:1500]
+            items.append(
+                ParsedTender(
+                    external_id=ext[:64],
+                    source=self.source,
+                    title=title[:500],
+                    url=href.split("#")[0],
+                    price=_parse_price(parent_text),
+                    status="Подача заявок",
+                    description=parent_text or None,
+                    law="223-ФЗ" if self.source != "b2b_center" else None,
+                )
+            )
+        return self._dedupe(items)
+
+    @staticmethod
+    def _dedupe(items: list[ParsedTender]) -> list[ParsedTender]:
+        best: dict[str, ParsedTender] = {}
+        for item in items:
+            prev = best.get(item.external_id)
+            if prev is None or len(item.title or "") > len(prev.title or ""):
+                best[item.external_id] = item
+        return list(best.values())[:40]
 
 
 class RtsParser(CommercialHtmlParser):
@@ -410,9 +518,11 @@ class RtsParser(CommercialHtmlParser):
         self.source = "rts"
         self.display_name = "РТС-тендер"
         self.base_url = "https://www.rts-tender.ru"
+        self.public_listing = False
+        self.unavailable_reason = "РТС-тендер: публичный поиск отвечает 503 / недоступен без ЛК"
         self.search_urls = [
-            "https://www.rts-tender.ru/search",
             "https://www.rts-tender.ru/",
+            "https://www.rts-tender.ru/search",
         ]
 
 
@@ -422,19 +532,66 @@ class RoseltorgParser(CommercialHtmlParser):
         self.display_name = "Росэлторг"
         self.base_url = "https://www.roseltorg.ru"
         self.search_urls = [
-            "https://www.roseltorg.ru/procedures",
-            "https://www.roseltorg.ru/",
+            "https://www.roseltorg.ru/procedures/search_ajax?page=1&status%5B%5D=5",
+            "https://www.roseltorg.ru/procedures/search?status[]=5",
+            "https://www.roseltorg.ru/procedures/search",
         ]
+
+    def _parse_soup(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
+        items: list[ParsedTender] = []
+        cards = soup.select(".search-results__item, .autoload-post")[:60]
+        if not cards:
+            return super()._parse_soup(soup, page_url)
+        for idx, card in enumerate(cards):
+            link = card.select_one("a.search-results__link--description, a.search-results__link[href*='/procedure/']")
+            if not link:
+                link = card.select_one("a[href*='/procedure/']")
+            if not link:
+                continue
+            href = link.get("href") or ""
+            title = link.get_text(" ", strip=True)
+            subject = card.select_one(".search-results__subject")
+            if subject:
+                subj_text = subject.get_text(" ", strip=True)
+                if len(subj_text) > len(title):
+                    title = subj_text
+            if href.startswith("/"):
+                href = urljoin(self.base_url, href)
+            if not title or _is_junk_row(href, title):
+                continue
+            ext = _extract_external_id(href, self.source, idx)
+            if not ext:
+                continue
+            text = card.get_text(" ", strip=True)
+            items.append(
+                ParsedTender(
+                    external_id=ext[:64],
+                    source=self.source,
+                    title=title[:500],
+                    url=href.split("#")[0],
+                    price=_parse_price(text),
+                    status="Подача заявок",
+                    description=text[:1500],
+                    law="223-ФЗ",
+                )
+            )
+        return self._dedupe(items)
 
 
 class SberAstParser(CommercialHtmlParser):
     def __init__(self) -> None:
         self.source = "sber_ast"
         self.display_name = "Сбербанк-АСТ"
-        self.base_url = "https://www.sberbank-ast.ru"
+        self.base_url = "https://utp.sberbank-ast.ru"
+        self.public_listing = False
+        self.unavailable_reason = (
+            "Сбербанк-АСТ: публичный список процедур требует ЛК (purchaseList.html устарел)"
+        )
         self.search_urls = [
-            "https://www.sberbank-ast.ru/purchaseList.html",
-            "https://www.sberbank-ast.ru/",
+            "https://utp.sberbank-ast.ru/Trade/List/PurchaseList",
+            "https://utp.sberbank-ast.ru/Main/List/UnitedPurchaseListNew",
+            "https://www.sberbank-ast.ru/purchaseList.aspx",
+            "https://www.sberbank-ast.ru/ViewPurchaseList.aspx",
         ]
 
 

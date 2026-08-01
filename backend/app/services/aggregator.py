@@ -142,9 +142,10 @@ def _is_junk_item(item: ParsedTender) -> bool:
     url = (item.url or "").strip()
     if not ext or not title or not url:
         return True
+    low_ext = ext.lower()
     if ext.upper().startswith("DEMO"):
         return True
-    if ext.lower().startswith("order_by"):
+    if low_ext.startswith("order_by") or "tsid" in low_ext:
         return True
     if title.lower() in junk_titles:
         return True
@@ -319,6 +320,21 @@ async def _update_saved_searches_and_notify(db: Session) -> None:
     db.commit()
 
 
+def _source_empty_message(source_id: str) -> tuple[str, str]:
+    """Return (status, error) when a source yields no tenders."""
+    parser = get_parsers().get(source_id)
+    if parser is None:
+        return "empty", "Неизвестный источник"
+    requires_api = bool(getattr(parser, "requires_api", False))
+    api_ready = bool(getattr(parser, "api_ready", False))
+    note = getattr(parser, "last_fetch_note", None) or getattr(parser, "unavailable_reason", None)
+    if requires_api and not api_ready:
+        return "needs_api", (note or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ")[:1000]
+    if note:
+        return "empty", str(note)[:1000]
+    return "empty", "Источник недоступен или пуст"
+
+
 async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, list[int], list[int]]:
     """Scrape a single source; returns run, touched ids, brand-new ids."""
     run = ScrapeRun(source=source_id, status="running", fetched=0, upserted=0, skipped=0)
@@ -327,6 +343,20 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
     db.refresh(run)
     touched: list[int] = []
     new_ids: list[int] = []
+
+    parser = get_parsers().get(source_id)
+    # API-only sources without credentials: mark clearly, don't burn fail-fast budget
+    if parser is not None and getattr(parser, "requires_api", False) and not getattr(parser, "api_ready", False):
+        run.status = "needs_api"
+        run.error = (
+            getattr(parser, "unavailable_reason", None)
+            or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ"
+        )[:1000]
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(run)
+        record_source_run(db, run)
+        return run, touched, new_ids
 
     if _is_source_fail_fast(db, source_id):
         run.status = "skipped"
@@ -352,8 +382,7 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
             run.fetched = 0
             run.upserted = 0
             run.skipped = 0
-            run.status = "empty"
-            run.error = "Источник недоступен или пуст"
+            run.status, run.error = _source_empty_message(source_id)
     except Exception as exc:  # noqa: BLE001
         touched, new_ids = [], []
         run.fetched = 0
