@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import bindparam, func, not_, or_, text
+from sqlalchemy import and_, bindparam, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -18,7 +18,7 @@ SPACE_SPLIT_RE = re.compile(r"\s+")
 MATCH_ANY_TERM_LIMIT = 80
 RANK_TERM_LIMIT = 40
 
-# OKPD-like codes first so they are never dropped when the query is long.
+# OKPD-like codes — match okpd2 prefix only (avoid price/false hits like 49.4 in amounts).
 _OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
 
 _bind_seq = itertools.count(1)
@@ -58,12 +58,7 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
 
 
 def _field_hit(term: str, *, null_safe: bool = False):
-    """True when any searchable field contains term.
-
-    Positive match (null_safe=False): plain ILIKE OR — safe to combine many terms.
-    Exclude path (null_safe=True): COALESCE so NOT(field_hit) does not drop rows on NULL.
-    Unique bindparam names avoid Postgres multi-term OR collapsing to zero matches.
-    """
+    """True when any searchable field contains term."""
     n = next(_bind_seq)
     like = bindparam(f"ft_like_{n}", f"%{term}%")
     if not null_safe:
@@ -88,6 +83,25 @@ def _field_hit(term: str, *, null_safe: bool = False):
     )
 
 
+def _okpd_hit(code: str):
+    """OKPD codes match okpd2 prefix only — never free-text (prices/dates)."""
+    n = next(_bind_seq)
+    return Tender.okpd2.ilike(bindparam(f"ft_okpd_{n}", f"{code}%"))
+
+
+def _phrase_hit(phrase: str, *, null_safe: bool = False):
+    """One niche alternative: OKPD code, single stem, or AND of words in a phrase."""
+    if _OKPD_TERM_RE.match(phrase):
+        return _okpd_hit(phrase)
+    words = [w for w in SPACE_SPLIT_RE.split(phrase) if w]
+    if not words:
+        return _field_hit(phrase, null_safe=null_safe)
+    if len(words) == 1:
+        return _field_hit(words[0], null_safe=null_safe)
+    # Multi-word phrase: all words must appear (possibly in different fields)
+    return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
+
+
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
     """Filter by search terms via ORM ILIKE (safe with later exclude filters)."""
     terms = split_terms(q)
@@ -99,11 +113,11 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
         if not selected:
             return query
         if len(selected) == 1:
-            return query.filter(_field_hit(selected[0], null_safe=False))
-        return query.filter(or_(*[_field_hit(term, null_safe=False) for term in selected]))
+            return query.filter(_phrase_hit(selected[0], null_safe=False))
+        return query.filter(or_(*[_phrase_hit(term, null_safe=False) for term in selected]))
 
     for term in terms:
-        query = query.filter(_field_hit(term, null_safe=False))
+        query = query.filter(_phrase_hit(term, null_safe=False))
     return query
 
 
@@ -114,7 +128,8 @@ def apply_exclusions(query: Query, exclude: str | None) -> Query:
         return query
 
     for term in terms:
-        query = query.filter(not_(_field_hit(term, null_safe=True)))
+        # Exclusions stay null-safe; multi-word exclude = AND (all words present)
+        query = query.filter(not_(_phrase_hit(term, null_safe=True)))
     return query
 
 

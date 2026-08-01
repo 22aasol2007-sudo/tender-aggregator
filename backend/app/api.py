@@ -235,29 +235,6 @@ def niche() -> NicheOut:
     return NicheOut.model_validate(niche_payload())
 
 
-@router.get("/debug/search")
-def debug_search(
-    q: str | None = None,
-    match_any: bool = True,
-    db: Session = Depends(get_db),
-) -> dict:
-    """Temporary: inspect multi-term OR search counts (no secrets)."""
-    from app.services.search import apply_fulltext, prioritize_search_terms, split_terms
-
-    terms = split_terms(q)
-    selected = prioritize_search_terms(terms, limit=80) if match_any else terms
-    filtered = apply_fulltext(db.query(Tender), q, match_any=match_any)
-    return {
-        "q": q,
-        "q_len": len(q or ""),
-        "terms": terms,
-        "terms_n": len(terms),
-        "selected_n": len(selected),
-        "count": filtered.count(),
-        "search_engine": "plain-ilike-or-v3",
-    }
-
-
 @router.get("/stats", response_model=StatsOut)
 def stats(db: Session = Depends(get_db)) -> StatsOut:
     from app.services.cache import cache_get, cache_set, make_key
