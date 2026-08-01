@@ -435,6 +435,14 @@ class CommercialHtmlParser:
             if not page_items:
                 page_items = self._parse_links(soup, url)
             items.extend(page_items)
+            if not page_items:
+                low = resp.text.lower()
+                if "защитой от ботов" in low or ("ddos" in low and "прерван" in low):
+                    notes.append(f"{urlparse(url).netloc}: антибот")
+                elif len(resp.text) < 2000:
+                    notes.append(f"{urlparse(url).netloc}: короткий ответ {len(resp.text)}b")
+                else:
+                    notes.append(f"{urlparse(url).netloc}: HTTP 200, 0 карточек")
             if items:
                 break
         self.last_fetch_note = "; ".join(notes[:3]) if notes else None
