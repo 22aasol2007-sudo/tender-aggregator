@@ -332,7 +332,8 @@ def _source_empty_message(source_id: str) -> tuple[str, str]:
     note = getattr(parser, "last_fetch_note", None) or getattr(parser, "unavailable_reason", None)
     if requires_api and not api_ready:
         return "needs_api", (note or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ")[:1000]
-    if not getattr(parser, "public_listing", True):
+    # API-ready sources already ran fetch — report empty/note, not SPA skip
+    if not getattr(parser, "public_listing", True) and not api_ready:
         return "skipped", (note or f"{getattr(parser, 'display_name', source_id)}: публичный список недоступен")[:1000]
     if note:
         return "empty", str(note)[:1000]
@@ -468,10 +469,15 @@ async def run_scrape(db: Session | None = None, source_ids: list[str] | None = N
             p = parsers.get(sid)
             if p is None:
                 return (9, sid)
-            if getattr(p, "requires_api", False) and not getattr(p, "api_ready", False):
+            requires_api = getattr(p, "requires_api", False)
+            api_ready = getattr(p, "api_ready", False)
+            if requires_api and not api_ready:
                 return (0, sid)
-            if not getattr(p, "public_listing", True):
+            if not getattr(p, "public_listing", True) and not api_ready:
                 return (1, sid)
+            # API-ready commercial ingest early (fast JSON)
+            if requires_api and api_ready:
+                return (2, sid)
             # Known geo-heavy EIS last
             if sid.startswith("zakupki") or sid in {"rnp", "bank_guarantees"}:
                 return (5, sid)

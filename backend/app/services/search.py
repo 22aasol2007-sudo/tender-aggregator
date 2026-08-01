@@ -13,6 +13,13 @@ from app.models import Tender
 COMMA_SPLIT_RE = re.compile(r"[,;]+")
 SPACE_SPLIT_RE = re.compile(r"\s+")
 
+# Full niche OR queries exceed the old 40-term cap; keep a hard ceiling for safety.
+MATCH_ANY_TERM_LIMIT = 80
+RANK_TERM_LIMIT = 40
+
+# OKPD-like codes first so they are never dropped when the query is long.
+_OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
+
 
 def split_terms(value: str | None) -> list[str]:
     if not value:
@@ -25,6 +32,28 @@ def split_terms(value: str | None) -> list[str]:
     else:
         parts = SPACE_SPLIT_RE.split(raw)
     return [p.strip() for p in parts if p.strip()]
+
+
+def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
+    """Prefer OKPD codes, then longer phrases; preserve first-seen order within buckets."""
+    if not terms:
+        return []
+    seen: set[str] = set()
+    unique: list[str] = []
+    for term in terms:
+        key = term.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(term)
+    if len(unique) <= limit:
+        return unique
+    okpd = [t for t in unique if _OKPD_TERM_RE.match(t)]
+    rest = [t for t in unique if not _OKPD_TERM_RE.match(t)]
+    # Longer phrases next (more specific), then shorter stems
+    rest.sort(key=lambda t: (-len(t), unique.index(t)))
+    ordered = okpd + rest
+    return ordered[:limit]
 
 
 def _field_hit(term: str):
@@ -53,7 +82,8 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
         return query
 
     if match_any:
-        return query.filter(or_(*[_field_hit(term) for term in terms[:40]]))
+        selected = prioritize_search_terms(terms, limit=MATCH_ANY_TERM_LIMIT)
+        return query.filter(or_(*[_field_hit(term) for term in selected]))
 
     for term in terms:
         query = query.filter(_field_hit(term))
@@ -79,7 +109,8 @@ def fulltext_order_clause(q: str | None, *, match_any: bool = False):
     if match_any:
         parts = []
         binds: dict[str, str] = {}
-        for i, term in enumerate(terms[:20]):
+        selected = prioritize_search_terms(terms, limit=RANK_TERM_LIMIT)
+        for i, term in enumerate(selected):
             param = f"q_rank_{i}"
             parts.append(f"ts_rank(tenders.search_vector, plainto_tsquery('russian', :{param}))")
             binds[param] = term

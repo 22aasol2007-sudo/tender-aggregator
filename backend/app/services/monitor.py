@@ -21,8 +21,8 @@ def _parser_flags(source_id: str) -> dict:
     requires_api = bool(parser and getattr(parser, "requires_api", False))
     api_ready = bool(parser and getattr(parser, "api_ready", False))
     public_listing = bool(parser is None or getattr(parser, "public_listing", True))
-    # Scrape-capable: we expect HTTP listing/API without paid credentials
-    scrape_capable = (not requires_api or api_ready) and public_listing
+    # Scrape-capable: public HTML listing, OR API credentials configured
+    scrape_capable = api_ready or (public_listing and not requires_api)
     return {
         "requires_api": requires_api,
         "api_ready": api_ready,

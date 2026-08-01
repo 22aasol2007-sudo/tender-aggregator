@@ -59,8 +59,13 @@ def record_source_run(db: Session, run: ScrapeRun) -> SourceHealth:
     elif run.status == "empty":
         row.empty_count = (row.empty_count or 0) + 1
         parser = get_parsers().get(run.source)
-        # Known SPA/login sources: record empty truthfully but don't fail-fast lock
-        if parser is not None and not getattr(parser, "public_listing", True):
+        # SPA/login walls or API-backed sources: don't fail-fast lock
+        api_ready = bool(
+            parser is not None
+            and getattr(parser, "requires_api", False)
+            and getattr(parser, "api_ready", False)
+        )
+        if parser is not None and (not getattr(parser, "public_listing", True) or api_ready):
             row.consecutive_failures = 0
         else:
             row.consecutive_failures = (row.consecutive_failures or 0) + 1
