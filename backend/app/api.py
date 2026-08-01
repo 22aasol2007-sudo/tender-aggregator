@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections import defaultdict, deque
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -39,6 +41,10 @@ from app.schemas import (
     ScrapeEnqueueOut,
     ScrapeRequest,
     ScrapeRunOut,
+    SourceCredentialIn,
+    SourceCredentialOut,
+    SourceCredentialTestIn,
+    SourceCredentialTestOut,
     StatsOut,
     TelegramIn,
     TenderChangeOut,
@@ -68,8 +74,30 @@ from app.services.jobs import enqueue_job
 from app.services.monitor import monitor_snapshot, run_monitor_and_alert
 from app.services.scoring import score_tender
 from app.services.search import fulltext_order_clause
+from app.services.source_credentials import (
+    API_SOURCES,
+    list_credential_status,
+    resolve_credentials,
+    test_credential_connection,
+    upsert_credential,
+)
 
 router = APIRouter()
+
+# Light in-memory rate limit for credential writes (per admin user).
+_CRED_WRITE_WINDOW_SEC = 60.0
+_CRED_WRITE_MAX = 20
+_cred_write_hits: dict[int, deque[float]] = defaultdict(deque)
+
+
+def _rate_limit_cred_writes(user_id: int) -> None:
+    now = time.monotonic()
+    q = _cred_write_hits[user_id]
+    while q and now - q[0] > _CRED_WRITE_WINDOW_SEC:
+        q.popleft()
+    if len(q) >= _CRED_WRITE_MAX:
+        raise HTTPException(status_code=429, detail="Слишком много сохранений, подождите минуту")
+    q.append(now)
 
 
 def _db_label() -> str:
@@ -847,3 +875,62 @@ def delete_preset(
     db.delete(preset)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.get("/admin/scrape-credentials", response_model=list[SourceCredentialOut])
+def get_scrape_credentials(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[SourceCredentialOut]:
+    """Masked credential status. Tokens never returned in full."""
+    return [SourceCredentialOut.model_validate(row) for row in list_credential_status(db)]
+
+
+@router.put("/admin/scrape-credentials/{source}", response_model=SourceCredentialOut)
+def put_scrape_credential(
+    source: str,
+    body: SourceCredentialIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SourceCredentialOut:
+    if source not in API_SOURCES:
+        raise HTTPException(status_code=404, detail="Unknown API source")
+    _rate_limit_cred_writes(admin.id)
+    try:
+        row = upsert_credential(
+            db,
+            source=source,
+            api_url=body.api_url,
+            api_token=body.api_token,
+            clear_token=body.clear_token,
+            user_id=admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SourceCredentialOut.model_validate(row)
+
+
+@router.post(
+    "/admin/scrape-credentials/{source}/test",
+    response_model=SourceCredentialTestOut,
+)
+async def test_scrape_credential(
+    source: str,
+    body: SourceCredentialTestIn | None = None,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SourceCredentialTestOut:
+    if source not in API_SOURCES:
+        raise HTTPException(status_code=404, detail="Unknown API source")
+    _rate_limit_cred_writes(admin.id)
+
+    stored_url, stored_token = resolve_credentials(source, db)
+    url = (body.api_url if body and body.api_url is not None else stored_url) or ""
+    token = ""
+    if body and body.api_token:
+        token = body.api_token
+    else:
+        token = stored_token or ""
+
+    result = await test_credential_connection(url, token)
+    return SourceCredentialTestOut.model_validate(result)

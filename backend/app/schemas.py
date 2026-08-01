@@ -250,3 +250,32 @@ class ScrapeEnqueueOut(BaseModel):
     mode: str
     job: JobOut | None = None
     runs: list[ScrapeRunOut] | None = None
+
+
+class SourceCredentialOut(BaseModel):
+    source: str
+    label: str
+    api_url: str | None = None
+    token_configured: bool = False
+    token_masked: str | None = None
+    configured: bool = False
+    url_from_db: bool = False
+    token_from_db: bool = False
+    updated_at: datetime | None = None
+
+
+class SourceCredentialIn(BaseModel):
+    api_url: str | None = None
+    api_token: str | None = Field(default=None, max_length=4096)
+    clear_token: bool = False
+
+
+class SourceCredentialTestIn(BaseModel):
+    api_url: str | None = None
+    api_token: str | None = Field(default=None, max_length=4096)
+
+
+class SourceCredentialTestOut(BaseModel):
+    ok: bool
+    status_code: int | None = None
+    detail: str

@@ -246,3 +246,23 @@ class ScrapeRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SourceApiCredential(Base):
+    """Admin-managed API URL/token overrides for commercial scrape sources.
+
+    Non-empty DB values win over env vars (CONTOUR_API_* etc.).
+    """
+
+    __tablename__ = "source_api_credentials"
+    __table_args__ = (UniqueConstraint("source", name="uq_source_api_credentials_source"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    api_url: Mapped[str | None] = mapped_column(Text)
+    api_token: Mapped[str | None] = mapped_column(Text)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

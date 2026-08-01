@@ -5,6 +5,7 @@ import {
   FilterPreset,
   Profile,
   SavedSearch,
+  SourceCredential,
   SourceInfo,
   Stats,
   Tender,
@@ -29,6 +30,7 @@ import {
   fetchRegions,
   fetchRelated,
   fetchSavedSearches,
+  fetchScrapeCredentials,
   fetchSourceMetrics,
   fetchSources,
   fetchStats,
@@ -45,9 +47,11 @@ import {
   presetToFilters,
   register,
   saveProfile,
+  saveScrapeCredential,
   saveTelegram,
   setWatch,
   sourceLabel,
+  testScrapeCredential,
   triggerScrape,
   ComplianceResult,
   Customer,
@@ -84,6 +88,10 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQ, setCustomerQ] = useState("");
   const [compliance, setCompliance] = useState<ComplianceResult | null>(null);
+  const [credStatus, setCredStatus] = useState<SourceCredential[]>([]);
+  const [credDrafts, setCredDrafts] = useState<Record<string, { api_url: string; api_token: string }>>({});
+  const [credBusy, setCredBusy] = useState<string | null>(null);
+  const [credMsg, setCredMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -244,6 +252,27 @@ export default function App() {
           setMetrics([]);
           setMonitor(null);
         });
+      if (user?.is_admin) {
+        void fetchScrapeCredentials()
+          .then((rows) => {
+            setCredStatus(rows);
+            setCredDrafts((prev) => {
+              const next = { ...prev };
+              for (const row of rows) {
+                if (!next[row.source]) {
+                  next[row.source] = { api_url: row.api_url || "", api_token: "" };
+                } else {
+                  next[row.source] = {
+                    ...next[row.source],
+                    api_url: next[row.source].api_url || row.api_url || "",
+                  };
+                }
+              }
+              return next;
+            });
+          })
+          .catch(() => setCredStatus([]));
+      }
     }
     if (tab === "customers") {
       void fetchCustomers(customerQ).then(setCustomers).catch(() => setCustomers([]));
@@ -275,6 +304,75 @@ export default function App() {
       setError(err instanceof Error ? err.message : "Ошибка обновления");
     } finally {
       setScraping(false);
+    }
+  }
+
+  async function onSaveCredential(source: string) {
+    const draft = credDrafts[source] || { api_url: "", api_token: "" };
+    setCredBusy(source);
+    setCredMsg(null);
+    setError(null);
+    try {
+      const payload: { api_url: string; api_token?: string } = { api_url: draft.api_url };
+      if (draft.api_token.trim()) payload.api_token = draft.api_token.trim();
+      const saved = await saveScrapeCredential(source, payload);
+      setCredStatus((prev) => prev.map((r) => (r.source === source ? saved : r)));
+      setCredDrafts((prev) => ({
+        ...prev,
+        [source]: { api_url: saved.api_url || "", api_token: "" },
+      }));
+      setCredMsg(
+        saved.configured
+          ? `${saved.label}: сохранено. Нажмите «Обновить сейчас», чтобы сбросить статус «нужен API».`
+          : `${saved.label}: сохранено (нужны и URL, и токен).`,
+      );
+      const mon = await fetchMonitor();
+      setMonitor(mon);
+      setMetrics(mon.sources);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка сохранения API");
+    } finally {
+      setCredBusy(null);
+    }
+  }
+
+  async function onTestCredential(source: string) {
+    const draft = credDrafts[source] || { api_url: "", api_token: "" };
+    setCredBusy(source);
+    setCredMsg(null);
+    setError(null);
+    try {
+      const result = await testScrapeCredential(source, {
+        api_url: draft.api_url || undefined,
+        api_token: draft.api_token.trim() || undefined,
+      });
+      setCredMsg(
+        result.ok
+          ? `${source}: соединение OK (${result.status_code})`
+          : `${source}: ${result.detail}${result.status_code != null ? ` (${result.status_code})` : ""}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка проверки API");
+    } finally {
+      setCredBusy(null);
+    }
+  }
+
+  async function onClearCredentialToken(source: string) {
+    setCredBusy(source);
+    setCredMsg(null);
+    try {
+      const draft = credDrafts[source] || { api_url: "", api_token: "" };
+      const saved = await saveScrapeCredential(source, {
+        api_url: draft.api_url,
+        clear_token: true,
+      });
+      setCredStatus((prev) => prev.map((r) => (r.source === source ? saved : r)));
+      setCredMsg(`${saved.label}: токен удалён из БД (останется env, если задан).`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка очистки токена");
+    } finally {
+      setCredBusy(null);
     }
   }
 
@@ -588,6 +686,121 @@ export default function App() {
               </article>
             ))}
           </div>
+        </section>
+      )}
+
+      {tab === "monitor" && user?.is_admin && (
+        <section className="panel profile-form" style={{ marginTop: "1rem" }}>
+          <h3>API ключи сервисов</h3>
+          <p className="muted">
+            Значения из базы имеют приоритет над переменными окружения (CONTOUR_API_* и т.д.).
+            После сохранения нажмите «Обновить сейчас», чтобы сбросить статус «нужен API».
+            Токен после сохранения не показывается целиком — только маска.
+          </p>
+          {credMsg && <p className="muted">{credMsg}</p>}
+          {credStatus.map((row) => {
+            const draft = credDrafts[row.source] || { api_url: row.api_url || "", api_token: "" };
+            const busy = credBusy === row.source;
+            return (
+              <div key={row.source} className="cred-card">
+                <div className="tender-meta" style={{ marginBottom: "0.4rem" }}>
+                  <span className="chip chip-accent">{row.label}</span>
+                  <span className="chip">{row.source}</span>
+                  {row.configured ? (
+                    <span className="chip">настроено</span>
+                  ) : (
+                    <span className="chip chip-law">нужен API</span>
+                  )}
+                  {row.token_configured && row.token_masked && (
+                    <span className="chip">токен {row.token_masked}</span>
+                  )}
+                  {(row.url_from_db || row.token_from_db) && (
+                    <span className="chip">из БД</span>
+                  )}
+                </div>
+                <label>API URL</label>
+                <input
+                  value={draft.api_url}
+                  placeholder="https://…"
+                  onChange={(e) =>
+                    setCredDrafts((prev) => ({
+                      ...prev,
+                      [row.source]: { ...draft, api_url: e.target.value },
+                    }))
+                  }
+                />
+                <label>API токен</label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={draft.api_token}
+                  placeholder={
+                    row.token_configured
+                      ? `Сохранён: ${row.token_masked || "••••"} — оставьте пустым, чтобы не менять`
+                      : "Вставьте токен"
+                  }
+                  onChange={(e) =>
+                    setCredDrafts((prev) => ({
+                      ...prev,
+                      [row.source]: { ...draft, api_token: e.target.value },
+                    }))
+                  }
+                />
+                <div className="hero-actions">
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onSaveCredential(row.source)}
+                  >
+                    {busy ? "…" : "Сохранить"}
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onTestCredential(row.source)}
+                  >
+                    Проверить
+                  </button>
+                  {row.token_from_db && (
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onClearCredentialToken(row.source)}
+                    >
+                      Удалить токен из БД
+                    </button>
+                  )}
+                  {row.configured && (
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={scraping || busy}
+                      onClick={() => {
+                        setScraping(true);
+                        setError(null);
+                        void triggerScrape([row.source])
+                          .then(async () => {
+                            setCredMsg(`${row.label}: сбор запущен.`);
+                            const mon = await fetchMonitor();
+                            setMonitor(mon);
+                            setMetrics(mon.sources);
+                          })
+                          .catch((err) =>
+                            setError(err instanceof Error ? err.message : "Ошибка обновления"),
+                          )
+                          .finally(() => setScraping(false));
+                      }}
+                    >
+                      Обновить сейчас
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </section>
       )}
 

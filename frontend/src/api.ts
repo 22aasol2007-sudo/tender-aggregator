@@ -364,10 +364,10 @@ export async function fetchRegions(): Promise<string[]> {
   return api("/meta/regions");
 }
 
-export async function triggerScrape(): Promise<unknown> {
+export async function triggerScrape(sources?: string[]): Promise<unknown> {
   const data = await api<{ mode: string; job?: { id: number; status: string } }>("/scrape", {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify(sources?.length ? { sources } : {}),
   });
   if (data.mode === "queued" && data.job?.id) {
     // Poll job briefly so UI waits for worker if it's running
@@ -431,6 +431,48 @@ export type MonitorSnapshot = {
   unhealthy_count: number;
   alerts: { source: string; message: string }[];
 };
+
+export type SourceCredential = {
+  source: string;
+  label: string;
+  api_url: string | null;
+  token_configured: boolean;
+  token_masked: string | null;
+  configured: boolean;
+  url_from_db: boolean;
+  token_from_db: boolean;
+  updated_at: string | null;
+};
+
+export type SourceCredentialTestResult = {
+  ok: boolean;
+  status_code: number | null;
+  detail: string;
+};
+
+export async function fetchScrapeCredentials(): Promise<SourceCredential[]> {
+  return api("/admin/scrape-credentials");
+}
+
+export async function saveScrapeCredential(
+  source: string,
+  payload: { api_url?: string | null; api_token?: string | null; clear_token?: boolean },
+): Promise<SourceCredential> {
+  return api(`/admin/scrape-credentials/${encodeURIComponent(source)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function testScrapeCredential(
+  source: string,
+  payload?: { api_url?: string | null; api_token?: string | null },
+): Promise<SourceCredentialTestResult> {
+  return api(`/admin/scrape-credentials/${encodeURIComponent(source)}/test`, {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+}
 
 export type Customer = {
   id: number;

@@ -8,7 +8,6 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
-from app.config import settings
 from app.parsers.base import ParsedTender
 from app.parsers.commercial import (
     CommercialHtmlParser,
@@ -17,6 +16,7 @@ from app.parsers.commercial import (
     _parse_dt,
     _parse_price,
 )
+from app.services.source_credentials import resolve_credentials
 
 
 class EtpGpbParser(CommercialHtmlParser):
@@ -331,7 +331,7 @@ class KartotekaParser(CommercialHtmlParser):
 
 
 class ApiBackedParser(CommercialHtmlParser):
-    """Optional JSON API with token from settings. Without credentials → needs_api."""
+    """Optional JSON API with token from DB (wins) or env settings. Without credentials → needs_api."""
 
     api_url: str | None = None
     api_token: str | None = None
@@ -414,8 +414,7 @@ class ContourParser(ApiBackedParser):
         self.display_name = "Контур.Закупки"
         self.base_url = "https://zakupki.kontur.ru"
         self.search_urls = ["https://zakupki.kontur.ru/"]
-        self.api_url = settings.contour_api_url
-        self.api_token = settings.contour_api_token
+        self.api_url, self.api_token = resolve_credentials("contour")
         self.public_listing = False
         self.unavailable_reason = "Контур.Закупки: нужен CONTOUR_API_URL + CONTOUR_API_TOKEN"
 
@@ -426,8 +425,7 @@ class TenderplanParser(ApiBackedParser):
         self.display_name = "Tenderplan"
         self.base_url = "https://tenderplan.ru"
         self.search_urls = ["https://tenderplan.ru/"]
-        self.api_url = settings.tenderplan_api_url
-        self.api_token = settings.tenderplan_api_token
+        self.api_url, self.api_token = resolve_credentials("tenderplan")
         self.public_listing = False
         self.unavailable_reason = "Tenderplan: нужен TENDERPLAN_API_URL + TENDERPLAN_API_TOKEN"
 
@@ -438,8 +436,7 @@ class TenderlandParser(ApiBackedParser):
         self.display_name = "Tenderland"
         self.base_url = "https://tenderland.ru"
         self.search_urls = ["https://tenderland.ru/"]
-        self.api_url = settings.tenderland_api_url
-        self.api_token = settings.tenderland_api_token
+        self.api_url, self.api_token = resolve_credentials("tenderland")
         self.public_listing = False
         self.unavailable_reason = "Tenderland: нужен TENDERLAND_API_URL + TENDERLAND_API_TOKEN"
 
@@ -450,8 +447,7 @@ class SynapseParser(ApiBackedParser):
         self.display_name = "Synapse"
         self.base_url = "https://synapsenet.ru"
         self.search_urls = ["https://synapsenet.ru/"]
-        self.api_url = settings.synapse_api_url
-        self.api_token = settings.synapse_api_token
+        self.api_url, self.api_token = resolve_credentials("synapse")
         self.public_listing = False
         self.unavailable_reason = "Synapse: нужен SYNAPSE_API_URL + SYNAPSE_API_TOKEN"
 
