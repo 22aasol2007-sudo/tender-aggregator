@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import not_, or_, text
+from sqlalchemy import func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -28,29 +28,30 @@ def split_terms(value: str | None) -> list[str]:
 
 
 def _field_hit(term: str):
+    """True when any searchable field contains term.
+
+    COALESCE is required so NULLs do not poison OR/NOT expressions:
+    in SQL, `FALSE OR NULL` is NULL, and `NOT NULL` drops the row — which made
+    any exclude filter return zero tenders.
+    """
     like = f"%{term}%"
     return or_(
-        Tender.title.ilike(like),
-        Tender.customer.ilike(like),
-        Tender.description.ilike(like),
-        Tender.external_id.ilike(like),
-        Tender.okpd2.ilike(like),
-        Tender.region.ilike(like),
-        Tender.method.ilike(like),
+        func.coalesce(Tender.title, "").ilike(like),
+        func.coalesce(Tender.customer, "").ilike(like),
+        func.coalesce(Tender.description, "").ilike(like),
+        func.coalesce(Tender.external_id, "").ilike(like),
+        func.coalesce(Tender.okpd2, "").ilike(like),
+        func.coalesce(Tender.region, "").ilike(like),
+        func.coalesce(Tender.method, "").ilike(like),
     )
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
-    """Filter by search terms.
-
-    Uses ORM ILIKE (not raw text().params) so later filters like exclusions
-    cannot drop bind parameters and silently zero out results.
-    """
+    """Filter by search terms via ORM ILIKE (safe with later exclude filters)."""
     terms = split_terms(q)
     if not terms:
         return query
 
-    # Cap OR fan-out for huge niche defaults
     if match_any:
         return query.filter(or_(*[_field_hit(term) for term in terms[:40]]))
 
