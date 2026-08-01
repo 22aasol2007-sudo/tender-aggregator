@@ -9,6 +9,15 @@ from app.models import Tender
 from app.services.search import apply_exclusions, apply_fulltext
 
 
+def _clean_str(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"undefined", "null", "none"}:
+        return None
+    return text
+
+
 def apply_tender_filters(
     query: Query,
     *,
@@ -31,6 +40,15 @@ def apply_tender_filters(
     if hide_outdated is None:
         hide_outdated = settings.hide_outdated_default
 
+    q = _clean_str(q)
+    exclude = _clean_str(exclude)
+    source = _clean_str(source)
+    law = _clean_str(law)
+    region = _clean_str(region)
+    method = _clean_str(method)
+    okpd2 = _clean_str(okpd2)
+    status_norm = _clean_str(status_norm)
+
     query = apply_fulltext(query, q, match_any=match_any)
     query = apply_exclusions(query, exclude)
     if source:
@@ -38,11 +56,11 @@ def apply_tender_filters(
     if law:
         query = query.filter(Tender.law == law)
     if region:
-        query = query.filter(Tender.region.ilike(f"%{region.strip()}%"))
+        query = query.filter(Tender.region.ilike(f"%{region}%"))
     if method:
-        query = query.filter(Tender.method.ilike(f"%{method.strip()}%"))
+        query = query.filter(Tender.method.ilike(f"%{method}%"))
     if okpd2:
-        query = query.filter(Tender.okpd2.ilike(f"{okpd2.strip()}%"))
+        query = query.filter(Tender.okpd2.ilike(f"{okpd2}%"))
     if status_norm:
         query = query.filter(Tender.status_norm == status_norm)
     if min_price is not None:
@@ -58,9 +76,9 @@ def apply_tender_filters(
     if hide_outdated:
         now = datetime.now(timezone.utc)
         query = query.filter((Tender.deadline_at.is_(None)) | (Tender.deadline_at >= now))
+        # Empty status_norm = all statuses. Only drop cancelled when hiding outdated
+        # and the user did not explicitly pick a status (including cancelled).
         if not status_norm:
-            query = query.filter(Tender.status_norm == "accepting")
-        else:
             query = query.filter(Tender.status_norm != "cancelled")
     return query
 
@@ -74,7 +92,12 @@ def filters_from_dict(raw: dict) -> dict:
 
     def fstr(key: str):
         val = raw.get(key)
-        return str(val) if val not in (None, "") else None
+        if val in (None, ""):
+            return None
+        text = str(val).strip()
+        if not text or text.lower() in {"undefined", "null", "none"}:
+            return None
+        return text
 
     def fbool(key: str, default: bool):
         if key not in raw:

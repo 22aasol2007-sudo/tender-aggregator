@@ -16,3 +16,4 @@ frontend/dist/
 frontend/.env.neon
 .env.neon
 
+.vercel

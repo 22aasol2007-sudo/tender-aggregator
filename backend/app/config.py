@@ -34,6 +34,8 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://tender-aggregator-lac.vercel.app",
+        "https://tender-aggregator-22aasol2007-sudos-projects.vercel.app",
+        "https://tender-aggregator-22aasol2007-sudo-22aasol2007-sudos-projects.vercel.app",
     ]
     scrape_interval_minutes: int = 3
     scrape_concurrency: int = 3
@@ -97,12 +99,15 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors(cls, v):  # noqa: ANN001
+        defaults = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://tender-aggregator-lac.vercel.app",
+            "https://tender-aggregator-22aasol2007-sudos-projects.vercel.app",
+            "https://tender-aggregator-22aasol2007-sudo-22aasol2007-sudos-projects.vercel.app",
+        ]
         if v is None or v == "":
-            return [
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "https://tender-aggregator-lac.vercel.app",
-            ]
+            return defaults
         if isinstance(v, list):
             return v
         text = str(v).strip()

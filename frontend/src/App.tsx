@@ -38,6 +38,8 @@ import {
   filtersToPayload,
   formatDate,
   formatPrice,
+  getToken,
+  isAuthFailure,
   login,
   logout,
   presetToFilters,
@@ -97,11 +99,19 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      try {
-        const me = await fetchMe();
-        setUser(me);
-      } catch {
-        logout();
+      const token = getToken();
+      if (token) {
+        try {
+          const me = await fetchMe();
+          setUser(me);
+        } catch (err) {
+          // Only drop session on real auth failure; keep token on network/API blips
+          if (isAuthFailure(err)) {
+            logout();
+            setUser(null);
+          }
+        }
+      } else {
         setUser(null);
       }
       try {

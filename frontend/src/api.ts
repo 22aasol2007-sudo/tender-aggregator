@@ -143,7 +143,8 @@ export const emptyFilters: Filters = {
   region: "",
   method: "",
   okpd2: "",
-  status_norm: "accepting",
+  // Empty = all statuses (optional filters must not restrict by default)
+  status_norm: "",
   min_price: "",
   max_price: "",
   deadline_from: "",
@@ -153,13 +154,44 @@ export const emptyFilters: Filters = {
   sort: "relevance",
 };
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem("token");
+}
+
+export function isAuthFailure(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
 function authHeaders(): HeadersInit {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function clearToken() {
   localStorage.removeItem("token");
+}
+
+/** Only clear session on definitive auth failures for session endpoints — never on public 401s or login mistakes. */
+function shouldClearTokenOn401(path: string): boolean {
+  const bare = path.split("?")[0];
+  return bare === "/auth/me" || bare === "/profile" || bare.startsWith("/watches") || bare.startsWith("/saved-searches");
+}
+
+/** Treat blank / placeholder strings as unset so they are omitted from the query. */
+function optParam(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s || s === "undefined" || s === "null" || s === "None") return null;
+  return s;
 }
 
 function formatApiError(text: string, status: number): string {
@@ -193,14 +225,14 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
         signal: init?.signal,
       });
       if (!res.ok) {
-        if (res.status === 401) clearToken();
+        if (res.status === 401 && shouldClearTokenOn401(path)) clearToken();
         const retryable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504;
         if (retryable && attempt < maxAttempts && !init?.signal?.aborted) {
           await new Promise((r) => setTimeout(r, 400 * attempt));
           continue;
         }
         const text = await res.text();
-        throw new Error(formatApiError(text, res.status));
+        throw new ApiError(formatApiError(text, res.status), res.status);
       }
       if (res.status === 204) return undefined as T;
       return res.json();
@@ -210,13 +242,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       }
       lastError = err instanceof Error ? err : new Error(String(err));
       // Network blips — retry unless aborted
-      if (attempt < maxAttempts && !(err instanceof Error && err.message.startsWith("HTTP"))) {
+      if (attempt < maxAttempts && !(err instanceof ApiError)) {
         await new Promise((r) => setTimeout(r, 400 * attempt));
         continue;
       }
       // Already formatted API errors should not silently retry further
       if (attempt >= maxAttempts) break;
-      if (err instanceof Error && /HTTP (429|502|503|504)/.test(err.message)) {
+      if (err instanceof ApiError && [429, 502, 503, 504].includes(err.status)) {
         await new Promise((r) => setTimeout(r, 400 * attempt));
         continue;
       }
@@ -252,6 +284,38 @@ export function logout() {
   clearToken();
 }
 
+function appendTenderFilterParams(params: URLSearchParams, filters: Filters): void {
+  params.set("hide_outdated", String(!!filters.hide_outdated));
+  params.set("hide_duplicates", String(!!filters.hide_duplicates));
+  params.set("sort", optParam(filters.sort) || "published");
+  // Always send match_any explicitly (backend default must not hide FE intent)
+  params.set("match_any", filters.match_any ? "true" : "false");
+  const q = optParam(filters.q);
+  if (q) params.set("q", q);
+  const exclude = optParam(filters.exclude);
+  if (exclude) params.set("exclude", exclude);
+  const source = optParam(filters.source);
+  if (source) params.set("source", source);
+  const law = optParam(filters.law);
+  if (law) params.set("law", law);
+  const region = optParam(filters.region);
+  if (region) params.set("region", region);
+  const method = optParam(filters.method);
+  if (method) params.set("method", method);
+  const okpd2 = optParam(filters.okpd2);
+  if (okpd2) params.set("okpd2", okpd2);
+  const status = optParam(filters.status_norm);
+  if (status) params.set("status_norm", status);
+  const minPrice = optParam(filters.min_price);
+  if (minPrice) params.set("min_price", minPrice);
+  const maxPrice = optParam(filters.max_price);
+  if (maxPrice) params.set("max_price", maxPrice);
+  const deadlineFrom = optParam(filters.deadline_from);
+  if (deadlineFrom) params.set("deadline_from", deadlineFrom);
+  const deadlineTo = optParam(filters.deadline_to);
+  if (deadlineTo) params.set("deadline_to", deadlineTo);
+}
+
 export async function fetchTenders(
   filters: Filters,
   page: number,
@@ -260,22 +324,7 @@ export async function fetchTenders(
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", "20");
-  params.set("hide_outdated", String(filters.hide_outdated));
-  params.set("hide_duplicates", String(filters.hide_duplicates));
-  params.set("sort", filters.sort || "published");
-  if (filters.q.trim()) params.set("q", filters.q.trim());
-  if (filters.exclude.trim()) params.set("exclude", filters.exclude.trim());
-  if (filters.match_any) params.set("match_any", "true");
-  if (filters.source) params.set("source", filters.source);
-  if (filters.law) params.set("law", filters.law);
-  if (filters.region.trim()) params.set("region", filters.region.trim());
-  if (filters.method.trim()) params.set("method", filters.method.trim());
-  if (filters.okpd2.trim()) params.set("okpd2", filters.okpd2.trim());
-  if (filters.status_norm) params.set("status_norm", filters.status_norm);
-  if (filters.min_price) params.set("min_price", filters.min_price);
-  if (filters.max_price) params.set("max_price", filters.max_price);
-  if (filters.deadline_from) params.set("deadline_from", filters.deadline_from);
-  if (filters.deadline_to) params.set("deadline_to", filters.deadline_to);
+  appendTenderFilterParams(params, filters);
   return api(`/tenders?${params}`, { signal });
 }
 
@@ -460,21 +509,7 @@ export async function deleteSavedSearch(id: number): Promise<void> {
 export function exportUrl(filters: Filters, format: "csv" | "xlsx"): string {
   const params = new URLSearchParams();
   params.set("format", format);
-  params.set("hide_outdated", String(filters.hide_outdated));
-  params.set("hide_duplicates", String(filters.hide_duplicates));
-  if (filters.q.trim()) params.set("q", filters.q.trim());
-  if (filters.exclude.trim()) params.set("exclude", filters.exclude.trim());
-  if (filters.match_any) params.set("match_any", "true");
-  if (filters.source) params.set("source", filters.source);
-  if (filters.law) params.set("law", filters.law);
-  if (filters.region.trim()) params.set("region", filters.region.trim());
-  if (filters.method.trim()) params.set("method", filters.method.trim());
-  if (filters.okpd2.trim()) params.set("okpd2", filters.okpd2.trim());
-  if (filters.status_norm) params.set("status_norm", filters.status_norm);
-  if (filters.min_price) params.set("min_price", filters.min_price);
-  if (filters.max_price) params.set("max_price", filters.max_price);
-  if (filters.deadline_from) params.set("deadline_from", filters.deadline_from);
-  if (filters.deadline_to) params.set("deadline_to", filters.deadline_to);
+  appendTenderFilterParams(params, filters);
   return `${API}/tenders/export?${params}`;
 }
 
@@ -488,47 +523,54 @@ export function asBool(value: unknown, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+function cleanFilterStr(value: unknown, fallback = ""): string {
+  if (value == null || value === "") return fallback;
+  const s = String(value).trim();
+  if (!s || s === "undefined" || s === "null" || s === "None") return fallback;
+  return s;
+}
+
 export function presetToFilters(preset: FilterPreset): Filters {
   const f = preset.filters || {};
   return {
     ...emptyFilters,
-    q: String(f.q ?? emptyFilters.q),
-    exclude: String(f.exclude ?? emptyFilters.exclude),
+    q: cleanFilterStr(f.q, emptyFilters.q),
+    exclude: cleanFilterStr(f.exclude, emptyFilters.exclude),
     match_any: asBool(f.match_any, emptyFilters.match_any),
-    source: String(f.source ?? ""),
-    law: String(f.law ?? ""),
-    region: String(f.region ?? ""),
-    method: String(f.method ?? ""),
-    okpd2: String(f.okpd2 ?? ""),
-    status_norm: String(f.status_norm ?? "accepting"),
-    min_price: f.min_price != null && f.min_price !== "" ? String(f.min_price) : "",
-    max_price: f.max_price != null && f.max_price !== "" ? String(f.max_price) : "",
-    deadline_from: f.deadline_from != null ? String(f.deadline_from) : "",
-    deadline_to: f.deadline_to != null ? String(f.deadline_to) : "",
+    source: cleanFilterStr(f.source),
+    law: cleanFilterStr(f.law),
+    region: cleanFilterStr(f.region),
+    method: cleanFilterStr(f.method),
+    okpd2: cleanFilterStr(f.okpd2),
+    status_norm: cleanFilterStr(f.status_norm),
+    min_price: cleanFilterStr(f.min_price),
+    max_price: cleanFilterStr(f.max_price),
+    deadline_from: cleanFilterStr(f.deadline_from),
+    deadline_to: cleanFilterStr(f.deadline_to),
     hide_outdated: asBool(f.hide_outdated, true),
     hide_duplicates: asBool(f.hide_duplicates, true),
-    sort: String(f.sort ?? emptyFilters.sort),
+    sort: cleanFilterStr(f.sort, emptyFilters.sort),
   };
 }
 
 export function filtersToPayload(filters: Filters): Record<string, unknown> {
   return {
-    q: filters.q || undefined,
-    exclude: filters.exclude || undefined,
+    q: optParam(filters.q) || undefined,
+    exclude: optParam(filters.exclude) || undefined,
     match_any: filters.match_any,
-    source: filters.source || undefined,
-    law: filters.law || undefined,
-    region: filters.region || undefined,
-    method: filters.method || undefined,
-    okpd2: filters.okpd2 || undefined,
-    status_norm: filters.status_norm || undefined,
-    min_price: filters.min_price || undefined,
-    max_price: filters.max_price || undefined,
-    deadline_from: filters.deadline_from || undefined,
-    deadline_to: filters.deadline_to || undefined,
+    source: optParam(filters.source) || undefined,
+    law: optParam(filters.law) || undefined,
+    region: optParam(filters.region) || undefined,
+    method: optParam(filters.method) || undefined,
+    okpd2: optParam(filters.okpd2) || undefined,
+    status_norm: optParam(filters.status_norm) || undefined,
+    min_price: optParam(filters.min_price) || undefined,
+    max_price: optParam(filters.max_price) || undefined,
+    deadline_from: optParam(filters.deadline_from) || undefined,
+    deadline_to: optParam(filters.deadline_to) || undefined,
     hide_outdated: filters.hide_outdated,
     hide_duplicates: filters.hide_duplicates,
-    sort: filters.sort || undefined,
+    sort: optParam(filters.sort) || undefined,
   };
 }
 
