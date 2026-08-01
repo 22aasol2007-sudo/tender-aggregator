@@ -137,7 +137,6 @@ async def cached_get(
                 content=body,
                 request=request,
                 headers=hdrs,
-                encoding="utf-8",
             )
 
     resp = await _get_with_retries(url, headers=headers)
