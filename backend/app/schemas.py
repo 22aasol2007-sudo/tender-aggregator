@@ -65,6 +65,22 @@ class StatsOut(BaseModel):
     database: str
 
 
+class NichePresetOut(BaseModel):
+    name: str
+    q: str
+    exclude: str
+    match_any: bool = True
+
+
+class NicheOut(BaseModel):
+    short_q: str
+    full_q: str
+    exclude: str
+    okpd: list[str] = Field(default_factory=list)
+    eis_search_passes: list[str] = Field(default_factory=list)
+    presets: dict[str, NichePresetOut] = Field(default_factory=dict)
+
+
 class DashboardOut(BaseModel):
     total: int
     active: int

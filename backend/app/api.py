@@ -33,6 +33,7 @@ from app.schemas import (
     HealthOut,
     JobOut,
     LoginIn,
+    NicheOut,
     ProfileIn,
     ProfileOut,
     RegisterIn,
@@ -224,6 +225,14 @@ def update_telegram(
 @router.get("/sources")
 def sources() -> list[dict[str, str]]:
     return list_sources()
+
+
+@router.get("/niche", response_model=NicheOut)
+def niche() -> NicheOut:
+    """High-recall / full niche defaults for FE sync."""
+    from app.services.niche import niche_payload
+
+    return NicheOut.model_validate(niche_payload())
 
 
 @router.get("/stats", response_model=StatsOut)

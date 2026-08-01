@@ -13,6 +13,8 @@ COPY backend /app
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+# api (default) | worker — set SERVICE_ROLE=worker on the Railway worker service
+ENV SERVICE_ROLE=api
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "if [ \"$SERVICE_ROLE\" = \"worker\" ]; then exec python -m app.worker; else exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}; fi"]

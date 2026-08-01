@@ -46,9 +46,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://tender:tender@db:5432/tenders
       HTTP_VERIFY_SSL: "true"
+      SCRAPE_VIA_WORKER: "true"
       SCRAPE_CONCURRENCY: "5"
+      HOT_SCRAPE_INTERVAL_MINUTES: "1.5"
+      COLD_SCRAPE_INTERVAL_MINUTES: "12"
       ENRICH_ON_SCRAPE: "false"
       ENRICH_NEW_ONLY: "true"
+      SEED_IF_EMPTY: "false"
     depends_on:
       db:
         condition: service_healthy

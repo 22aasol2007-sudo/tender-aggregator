@@ -2,8 +2,23 @@
 
 from __future__ import annotations
 
+# High-recall default for UI (5–12 terms + OKPD). Avoid ultra-broad «груз».
+TRANSPORT_SHORT_TERMS: list[str] = [
+    "грузоперевоз",
+    "рефрижератор",
+    "перевозка грузов",
+    "перевозки грузов",
+    "автоперевоз",
+    "транспортные услуги",
+    "экспедиц",
+    "логистик",
+    "изотерм",
+    "хладотранспорт",
+    "49.41",
+    "49.4",
+]
+
 # OR-terms (comma-separated in TRANSPORT_Q). Multi-word = phrase match.
-# Avoid broad single tokens like «груз», «по», «услуг».
 TRANSPORT_INCLUDE_TERMS: list[str] = [
     # Рефрижератор / холодная цепь
     "рефрижератор",
@@ -30,7 +45,9 @@ TRANSPORT_INCLUDE_TERMS: list[str] = [
     "доставке грузов",
     "транспортные услуги",
     "транспортных услуг",
+    "оказание транспортных услуг",
     "транспортно-экспедиц",
+    "транспортно экспедиц",
     "экспедирован",
     "экспедиторск",
     "фрахт",
@@ -39,6 +56,7 @@ TRANSPORT_INCLUDE_TERMS: list[str] = [
     "автотранспортн",
     "грузовым автомобил",
     "автомобильным транспортом",
+    "услуги грузового транспорта",
     "перевозка продукции",
     "перевозки продукции",
     "перевозка товаров",
@@ -70,12 +88,22 @@ TRANSPORT_EXCLUDE_TERMS: list[str] = [
     "охранные услуги",
 ]
 
+# Separate EIS scrape passes (searchString) — high-frequency cargo terms
+EIS_SEARCH_PASSES: list[str] = [
+    "грузоперевоз",
+    "рефрижератор",
+    "перевозка грузов",
+    "49.41",
+]
+
 # Comma-separated so phrases stay intact in split_terms()
+TRANSPORT_SHORT_Q = ", ".join(TRANSPORT_SHORT_TERMS)
 TRANSPORT_Q = ", ".join(TRANSPORT_INCLUDE_TERMS)
+TRANSPORT_FULL_Q = TRANSPORT_Q
 TRANSPORT_EXCLUDE = ", ".join(TRANSPORT_EXCLUDE_TERMS)
 
 TRANSPORT_PRESET_FILTERS: dict = {
-    "q": TRANSPORT_Q,
+    "q": TRANSPORT_SHORT_Q,
     "exclude": TRANSPORT_EXCLUDE,
     "match_any": True,
     "status_norm": "accepting",
@@ -99,3 +127,38 @@ TRANSPORT_PROFILE_OKPD: list[str] = ["49.41", "49.4", "52.29", "52.2"]
 
 # Legacy IT keywords — used to detect profiles that still need migration
 LEGACY_IT_KEYWORDS = {"программ", "сервер", "строитель", "ремонт", "ИТ", "ит"}
+
+
+def niche_payload() -> dict:
+    """Public GET /api/niche payload — keep FE defaults in sync."""
+    return {
+        "short_q": TRANSPORT_SHORT_Q,
+        "full_q": TRANSPORT_FULL_Q,
+        "exclude": TRANSPORT_EXCLUDE,
+        "okpd": list(TRANSPORT_PROFILE_OKPD),
+        "eis_search_passes": list(EIS_SEARCH_PASSES),
+        "presets": {
+            "default": {
+                "name": "Грузоперевозки + реф",
+                "q": TRANSPORT_SHORT_Q,
+                "exclude": TRANSPORT_EXCLUDE,
+                "match_any": True,
+            },
+            "maximum": {
+                "name": "Максимум ниши",
+                "q": TRANSPORT_FULL_Q,
+                "exclude": TRANSPORT_EXCLUDE,
+                "match_any": True,
+            },
+            "reefer": {
+                "name": "Только рефрижератор",
+                "q": (
+                    "рефрижератор, рефтранспорт, хладотранспорт, изотерм, "
+                    "температурный режим, скоропортящ, холодовая цепь, холодная цепь, "
+                    "охлажденн, замороженн, рефрижераторн"
+                ),
+                "exclude": "программное обеспечение, серверное оборудование, канцеляр, офисная мебель",
+                "match_any": True,
+            },
+        },
+    }

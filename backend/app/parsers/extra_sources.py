@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from app.parsers.base import ParsedTender
 from app.parsers.commercial import (
     CommercialHtmlParser,
+    _CARGO_SEARCH_TERMS,
     _extract_external_id,
     _is_junk_row,
     _parse_dt,
@@ -135,10 +136,18 @@ class FabrikantParser(CommercialHtmlParser):
         self.source = "fabrikant"
         self.display_name = "Фабрикант"
         self.base_url = "https://www.fabrikant.ru"
-        # Single SSR search page (second URL was burning the 90s source budget on Railway)
-        self.search_urls = [
+        urls = [
             "https://www.fabrikant.ru/trades/procedure/search/",
+            "https://www.fabrikant.ru/trades/procedure/search/?page=2",
+            "https://www.fabrikant.ru/trades/procedure/search/?page=3",
+            "https://www.fabrikant.ru/trades/procedure/search/?page=4",
+            "https://www.fabrikant.ru/trades/procedure/search/?page=5",
         ]
+        for term in _CARGO_SEARCH_TERMS:
+            urls.append(f"https://www.fabrikant.ru/trades/procedure/search/?query={term}")
+            urls.append(f"https://www.fabrikant.ru/trades/procedure/search/?search={term}")
+            urls.append(f"https://www.fabrikant.ru/trades/procedure/search/?q={term}")
+        self.search_urls = urls
 
     def _parse_links(self, soup: BeautifulSoup, page_url: str) -> list[ParsedTender]:
         """Prefer /v2/trades/procedure/view/ anchors from Next.js SSR HTML."""
@@ -183,10 +192,19 @@ class OtcParser(CommercialHtmlParser):
         self.base_url = "https://etp.otc.ru"
         self.public_listing = True
         self.unavailable_reason = None
-        self.search_urls = [
+        urls = [
             "https://etp.otc.ru/tenders-search",
+            "https://etp.otc.ru/tenders-search?page=2",
+            "https://etp.otc.ru/tenders-search?page=3",
+            "https://etp.otc.ru/tenders-search?page=4",
             "https://etp.otc.ru/tenders/223-fz",
+            "https://etp.otc.ru/tenders/223-fz?page=2",
         ]
+        for term in _CARGO_SEARCH_TERMS:
+            urls.append(f"https://etp.otc.ru/tenders-search?query={term}")
+            urls.append(f"https://etp.otc.ru/tenders-search?search={term}")
+            urls.append(f"https://etp.otc.ru/tenders-search?q={term}")
+        self.search_urls = urls
 
 
 class AgzrtParser(CommercialHtmlParser):
@@ -208,10 +226,20 @@ class RostenderParser(CommercialHtmlParser):
         self.source = "rostender"
         self.display_name = "Rostender"
         self.base_url = "https://rostender.info"
-        self.search_urls = [
+        urls = [
             "https://rostender.info/extsearch",
+            "https://rostender.info/extsearch?page=2",
+            "https://rostender.info/extsearch?page=3",
+            "https://rostender.info/extsearch?page=4",
+            "https://rostender.info/extsearch?page=5",
             "https://rostender.info/",
         ]
+        for term in _CARGO_SEARCH_TERMS:
+            urls.append(f"https://rostender.info/extsearch?query={term}")
+            urls.append(f"https://rostender.info/extsearch?search={term}")
+            urls.append(f"https://rostender.info/extsearch?q={term}")
+            urls.append(f"https://rostender.info/extsearch?text={term}")
+        self.search_urls = urls
 
 
 class TorgiGovParser(CommercialHtmlParser):
@@ -330,6 +358,45 @@ class KartotekaParser(CommercialHtmlParser):
         self.search_urls = ["https://www.kartoteka.ru/bankruptcy/", "https://www.kartoteka.ru/"]
 
 
+_API_URL_HINT = (
+    "Укажите URL JSON list/search (не HTML главной), напр. https://api.example.com/v1/tenders?q=…"
+)
+
+
+def _extract_api_rows(payload: Any) -> list[Any]:
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for key in (
+        "items",
+        "data",
+        "results",
+        "tenders",
+        "notices",
+        "procedures",
+        "content",
+        "rows",
+        "list",
+        "records",
+    ):
+        val = payload.get(key)
+        if isinstance(val, list):
+            return val
+        if isinstance(val, dict):
+            nested = _extract_api_rows(val)
+            if nested:
+                return nested
+    # Some APIs nest under data.items / response.items
+    for nest_key in ("data", "response", "result", "payload"):
+        nested = payload.get(nest_key)
+        if isinstance(nested, (dict, list)):
+            rows = _extract_api_rows(nested)
+            if rows:
+                return rows
+    return []
+
+
 class ApiBackedParser(CommercialHtmlParser):
     """Optional JSON API with token from DB (wins) or env settings. Without credentials → needs_api."""
 
@@ -345,8 +412,9 @@ class ApiBackedParser(CommercialHtmlParser):
         if self.api_ready:
             items = await self._from_api()
             if items:
+                self.last_fetch_note = None
                 return items
-            self.last_fetch_note = "API не вернул данные"
+            self.last_fetch_note = self.last_fetch_note or "API не вернул данные"
             return []
         self.last_fetch_note = self.unavailable_reason or f"{self.display_name}: нужен API-ключ"
         return []
@@ -354,55 +422,113 @@ class ApiBackedParser(CommercialHtmlParser):
     async def _from_api(self) -> list[ParsedTender]:
         from app.services.http_client import cached_get
 
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.api_token}",
-        }
-        try:
-            resp = await cached_get(self.api_url or "", headers=headers, ttl=60.0)
+        url = (self.api_url or "").strip()
+        token = (self.api_token or "").strip()
+        if not url or not token:
+            return []
+        if not url.startswith("http"):
+            self.last_fetch_note = f"Некорректный API URL. {_API_URL_HINT}"
+            return []
+
+        auth_variants = [
+            {"Accept": "application/json", "Authorization": f"Bearer {token}"},
+            {"Accept": "application/json", "Authorization": f"Token {token}"},
+            {"Accept": "application/json", "X-Api-Key": token, "Authorization": token},
+        ]
+        last_note: str | None = None
+        payload: Any = None
+        for headers in auth_variants:
+            try:
+                resp = await cached_get(url, headers=headers, ttl=60.0)
+            except httpx.HTTPError as exc:
+                last_note = f"API {type(exc).__name__}"
+                continue
+            if resp.status_code in {401, 403}:
+                last_note = f"API HTTP {resp.status_code} (auth)"
+                continue
             if resp.status_code != 200:
-                return []
-            payload: Any
+                last_note = f"API HTTP {resp.status_code}"
+                continue
             try:
                 payload = resp.json()
             except json.JSONDecodeError:
-                return []
-        except httpx.HTTPError:
+                last_note = "API вернул не-JSON (нужен list/search endpoint, не HTML)"
+                continue
+            break
+        else:
+            self.last_fetch_note = last_note or "API недоступен"
             return []
 
-        rows: list[Any]
-        if isinstance(payload, list):
-            rows = payload
-        elif isinstance(payload, dict):
-            rows = payload.get("items") or payload.get("data") or payload.get("results") or []
-        else:
-            rows = []
+        rows = _extract_api_rows(payload)
+        if not rows:
+            self.last_fetch_note = "API JSON без списка тендеров (items/data/results)"
+            return []
 
         items: list[ParsedTender] = []
-        for idx, row in enumerate(rows[:40]):
+        for idx, row in enumerate(rows[:80]):
             if not isinstance(row, dict):
                 continue
-            title = str(row.get("title") or row.get("name") or row.get("subject") or "").strip()
-            url = str(row.get("url") or row.get("link") or self.base_url)
+            title = str(
+                row.get("title")
+                or row.get("name")
+                or row.get("subject")
+                or row.get("purchaseName")
+                or row.get("noticeName")
+                or row.get("procedureName")
+                or ""
+            ).strip()
+            link = str(
+                row.get("url")
+                or row.get("link")
+                or row.get("href")
+                or row.get("noticeUrl")
+                or row.get("procedureUrl")
+                or self.base_url
+            )
             if not title:
                 continue
-            ext = str(row.get("id") or row.get("number") or f"{self.source}-{idx}")[:64]
+            ext = str(
+                row.get("id")
+                or row.get("number")
+                or row.get("regNumber")
+                or row.get("noticeNumber")
+                or row.get("externalId")
+                or f"{self.source}-{idx}"
+            )[:64]
             items.append(
                 ParsedTender(
                     external_id=ext,
                     source=self.source,
                     title=title[:500],
-                    url=url,
-                    customer=row.get("customer") or row.get("organizer"),
-                    region=row.get("region"),
-                    price=_parse_price(str(row.get("price") or row.get("nmck") or "")),
-                    status=str(row.get("status") or "Подача заявок"),
-                    method=row.get("method"),
-                    okpd2=row.get("okpd2") or row.get("okpd"),
-                    law=row.get("law") or "223-ФЗ",
-                    description=str(row.get("description") or "")[:1500] or None,
-                    published_at=_parse_dt(str(row.get("published_at") or row.get("date") or "")),
-                    deadline_at=_parse_dt(str(row.get("deadline_at") or row.get("end_date") or "")),
+                    url=link if link.startswith("http") else urljoin(self.base_url, link),
+                    customer=row.get("customer") or row.get("organizer") or row.get("customerName"),
+                    region=row.get("region") or row.get("regionName"),
+                    price=_parse_price(
+                        str(
+                            row.get("price")
+                            or row.get("nmck")
+                            or row.get("maxPrice")
+                            or row.get("startPrice")
+                            or ""
+                        )
+                    ),
+                    status=str(row.get("status") or row.get("statusName") or "Подача заявок"),
+                    method=row.get("method") or row.get("placingWay") or row.get("type"),
+                    okpd2=row.get("okpd2") or row.get("okpd") or row.get("okpd2Code"),
+                    law=row.get("law") or row.get("fz") or "223-ФЗ",
+                    description=str(row.get("description") or row.get("subject") or "")[:1500] or None,
+                    published_at=_parse_dt(
+                        str(row.get("published_at") or row.get("publishDate") or row.get("date") or "")
+                    ),
+                    deadline_at=_parse_dt(
+                        str(
+                            row.get("deadline_at")
+                            or row.get("end_date")
+                            or row.get("applicationDeadline")
+                            or row.get("endDate")
+                            or ""
+                        )
+                    ),
                 )
             )
         return items
@@ -416,7 +542,9 @@ class ContourParser(ApiBackedParser):
         self.search_urls = ["https://zakupki.kontur.ru/"]
         self.api_url, self.api_token = resolve_credentials("contour")
         self.public_listing = False
-        self.unavailable_reason = "Контур.Закупки: нужен CONTOUR_API_URL + CONTOUR_API_TOKEN"
+        self.unavailable_reason = (
+            f"Контур.Закупки: нужен CONTOUR_API_URL + CONTOUR_API_TOKEN. {_API_URL_HINT}"
+        )
 
 
 class TenderplanParser(ApiBackedParser):
@@ -427,7 +555,9 @@ class TenderplanParser(ApiBackedParser):
         self.search_urls = ["https://tenderplan.ru/"]
         self.api_url, self.api_token = resolve_credentials("tenderplan")
         self.public_listing = False
-        self.unavailable_reason = "Tenderplan: нужен TENDERPLAN_API_URL + TENDERPLAN_API_TOKEN"
+        self.unavailable_reason = (
+            f"Tenderplan: нужен TENDERPLAN_API_URL + TENDERPLAN_API_TOKEN. {_API_URL_HINT}"
+        )
 
 
 class TenderlandParser(ApiBackedParser):
@@ -438,7 +568,9 @@ class TenderlandParser(ApiBackedParser):
         self.search_urls = ["https://tenderland.ru/"]
         self.api_url, self.api_token = resolve_credentials("tenderland")
         self.public_listing = False
-        self.unavailable_reason = "Tenderland: нужен TENDERLAND_API_URL + TENDERLAND_API_TOKEN"
+        self.unavailable_reason = (
+            f"Tenderland: нужен TENDERLAND_API_URL + TENDERLAND_API_TOKEN. {_API_URL_HINT}"
+        )
 
 
 class SynapseParser(ApiBackedParser):
@@ -449,7 +581,9 @@ class SynapseParser(ApiBackedParser):
         self.search_urls = ["https://synapsenet.ru/"]
         self.api_url, self.api_token = resolve_credentials("synapse")
         self.public_listing = False
-        self.unavailable_reason = "Synapse: нужен SYNAPSE_API_URL + SYNAPSE_API_TOKEN"
+        self.unavailable_reason = (
+            f"Synapse: нужен SYNAPSE_API_URL + SYNAPSE_API_TOKEN. {_API_URL_HINT}"
+        )
 
 
 class EisRegistryParser:

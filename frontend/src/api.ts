@@ -127,14 +127,26 @@ export type Filters = {
   sort: string;
 };
 
-/** Keep in sync with backend/app/services/niche.py TRANSPORT_* (comma = phrase OR terms). */
+/** Fallback if GET /api/niche unavailable — keep in sync with niche.py TRANSPORT_SHORT_*. */
 export const TRANSPORT_DEFAULT_Q =
-  "рефрижератор, рефтранспорт, хладотранспорт, изотерм, температурный режим, температурн, скоропортящ, холодовая цепь, холодная цепь, охлаждённ, охлажденн, замороженн, рефрижераторн, reefer, грузоперевоз, перевозка грузов, перевозки грузов, перевозку грузов, автоперевоз, доставка грузов, доставке грузов, транспортные услуги, транспортных услуг, транспортно-экспедиц, экспедирован, экспедиторск, фрахт, логистическ, логистик, автотранспортн, грузовым автомобил, автомобильным транспортом, перевозка продукции, перевозки продукции, перевозка товаров, перевозки товаров, услуги по перевозке, оказание услуг по перевозке, контейнерные перевоз, контейнерных перевоз, тентованн, негабаритн, сборных грузов, сборный груз, 49.41, 49.4, 52.29";
+  "грузоперевоз, рефрижератор, перевозка грузов, перевозки грузов, автоперевоз, транспортные услуги, экспедиц, логистик, изотерм, хладотранспорт, 49.41, 49.4";
 
 export const TRANSPORT_DEFAULT_EXCLUDE =
   "программное обеспечение, разработка сайта, лицензия ПО, антивирус, серверное оборудование, оргтехника, канцеляр, офисная мебель, уборка помещений, охранные услуги";
 
-export const emptyFilters: Filters = {
+export const TRANSPORT_FULL_Q_FALLBACK =
+  "рефрижератор, рефтранспорт, хладотранспорт, изотерм, температурный режим, температурн, скоропортящ, холодовая цепь, холодная цепь, охлаждённ, охлажденн, замороженн, рефрижераторн, reefer, грузоперевоз, перевозка грузов, перевозки грузов, перевозку грузов, автоперевоз, доставка грузов, доставке грузов, транспортные услуги, транспортных услуг, оказание транспортных услуг, транспортно-экспедиц, транспортно экспедиц, экспедирован, экспедиторск, фрахт, логистическ, логистик, автотранспортн, грузовым автомобил, автомобильным транспортом, услуги грузового транспорта, перевозка продукции, перевозки продукции, перевозка товаров, перевозки товаров, услуги по перевозке, оказание услуг по перевозке, контейнерные перевоз, контейнерных перевоз, тентованн, негабаритн, сборных грузов, сборный груз, 49.41, 49.4, 52.29";
+
+export type NicheConfig = {
+  short_q: string;
+  full_q: string;
+  exclude: string;
+  okpd: string[];
+  eis_search_passes: string[];
+  presets: Record<string, { name: string; q: string; exclude: string; match_any: boolean }>;
+};
+
+export let emptyFilters: Filters = {
   q: TRANSPORT_DEFAULT_Q,
   exclude: TRANSPORT_DEFAULT_EXCLUDE,
   match_any: true,
@@ -153,6 +165,21 @@ export const emptyFilters: Filters = {
   hide_duplicates: true,
   sort: "relevance",
 };
+
+/** Apply GET /api/niche short_q into module defaults (call once on boot). */
+export function applyNicheDefaults(niche: NicheConfig): Filters {
+  emptyFilters = {
+    ...emptyFilters,
+    q: niche.short_q || TRANSPORT_DEFAULT_Q,
+    exclude: niche.exclude || TRANSPORT_DEFAULT_EXCLUDE,
+    match_any: true,
+  };
+  return { ...emptyFilters };
+}
+
+export async function fetchNiche(): Promise<NicheConfig> {
+  return api("/niche");
+}
 
 export class ApiError extends Error {
   status: number;

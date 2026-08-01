@@ -63,10 +63,28 @@ def monitor_snapshot(db: Session) -> dict:
         row["silent"] = silent
         row["silent_for_minutes"] = silent_for
         if silent and row["source"] in CRITICAL_SOURCES:
+            msg = f"Источник {row['display_name']} молчит ≥ {silence_minutes} мин"
+            err = (row.get("last_error") or "").lower()
+            proxy_on = bool(
+                (settings.scrape_proxy_url or "").strip()
+                or (settings.http_proxy or "").strip()
+                or (settings.https_proxy or "").strip()
+            )
+            if proxy_on and (
+                "geo" in err
+                or "captcha" in err
+                or "без item" in err
+                or "пуст" in err
+                or row.get("last_status") == "empty"
+            ):
+                msg += (
+                    ". Прокси есть, но ЕИС пуст — нужен ISP/residential RU-прокси "
+                    "(datacenter часто режется captcha/geo)."
+                )
             alerts.append(
                 {
                     "source": row["source"],
-                    "message": f"Источник {row['display_name']} молчит ≥ {silence_minutes} мин",
+                    "message": msg,
                     "silent_for_minutes": silent_for,
                 }
             )

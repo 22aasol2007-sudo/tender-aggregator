@@ -414,7 +414,10 @@ class CommercialHtmlParser:
         }
         items: list[ParsedTender] = []
         notes: list[str] = []
+        max_items = 120
         for url in self.search_urls:
+            if len(items) >= max_items:
+                break
             try:
                 # AJAX endpoints on commercial ETPs often need X-Requested-With
                 call_headers = dict(headers)
@@ -460,9 +463,9 @@ class CommercialHtmlParser:
                     notes.append(f"{urlparse(url).netloc}: короткий ответ {len(resp.text)}b")
                 else:
                     notes.append(f"{urlparse(url).netloc}: HTTP 200, 0 карточек")
-            if items:
-                break
-        self.last_fetch_note = "; ".join(notes[:3]) if notes else None
+        # Dedupe across pages/URLs
+        items = self._dedupe(items)
+        self.last_fetch_note = "; ".join(notes[:3]) if notes and not items else None
         if not items and self.unavailable_reason and not self.last_fetch_note:
             self.last_fetch_note = self.unavailable_reason
         return items
@@ -560,7 +563,16 @@ class CommercialHtmlParser:
             prev = best.get(item.external_id)
             if prev is None or len(item.title or "") > len(prev.title or ""):
                 best[item.external_id] = item
-        return list(best.values())[:40]
+        return list(best.values())[:120]
+
+
+# Cargo terms injected into ETP search URLs where supported
+_CARGO_SEARCH_TERMS = (
+    "грузоперевозки",
+    "рефрижератор",
+    "перевозка+грузов",
+    "49.41",
+)
 
 
 class RtsParser(CommercialHtmlParser):
@@ -668,7 +680,14 @@ class B2BCenterParser(CommercialHtmlParser):
         self.source = "b2b_center"
         self.display_name = "B2B-Center"
         self.base_url = "https://www.b2b-center.ru"
-        self.search_urls = [
+        urls = [
             "https://www.b2b-center.ru/market/",
-            "https://www.b2b-center.ru/",
+            "https://www.b2b-center.ru/market/?page=2",
+            "https://www.b2b-center.ru/market/?page=3",
+            "https://www.b2b-center.ru/market/?page=4",
         ]
+        for term in _CARGO_SEARCH_TERMS:
+            urls.append(f"https://www.b2b-center.ru/market/?search={term}")
+            urls.append(f"https://www.b2b-center.ru/market/?q={term}")
+            urls.append(f"https://www.b2b-center.ru/market/?keywords={term}")
+        self.search_urls = urls

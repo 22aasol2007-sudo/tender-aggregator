@@ -373,8 +373,14 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[int, list[int
         run.finished_at = datetime.now(timezone.utc)
         return _finish(db, run)
 
-    # Known SPA / login walls: skip without spending the source timeout budget
-    if parser is not None and not getattr(parser, "public_listing", True):
+    # Known SPA / login walls: skip without spending the source timeout budget.
+    # API-backed parsers with credentials must still run even if public_listing=False.
+    api_ready = bool(
+        parser is not None
+        and getattr(parser, "requires_api", False)
+        and getattr(parser, "api_ready", False)
+    )
+    if parser is not None and not getattr(parser, "public_listing", True) and not api_ready:
         run.status = "skipped"
         run.error = (
             getattr(parser, "unavailable_reason", None)
@@ -562,7 +568,8 @@ async def run_scrape(db: Session | None = None, source_ids: list[str] | None = N
                     priority=200,
                 )
 
-            seed_if_empty(own)
+            if settings.seed_if_empty:
+                seed_if_empty(own)
             seed_presets(own)
             await _update_saved_searches_and_notify(own)
             cache_clear("api:")

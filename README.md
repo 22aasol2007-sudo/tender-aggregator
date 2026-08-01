@@ -43,7 +43,7 @@ npm run dev
 
 ## Воркер (обязателен при SCRAPE_VIA_WORKER=true)
 
-В отдельном терминале:
+По умолчанию `SCRAPE_VIA_WORKER=true`: API/scheduler только ставят задачи в очередь (`scrape` / `monitor` / `enrich`). Долгий сбор выполняет отдельный процесс:
 
 ```bash
 cd backend
@@ -51,7 +51,9 @@ cd backend
 python -m app.worker
 ```
 
-API только ставит задачи в очередь; сбор и мониторинг выполняет worker.
+На Railway: сервис `api` (uvicorn) + сервис `worker` (та же Docker-команда `python -m app.worker`), общие `DATABASE_URL` и `SCRAPE_PROXY_URL`.
+
+Расписание: **hot** (~1.5 мин) — ЕИС + b2b/fabrikant/otc/rostender; **cold** (~12 мин) — остальные источники.
 
 ## Деплой
 

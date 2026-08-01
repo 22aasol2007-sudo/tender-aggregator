@@ -13,6 +13,7 @@ from dateutil import parser as date_parser
 
 from app.config import settings
 from app.parsers.base import ParsedTender
+from app.services.niche import EIS_SEARCH_PASSES
 
 
 def _ssl_verify() -> bool | str:
@@ -28,6 +29,17 @@ PRICE_RE = re.compile(
 )
 REG_NUMBER_RE = re.compile(r"(?:regNumber|reestrNumber)=(\d+)", re.IGNORECASE)
 DIGITS_RE = re.compile(r"[^\d.,]")
+
+# Hard transport / TLS failures — do not burn multi-page budget
+_HARD_TRANSPORT_MARKERS = (
+    "connecterror",
+    "connecttimeout",
+    "readtimeout",
+    "timeout",
+    "sslerror",
+    "proxyerror",
+    "networkerror",
+)
 
 
 def _parse_price(text: str | None) -> float | None:
@@ -76,11 +88,28 @@ def _external_id_from_url(url: str, fallback: str) -> str:
     return path or fallback
 
 
+def _proxy_configured() -> bool:
+    return bool(
+        (settings.scrape_proxy_url or "").strip()
+        or (settings.http_proxy or "").strip()
+        or (settings.https_proxy or "").strip()
+        or (settings.all_proxy or "").strip()
+    )
+
+
+def _geo_hint_note(base: str) -> str:
+    if _proxy_configured():
+        return (
+            f"{base}. Прокси отвечает, но ЕИС пуст/режет (geo/captcha). "
+            "Нужен ISP/residential RU-прокси, не datacenter."
+        )
+    return f"{base}. Нужен SCRAPE_PROXY_URL (RU ISP/residential прокси)"
+
+
 class ZakupkiParser:
     """ЕИС zakupki.gov.ru — извещения 44-ФЗ / 223-ФЗ через RSS + HTML fallback."""
 
     BASE = "https://zakupki.gov.ru/epz/order/extendedsearch/rss.html"
-    # Open RSS mirrors / alternate entry points when primary geo-blocks from EU/US
     ALT_RSS = (
         "https://zakupki.gov.ru/epz/order/extendedsearch/rss.html",
         "https://zakupki.gov.ru/epz/order/notice/printForm/searchRss.html",
@@ -97,7 +126,12 @@ class ZakupkiParser:
         self.last_fetch_note: str | None = None
         self.unavailable_reason: str | None = None
 
-    def _rss_url(self, page: int = 1, base: str | None = None) -> str:
+    def _rss_url(
+        self,
+        page: int = 1,
+        base: str | None = None,
+        search_string: str | None = None,
+    ) -> str:
         params = {
             "morphology": "on",
             "search-filter": "Дате размещения",
@@ -113,53 +147,60 @@ class ZakupkiParser:
             "pa": "on",
             "currencyIdGeneral": "-1",
         }
+        if search_string:
+            params["searchString"] = search_string
         root = base or self.BASE
         return f"{root}?{urlencode(params)}"
 
-    def _html_url(self, page: int = 1) -> str:
-        params = parse_qs(urlparse(self._rss_url(page)).query)
+    def _html_url(self, page: int = 1, search_string: str | None = None) -> str:
+        params = parse_qs(urlparse(self._rss_url(page, search_string=search_string)).query)
         flat = {k: v[0] for k, v in params.items()}
         return (
             "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?"
             + urlencode(flat)
         )
 
+    def _page_budget(self, hard_transport: bool) -> int:
+        if hard_transport:
+            return 1
+        # Deeper crawl when proxy/path works
+        if _proxy_configured():
+            return min(10, max(5, settings.eis_max_pages))
+        return min(3, max(1, settings.eis_max_pages))
+
     async def fetch(self) -> list[ParsedTender]:
         headers = {
             "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
             "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.5",
         }
-        # RSS first (works better from abroad than full HTML search UI)
-        tenders = await self._from_rss_cached(headers)
+        # Probe + niche passes via RSS
+        tenders, hard_transport = await self._from_rss_cached(headers)
         if tenders:
             self.last_fetch_note = None
             return tenders
-        # Skip HTML only on hard transport failures. Soft RSS bodies
-        # ("без item", HTTP 403, captcha HTML) may still parse via HTML + RU proxy.
+
         note = (self.last_fetch_note or "").lower()
-        hard_transport = any(
-            x in note
-            for x in (
-                "connecterror",
-                "connecttimeout",
-                "readtimeout",
-                "timeout",
-                "sslerror",
-                "proxyerror",
-                "networkerror",
-            )
-        )
+        hard_transport = hard_transport or any(x in note for x in _HARD_TRANSPORT_MARKERS)
         if hard_transport:
+            if not self.last_fetch_note:
+                self.last_fetch_note = _geo_hint_note(
+                    f"ЕИС {self.law}-ФЗ: сетевая ошибка / таймаут"
+                )
             return []
-        html_items = await self._from_html()
+
+        html_items = await self._from_html(hard_transport=False)
         if html_items:
             self.last_fetch_note = None
             return html_items
+
         if not self.last_fetch_note:
-            self.last_fetch_note = (
-                f"ЕИС {self.law}-ФЗ недоступен из-за рубежа (SSL/geo). "
-                "Нужен SCRAPE_PROXY_URL (RU-прокси)"
+            self.last_fetch_note = _geo_hint_note(
+                f"ЕИС {self.law}-ФЗ недоступен (SSL/geo/captcha)"
             )
+        elif "geo" in (self.last_fetch_note or "").lower() or "captcha" in (
+            self.last_fetch_note or ""
+        ).lower():
+            self.last_fetch_note = _geo_hint_note(self.last_fetch_note)
         return []
 
     async def _from_rss(self, client: httpx.AsyncClient) -> list[ParsedTender]:
@@ -223,33 +264,81 @@ class ZakupkiParser:
             unique.append(item)
         return unique
 
-    async def _from_rss_cached(self, headers: dict[str, str]) -> list[ParsedTender]:
+    async def _fetch_rss_page(
+        self,
+        url: str,
+        headers: dict[str, str],
+    ) -> tuple[list[ParsedTender], str | None, bool]:
+        """Returns (items, note, hard_transport)."""
         from app.services.http_client import cached_get
 
+        try:
+            response = await cached_get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            name = type(exc).__name__
+            hard = name.lower() in {m.replace("error", "error") for m in _HARD_TRANSPORT_MARKERS} or any(
+                m in name.lower() for m in _HARD_TRANSPORT_MARKERS
+            )
+            return [], f"RSS {name}", hard
+        if response.status_code != 200:
+            note = f"RSS HTTP {response.status_code}"
+            if response.status_code in {403, 429, 451}:
+                note += " (geo/captcha?)"
+            return [], note, False
+        low = response.text.lower()
+        if "<item" not in low and "<entry" not in low:
+            hint = "geo/captcha?" if ("captcha" in low or "доступ ограничен" in low or len(response.text) < 800) else "пусто"
+            return [], f"RSS без item ({hint})", False
+        feed = feedparser.parse(response.text)
+        return self._parse_rss_feed(feed), None, False
+
+    async def _from_rss_cached(self, headers: dict[str, str]) -> tuple[list[ParsedTender], bool]:
         items: list[ParsedTender] = []
         notes: list[str] = []
-        # One RSS page only — second page burns budget when EIS is geo-blocked from AMS
-        for page in (1,):
-            url = self._rss_url(page)
-            try:
-                response = await cached_get(url, headers=headers)
-            except httpx.HTTPError as exc:
-                notes.append(f"RSS {type(exc).__name__}")
-                break
-            if response.status_code != 200:
-                notes.append(f"RSS HTTP {response.status_code}")
-                break
-            if "<item" not in response.text.lower() and "<entry" not in response.text.lower():
-                notes.append("RSS без item (geo/captcha?)")
-                break
-            feed = feedparser.parse(response.text)
-            page_items = self._parse_rss_feed(feed)
-            items.extend(page_items)
-        if notes and not items:
-            self.last_fetch_note = "; ".join(notes[:3])
-        return self._dedupe(items)
+        hard_transport = False
 
-    async def _from_html(self) -> list[ParsedTender]:
+        # Probe without searchString first (1 page) to detect transport health
+        probe_url = self._rss_url(1)
+        probe_items, probe_note, probe_hard = await self._fetch_rss_page(probe_url, headers)
+        if probe_hard:
+            self.last_fetch_note = probe_note or "RSS transport fail"
+            return [], True
+        if probe_items:
+            items.extend(probe_items)
+        elif probe_note:
+            notes.append(probe_note)
+
+        pages = self._page_budget(hard_transport=False)
+        passes = list(EIS_SEARCH_PASSES)
+
+        for term in passes:
+            for page in range(1, pages + 1):
+                url = self._rss_url(page, search_string=term)
+                page_items, note, hard = await self._fetch_rss_page(url, headers)
+                if hard:
+                    hard_transport = True
+                    if note:
+                        notes.append(f"{term}: {note}")
+                    break
+                if note and not page_items:
+                    notes.append(f"{term} p{page}: {note}")
+                    # Soft fail on page 1 of a pass — try next term; stop paging this term
+                    break
+                if not page_items:
+                    break
+                items.extend(page_items)
+            if hard_transport:
+                break
+
+        if notes and not items:
+            joined = "; ".join(notes[:4])
+            if any(x in joined.lower() for x in ("geo", "captcha", "без item", "403", "451")):
+                self.last_fetch_note = _geo_hint_note(joined)
+            else:
+                self.last_fetch_note = joined
+        return self._dedupe(items), hard_transport
+
+    async def _from_html(self, hard_transport: bool = False) -> list[ParsedTender]:
         from app.services.http_client import cached_get
 
         headers = {
@@ -258,63 +347,77 @@ class ZakupkiParser:
         }
         items: list[ParsedTender] = []
         notes: list[str] = []
-        for page in (1, 2):
-            try:
-                response = await cached_get(self._html_url(page), headers=headers)
-            except httpx.HTTPError as exc:
-                notes.append(f"HTML {type(exc).__name__}")
-                break
-            if response.status_code != 200:
-                notes.append(f"HTML HTTP {response.status_code}")
-                break
-            soup = BeautifulSoup(response.text, "lxml")
-            blocks = soup.select(".search-registry-entry-block") or soup.select(
-                "div.registry-entry__form"
-            )
-            for block in blocks:
-                link_el = block.select_one("a[href*='regNumber'], a[href*='notice']")
-                if not link_el:
-                    continue
-                href = link_el.get("href", "")
-                if href.startswith("/"):
-                    href = "https://zakupki.gov.ru" + href
-                title = link_el.get_text(" ", strip=True)
-                if not title:
-                    continue
-                text = block.get_text(" ", strip=True)
-                customer_el = block.select_one(".registry-entry__body-href a") or block.select_one(
-                    ".registry-entry__body-value"
-                )
-                customer = customer_el.get_text(" ", strip=True) if customer_el else None
-                price_el = block.select_one(".price-block__value") or block.select_one(
-                    ".cost"
-                )
-                price = _parse_price(price_el.get_text(" ", strip=True) if price_el else text)
-                date_el = block.select_one(".data-block__value")
-                published = _parse_datetime(date_el.get_text(" ", strip=True) if date_el else None)
-                items.append(
-                    ParsedTender(
-                        external_id=_external_id_from_url(href, title[:40]),
-                        source=self.source,
-                        law=f"{self.law}-ФЗ",
-                        title=title,
-                        customer=customer,
-                        price=price,
-                        url=href,
-                        description=text[:2000],
-                        published_at=published,
-                        status="Размещено",
+        pages = self._page_budget(hard_transport)
+        passes = [None, *EIS_SEARCH_PASSES]
+
+        for term in passes:
+            for page in range(1, pages + 1):
+                try:
+                    response = await cached_get(
+                        self._html_url(page, search_string=term),
+                        headers=headers,
                     )
+                except httpx.HTTPError as exc:
+                    notes.append(f"HTML {type(exc).__name__}")
+                    if any(m in type(exc).__name__.lower() for m in _HARD_TRANSPORT_MARKERS):
+                        if notes and not items and not self.last_fetch_note:
+                            self.last_fetch_note = "; ".join(notes[:3])
+                        return self._dedupe(items)
+                    break
+                if response.status_code != 200:
+                    notes.append(f"HTML HTTP {response.status_code}")
+                    if response.status_code in {403, 429, 451}:
+                        notes[-1] += " (geo/captcha?)"
+                    break
+                soup = BeautifulSoup(response.text, "lxml")
+                blocks = soup.select(".search-registry-entry-block") or soup.select(
+                    "div.registry-entry__form"
                 )
-            if not blocks:
+                if not blocks:
+                    low = response.text.lower()
+                    if "captcha" in low or "доступ ограничен" in low:
+                        notes.append("HTML captcha/geo")
+                    break
+                for block in blocks:
+                    link_el = block.select_one("a[href*='regNumber'], a[href*='notice']")
+                    if not link_el:
+                        continue
+                    href = link_el.get("href", "")
+                    if href.startswith("/"):
+                        href = "https://zakupki.gov.ru" + href
+                    title = link_el.get_text(" ", strip=True)
+                    if not title:
+                        continue
+                    text = block.get_text(" ", strip=True)
+                    customer_el = block.select_one(".registry-entry__body-href a") or block.select_one(
+                        ".registry-entry__body-value"
+                    )
+                    customer = customer_el.get_text(" ", strip=True) if customer_el else None
+                    price_el = block.select_one(".price-block__value") or block.select_one(".cost")
+                    price = _parse_price(price_el.get_text(" ", strip=True) if price_el else text)
+                    date_el = block.select_one(".data-block__value")
+                    published = _parse_datetime(date_el.get_text(" ", strip=True) if date_el else None)
+                    items.append(
+                        ParsedTender(
+                            external_id=_external_id_from_url(href, title[:40]),
+                            source=self.source,
+                            law=f"{self.law}-ФЗ",
+                            title=title,
+                            customer=customer,
+                            price=price,
+                            url=href,
+                            description=text[:2000],
+                            published_at=published,
+                            status="Размещено",
+                        )
+                    )
+            if hard_transport:
                 break
+
         if notes and not items and not self.last_fetch_note:
-            self.last_fetch_note = "; ".join(notes[:3])
-        seen: set[str] = set()
-        unique: list[ParsedTender] = []
-        for item in items:
-            if item.external_id in seen:
-                continue
-            seen.add(item.external_id)
-            unique.append(item)
-        return unique
+            joined = "; ".join(notes[:3])
+            if any(x in joined.lower() for x in ("geo", "captcha", "403", "451")):
+                self.last_fetch_note = _geo_hint_note(joined)
+            else:
+                self.last_fetch_note = joined
+        return self._dedupe(items)

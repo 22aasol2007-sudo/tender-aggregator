@@ -16,6 +16,7 @@ import {
   checkTenderCompliance,
   createSavedSearch,
   deleteSavedSearch,
+  applyNicheDefaults,
   emptyFilters,
   exportUrl,
   fetchChanges,
@@ -25,6 +26,7 @@ import {
   fetchMe,
   fetchMethods,
   fetchMonitor,
+  fetchNiche,
   fetchPresets,
   fetchProfile,
   fetchRegions,
@@ -37,6 +39,7 @@ import {
   fetchTender,
   fetchTenders,
   fetchWatches,
+  NicheConfig,
   filtersToPayload,
   formatDate,
   formatPrice,
@@ -71,6 +74,7 @@ export default function App() {
 
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [draft, setDraft] = useState<Filters>(emptyFilters);
+  const [niche, setNiche] = useState<NicheConfig | null>(null);
   const [items, setItems] = useState<Tender[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -124,18 +128,25 @@ export default function App() {
         setUser(null);
       }
       try {
-        const [src, pr, meth, reg, st] = await Promise.all([
+        const [src, pr, meth, reg, st, nicheCfg] = await Promise.all([
           fetchSources(),
           fetchPresets(),
           fetchMethods(),
           fetchRegions(),
           fetchStats(),
+          fetchNiche().catch(() => null),
         ]);
         setSources(src);
         setPresets(pr);
         setMethods(meth);
         setRegions(reg);
         setStats(st);
+        if (nicheCfg) {
+          setNiche(nicheCfg);
+          const next = applyNicheDefaults(nicheCfg);
+          setFilters(next);
+          setDraft(next);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Не удалось загрузить метаданные API");
       }
@@ -718,6 +729,8 @@ export default function App() {
             Значения из базы имеют приоритет над переменными окружения (CONTOUR_API_* и т.д.).
             После сохранения нажмите «Обновить сейчас», чтобы сбросить статус «нужен API».
             Токен после сохранения не показывается целиком — только маска.
+            URL — JSON list/search endpoint (не HTML главной), например{" "}
+            <code>https://api.example.com/v1/tenders</code>.
           </p>
           {credMsg && <p className="muted">{credMsg}</p>}
           {credStatus.map((row) => {
@@ -743,7 +756,7 @@ export default function App() {
                 <label>API URL</label>
                 <input
                   value={draft.api_url}
-                  placeholder="https://…"
+                  placeholder="https://api…/v1/tenders (JSON list)"
                   onChange={(e) =>
                     setCredDrafts((prev) => ({
                       ...prev,
@@ -751,6 +764,9 @@ export default function App() {
                     }))
                   }
                 />
+                <span className="field-hint">
+                  Формат: HTTPS JSON endpoint со списком (items/data/results). HTML-страница площадки не подойдёт.
+                </span>
                 <label>API токен</label>
                 <input
                   type="password"
@@ -1096,12 +1112,36 @@ export default function App() {
             <div className="stat"><div className="stat-label">Последний сбор</div><div className="stat-value" style={{ fontSize: "1.05rem" }}>{formatDate(stats?.last_scrape)}</div></div>
           </section>
 
+          <p className="muted" style={{ margin: "0.35rem 0 0.75rem" }}>
+            Найдено {total.toLocaleString("ru-RU")}
+            {stats != null ? ` / в базе ${stats.total.toLocaleString("ru-RU")}` : ""}
+            {loading ? " …" : ""}
+          </p>
+
           <div className="presets">
             {presets.map((p) => (
               <button key={p.id} type="button" className="preset-chip" onClick={() => { const n = presetToFilters(p); setDraft(n); setFilters(n); }}>
                 {p.name}
               </button>
             ))}
+            {niche?.presets?.maximum && !presets.some((p) => p.name === niche.presets.maximum.name) && (
+              <button
+                type="button"
+                className="preset-chip"
+                onClick={() => {
+                  const n = {
+                    ...emptyFilters,
+                    q: niche.presets.maximum.q,
+                    exclude: niche.presets.maximum.exclude || emptyFilters.exclude,
+                    match_any: niche.presets.maximum.match_any !== false,
+                  };
+                  setDraft(n);
+                  setFilters(n);
+                }}
+              >
+                {niche.presets.maximum.name}
+              </button>
+            )}
             <a className="preset-chip ghost" href={exportUrl(draft, "csv")}>CSV</a>
             <a className="preset-chip ghost" href={exportUrl(draft, "xlsx")}>Excel</a>
           </div>

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
         "https://tender-aggregator-22aasol2007-sudo-22aasol2007-sudos-projects.vercel.app",
     ]
     scrape_interval_minutes: int = 3
+    # Hot: EIS + live ETPs; cold: remaining scrape-capable sources
+    hot_scrape_interval_minutes: float = 1.5
+    cold_scrape_interval_minutes: int = 12
+    eis_max_pages: int = 8
     scrape_concurrency: int = 1
     scrape_source_timeout_seconds: float = 100.0
     scrape_job_timeout_seconds: float = 600.0
@@ -70,7 +74,7 @@ class Settings(BaseSettings):
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     )
-    seed_if_empty: bool = True
+    seed_if_empty: bool = False
     hide_outdated_default: bool = True
     jwt_secret: str = "tender-aggregator-dev-secret-change-me"
     jwt_expire_hours: int = 72
@@ -83,6 +87,7 @@ class Settings(BaseSettings):
     enrich_limit_per_scrape: int = 8
     source_silence_minutes: int = 30
     monitor_telegram_chat_id: str | None = None
+    # When true, API/scheduler only enqueue scrape/monitor jobs; run `python -m app.worker`
     scrape_via_worker: bool = True
     contour_api_url: str | None = None
     contour_api_token: str | None = None

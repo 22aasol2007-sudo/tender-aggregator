@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.models import FilterPreset, Tender
 from app.parsers.base import ParsedTender
-from app.services.niche import TRANSPORT_EXCLUDE, TRANSPORT_PRESET_FILTERS, TRANSPORT_Q
+from app.services.niche import (
+    TRANSPORT_EXCLUDE,
+    TRANSPORT_FULL_Q,
+    TRANSPORT_PRESET_FILTERS,
+    TRANSPORT_SHORT_Q,
+)
 
 
 SAMPLE_TITLES = [
@@ -54,10 +59,19 @@ METHODS = [
 BUILTIN_PRESETS = [
     {
         "name": "Грузоперевозки + реф",
-        "description": "Рефрижератор и общие грузоперевозки (расширенные ключевые слова, OR)",
+        "description": "High-recall ниша (короткий список + ОКПД, OR)",
         "filters": {
             **TRANSPORT_PRESET_FILTERS,
-            "q": TRANSPORT_Q,
+            "q": TRANSPORT_SHORT_Q,
+            "exclude": TRANSPORT_EXCLUDE,
+        },
+    },
+    {
+        "name": "Максимум ниши",
+        "description": "Полный словарь грузоперевозок и рефа (OR)",
+        "filters": {
+            **TRANSPORT_PRESET_FILTERS,
+            "q": TRANSPORT_FULL_Q,
             "exclude": TRANSPORT_EXCLUDE,
         },
     },
