@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import itertools
 import re
 
-from sqlalchemy import func, literal_column, not_, or_, text
+from sqlalchemy import bindparam, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -20,8 +21,7 @@ RANK_TERM_LIMIT = 40
 # OKPD-like codes first so they are never dropped when the query is long.
 _OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
 
-# SQL literal empty string — avoid bindparam collisions when OR-ing many _field_hit() clauses.
-_EMPTY = literal_column("''")
+_bind_seq = itertools.count(1)
 
 
 def split_terms(value: str | None) -> list[str]:
@@ -62,18 +62,21 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
 def _field_hit(term: str):
     """True when any searchable field contains term.
 
-    COALESCE uses a SQL literal empty string (not a bound '') so OR-ing many
-    term clauses does not collide bind parameter names and silently match nothing.
+    Each call uses uniquely named bindparams so OR-ing many terms does not
+    collide empty-string / pattern binds (which previously made multi-term q
+    match nothing on Postgres).
     """
-    like = f"%{term}%"
+    n = next(_bind_seq)
+    like = bindparam(f"ft_like_{n}", f"%{term}%")
+    empty = bindparam(f"ft_empty_{n}", "")
     return or_(
-        func.coalesce(Tender.title, _EMPTY).ilike(like),
-        func.coalesce(Tender.customer, _EMPTY).ilike(like),
-        func.coalesce(Tender.description, _EMPTY).ilike(like),
-        func.coalesce(Tender.external_id, _EMPTY).ilike(like),
-        func.coalesce(Tender.okpd2, _EMPTY).ilike(like),
-        func.coalesce(Tender.region, _EMPTY).ilike(like),
-        func.coalesce(Tender.method, _EMPTY).ilike(like),
+        func.coalesce(Tender.title, empty).ilike(like),
+        func.coalesce(Tender.customer, empty).ilike(like),
+        func.coalesce(Tender.description, empty).ilike(like),
+        func.coalesce(Tender.external_id, empty).ilike(like),
+        func.coalesce(Tender.okpd2, empty).ilike(like),
+        func.coalesce(Tender.region, empty).ilike(like),
+        func.coalesce(Tender.method, empty).ilike(like),
     )
 
 
