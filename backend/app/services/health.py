@@ -26,15 +26,26 @@ def record_source_run(db: Session, run: ScrapeRun) -> SourceHealth:
         row = SourceHealth(source=run.source)
         db.add(row)
 
+    now = datetime.now(timezone.utc)
+
     if run.status == "skipped":
-        # Do not bump last_run_at so half-open re-probe can fire later
         row.last_status = run.status
         row.last_error = run.error
+        err = (run.error or "").lower()
+        # fail-fast: keep last_run_at stale so half-open re-probe can fire later
+        if err.startswith("fail-fast"):
+            db.commit()
+            db.refresh(row)
+            return row
+        # Permanent SPA / geo skip — record the check, don't alarm as silence/fail-fast
+        row.last_run_at = now
+        row.last_fetched = run.fetched or 0
+        row.last_upserted = run.upserted or 0
+        row.consecutive_failures = 0
         db.commit()
         db.refresh(row)
         return row
 
-    now = datetime.now(timezone.utc)
     row.last_run_at = now
     row.last_status = run.status
     row.last_error = run.error

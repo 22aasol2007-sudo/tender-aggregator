@@ -332,6 +332,8 @@ def _source_empty_message(source_id: str) -> tuple[str, str]:
     note = getattr(parser, "last_fetch_note", None) or getattr(parser, "unavailable_reason", None)
     if requires_api and not api_ready:
         return "needs_api", (note or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ")[:1000]
+    if not getattr(parser, "public_listing", True):
+        return "skipped", (note or f"{getattr(parser, 'display_name', source_id)}: публичный список недоступен")[:1000]
     if note:
         return "empty", str(note)[:1000]
     return "empty", "Источник недоступен или пуст"
@@ -353,6 +355,19 @@ async def _scrape_one_source(db: Session, source_id: str) -> tuple[ScrapeRun, li
         run.error = (
             getattr(parser, "unavailable_reason", None)
             or f"{getattr(parser, 'display_name', source_id)}: нужен API-ключ"
+        )[:1000]
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(run)
+        record_source_run(db, run)
+        return run, touched, new_ids
+
+    # Known SPA / login walls: skip without spending the source timeout budget
+    if parser is not None and not getattr(parser, "public_listing", True):
+        run.status = "skipped"
+        run.error = (
+            getattr(parser, "unavailable_reason", None)
+            or f"{getattr(parser, 'display_name', source_id)}: публичный список недоступен"
         )[:1000]
         run.finished_at = datetime.now(timezone.utc)
         db.commit()

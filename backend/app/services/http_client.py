@@ -73,6 +73,7 @@ def _default_headers() -> dict[str, str]:
         "User-Agent": settings.user_agent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        # gzip/deflate/br — brotli package required so httpx can decode br
         "Accept-Encoding": "gzip, deflate, br",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",

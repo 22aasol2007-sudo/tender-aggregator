@@ -17,3 +17,5 @@ frontend/.env.neon
 .env.neon
 
 .vercel
+
+_probe/

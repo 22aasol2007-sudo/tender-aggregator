@@ -418,6 +418,10 @@ export type SourceMetric = {
   last_upserted: number;
   silent?: boolean;
   silent_for_minutes?: number | null;
+  requires_api?: boolean;
+  api_ready?: boolean;
+  public_listing?: boolean;
+  scrape_capable?: boolean;
 };
 
 export type MonitorSnapshot = {

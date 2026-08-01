@@ -80,6 +80,11 @@ class ZakupkiParser:
     """ЕИС zakupki.gov.ru — извещения 44-ФЗ / 223-ФЗ через RSS + HTML fallback."""
 
     BASE = "https://zakupki.gov.ru/epz/order/extendedsearch/rss.html"
+    # Open RSS mirrors / alternate entry points when primary geo-blocks from EU/US
+    ALT_RSS = (
+        "https://zakupki.gov.ru/epz/order/extendedsearch/rss.html",
+        "https://zakupki.gov.ru/epz/order/notice/printForm/searchRss.html",
+    )
 
     def __init__(self, law: str) -> None:
         if law not in {"44", "223"}:
@@ -87,8 +92,12 @@ class ZakupkiParser:
         self.law = law
         self.source = f"zakupki_{law}"
         self.display_name = f"ЕИС · {law}-ФЗ"
+        self.public_listing = True
+        self.requires_api = False
+        self.last_fetch_note: str | None = None
+        self.unavailable_reason: str | None = None
 
-    def _rss_url(self, page: int = 1) -> str:
+    def _rss_url(self, page: int = 1, base: str | None = None) -> str:
         params = {
             "morphology": "on",
             "search-filter": "Дате размещения",
@@ -104,7 +113,8 @@ class ZakupkiParser:
             "pa": "on",
             "currencyIdGeneral": "-1",
         }
-        return f"{self.BASE}?{urlencode(params)}"
+        root = base or self.BASE
+        return f"{root}?{urlencode(params)}"
 
     def _html_url(self, page: int = 1) -> str:
         params = parse_qs(urlparse(self._rss_url(page)).query)
@@ -122,8 +132,18 @@ class ZakupkiParser:
         # RSS first (works better from abroad than full HTML search UI)
         tenders = await self._from_rss_cached(headers)
         if tenders:
+            self.last_fetch_note = None
             return tenders
-        return await self._from_html()
+        html_items = await self._from_html()
+        if html_items:
+            self.last_fetch_note = None
+            return html_items
+        if not self.last_fetch_note:
+            self.last_fetch_note = (
+                f"ЕИС {self.law}-ФЗ недоступен из-за рубежа (SSL/geo). "
+                "Нужен SCRAPE_PROXY_URL (RU-прокси)"
+            )
+        return []
 
     async def _from_rss(self, client: httpx.AsyncClient) -> list[ParsedTender]:
         """Legacy path kept for tests; prefer _from_rss_cached in production."""
@@ -190,20 +210,34 @@ class ZakupkiParser:
         from app.services.http_client import cached_get
 
         items: list[ParsedTender] = []
+        notes: list[str] = []
+        bases = [self.BASE]
         # One page first; second only if the first returned a full-ish page
-        for page in (1, 2):
-            try:
-                response = await cached_get(self._rss_url(page), headers=headers)
-            except httpx.HTTPError:
+        for base in bases:
+            for page in (1, 2):
+                url = self._rss_url(page, base=base)
+                try:
+                    response = await cached_get(url, headers=headers)
+                except httpx.HTTPError as exc:
+                    notes.append(f"RSS {type(exc).__name__}")
+                    break
+                if response.status_code != 200:
+                    notes.append(f"RSS HTTP {response.status_code}")
+                    break
+                # Captcha / block pages are HTML without <item>
+                if "<item" not in response.text.lower() and "<entry" not in response.text.lower():
+                    notes.append("RSS без item (geo/captcha?)")
+                    break
+                feed = feedparser.parse(response.text)
+                page_items = self._parse_rss_feed(feed)
+                items.extend(page_items)
+                # EIS RSS often returns ~50; stop early on empty / short pages
+                if len(page_items) < 10:
+                    break
+            if items:
                 break
-            if response.status_code != 200:
-                break
-            feed = feedparser.parse(response.text)
-            page_items = self._parse_rss_feed(feed)
-            items.extend(page_items)
-            # EIS RSS often returns ~50; stop early on empty / short pages
-            if len(page_items) < 10:
-                break
+        if notes and not items:
+            self.last_fetch_note = "; ".join(notes[:3])
         return self._dedupe(items)
 
     async def _from_html(self) -> list[ParsedTender]:
@@ -214,12 +248,15 @@ class ZakupkiParser:
             "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.5",
         }
         items: list[ParsedTender] = []
+        notes: list[str] = []
         for page in (1, 2):
             try:
                 response = await cached_get(self._html_url(page), headers=headers)
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                notes.append(f"HTML {type(exc).__name__}")
                 break
             if response.status_code != 200:
+                notes.append(f"HTML HTTP {response.status_code}")
                 break
             soup = BeautifulSoup(response.text, "lxml")
             blocks = soup.select(".search-registry-entry-block") or soup.select(
@@ -262,6 +299,8 @@ class ZakupkiParser:
                 )
             if not blocks:
                 break
+        if notes and not items and not self.last_fetch_note:
+            self.last_fetch_note = "; ".join(notes[:3])
         seen: set[str] = set()
         unique: list[ParsedTender] = []
         for item in items:

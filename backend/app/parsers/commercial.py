@@ -14,6 +14,7 @@ from dateutil import parser as date_parser
 from app.config import settings
 from app.parsers.base import ParsedTender
 
+# Prefer longer descriptive titles over "Подробнее" / empty
 _JUNK_TITLES = {
     "опубликовано",
     "название",
@@ -28,6 +29,10 @@ _JUNK_TITLES = {
     "подробнее",
     "далее",
     "читать",
+    "бесплатное участие",
+    "подать заявку",
+    "смотреть",
+    "подробная информация",
 }
 _TRACKING_PARAMS = {
     "sqh",
@@ -50,11 +55,13 @@ _DETAIL_HREF_RE = re.compile(
     r"/procedure/[A-Za-z0-9][A-Za-z0-9_-]{3,}"
     r"|/procedures?/\d+"
     r"|/v2/trades/procedure/view/[A-Za-z0-9_-]+"
+    r"|/tender/\d{5,}"
     r"|/tender-\d+"
     r"|/\d{5,}-tender"
     r"|/region/[^\"'#?\s]+/\d{5,}-tender[^\"'#?\s]*"
     r"|/app/market-next/[^\"'#?\s]+/tender-\d+"
     r"|/market/[^\"'#?\s]+/tender-\d+"
+    r"|/44/procedure/[A-Za-z0-9/_-]+"
     r")",
     re.I,
 )
@@ -105,7 +112,9 @@ def _is_junk_row(href: str, title: str) -> bool:
     low = title.strip().lower()
     if low in _JUNK_TITLES or len(title.strip()) < 12:
         return True
-    if re.match(r"^лот\s*\d+\b", low):
+    # Bare "Лот 1" is junk; "Лот 1 Екатеринбург" / descriptive lot titles are kept
+    lot_m = re.match(r"^лот\s*\d+\b\s*(.*)$", low)
+    if lot_m is not None and len(lot_m.group(1).strip()) < 3:
         return True
     if re.search(r"[?&]order_by=|[?&]order_dir=|[?&]sort=|/login|/register|javascript:", href, re.I):
         return True
@@ -133,6 +142,7 @@ def _extract_external_id(href: str, source: str, idx: int) -> str | None:
         r"/v2/trades/procedure/view/([A-Za-z0-9_-]{8,})",
         r"/procedure/[A-Za-z]{1,6}\d*/(\d{10,})",
         r"/procedure/([A-Za-z0-9][A-Za-z0-9_-]{5,})",
+        r"/tender/(\d{5,})",
         r"tender[_/-]?(\d{4,})",
         r"/(\d{5,})-tender",
         r"/tenders?/(\d+)",
@@ -142,6 +152,7 @@ def _extract_external_id(href: str, source: str, idx: int) -> str | None:
         r"/lot/(\d+)",
         r"[?&]id=(\d{4,})",
         r"/Notice/(\d{4,})",
+        r"/44/procedure/[^/]+/(\d{10,})",
     ]
     for pat in patterns:
         m = re.search(pat, href, re.I)
@@ -546,7 +557,9 @@ class RoseltorgParser(CommercialHtmlParser):
         self.display_name = "Росэлторг"
         self.base_url = "https://www.roseltorg.ru"
         self.search_urls = [
+            # status 5 = приём заявок; also try without filter + page HTML fallback
             "https://www.roseltorg.ru/procedures/search_ajax?page=1&status%5B%5D=5",
+            "https://www.roseltorg.ru/procedures/search_ajax?page=1",
             "https://www.roseltorg.ru/procedures/search?status[]=5",
         ]
 
@@ -568,6 +581,24 @@ class RoseltorgParser(CommercialHtmlParser):
                 subj_text = subject.get_text(" ", strip=True)
                 if len(subj_text) > len(title):
                     title = subj_text
+            text = card.get_text(" ", strip=True)
+            # Prefer organizer / section line when title is only "Лот N City"
+            if re.match(r"^лот\s*\d+\b", (title or "").lower()):
+                org_m = re.search(
+                    r"Организатор\s+(.+?)(?:\s+лот\b|\s+Ожидание|\s+\d+\s*дн\.|$)",
+                    text,
+                    re.I,
+                )
+                section_m = re.search(
+                    r"\)\s*([А-ЯA-Z«\"][^.]{8,120}?)\s+\d{2}\.\s",
+                    text,
+                )
+                bits = [title]
+                if section_m:
+                    bits.append(section_m.group(1).strip())
+                if org_m:
+                    bits.append(org_m.group(1).strip())
+                title = " — ".join(dict.fromkeys(b for b in bits if b))[:500]
             if href.startswith("/"):
                 href = urljoin(self.base_url, href)
             if not title or _is_junk_row(href, title):
@@ -575,7 +606,6 @@ class RoseltorgParser(CommercialHtmlParser):
             ext = _extract_external_id(href, self.source, idx)
             if not ext:
                 continue
-            text = card.get_text(" ", strip=True)
             items.append(
                 ParsedTender(
                     external_id=ext[:64],

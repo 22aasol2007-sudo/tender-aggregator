@@ -568,6 +568,12 @@ export default function App() {
                     <span className="chip">ok {m.success_rate}%</span>
                     {m.silent && <span className="chip chip-law">молчит</span>}
                     {m.last_status === "needs_api" && <span className="chip chip-law">нужен API</span>}
+                    {m.last_status === "skipped" && !m.scrape_capable && (
+                      <span className="chip chip-law">недоступен</span>
+                    )}
+                    {m.scrape_capable === false && m.last_status !== "needs_api" && m.last_status !== "skipped" && (
+                      <span className="chip">без HTML</span>
+                    )}
                   </div>
                   <p>
                     success {m.success_count} / fallback {m.fallback_count} / empty {m.empty_count} / err {m.error_count}

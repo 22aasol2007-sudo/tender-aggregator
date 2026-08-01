@@ -6,11 +6,29 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import SourceHealth
+from app.parsers import get_parsers
 from app.services.health import ensure_source_rows, source_metrics
 from app.services.telegram import send_telegram_message
 
 
 CRITICAL_SOURCES = ("zakupki_44", "zakupki_223")
+# Statuses that mean "configured gap / intentional skip" — never «молчит»
+_NON_SILENT_STATUSES = frozenset({"needs_api", "skipped", "unknown"})
+
+
+def _parser_flags(source_id: str) -> dict:
+    parser = get_parsers().get(source_id)
+    requires_api = bool(parser and getattr(parser, "requires_api", False))
+    api_ready = bool(parser and getattr(parser, "api_ready", False))
+    public_listing = bool(parser is None or getattr(parser, "public_listing", True))
+    # Scrape-capable: we expect HTTP listing/API without paid credentials
+    scrape_capable = (not requires_api or api_ready) and public_listing
+    return {
+        "requires_api": requires_api,
+        "api_ready": api_ready,
+        "public_listing": public_listing,
+        "scrape_capable": scrape_capable,
+    }
 
 
 def monitor_snapshot(db: Session) -> dict:
@@ -21,11 +39,21 @@ def monitor_snapshot(db: Session) -> dict:
     alerts: list[dict] = []
 
     for row in metrics:
+        flags = _parser_flags(row["source"])
+        row.update(flags)
+
         last_ok = row["last_ok_at"]
+        status = row["last_status"] or "unknown"
         silent = False
         silent_for = None
-        if last_ok is None:
-            silent = row["last_run_at"] is not None or row["last_status"] != "unknown"
+
+        # needs_api / SPA unavailable / fail-fast skip → clear status, not silence alarm
+        if status in _NON_SILENT_STATUSES or not flags["scrape_capable"]:
+            silent = False
+            silent_for = None
+        elif last_ok is None:
+            # Expected-to-work scrape source that never succeeded after a run
+            silent = row["last_run_at"] is not None
             silent_for = None
         else:
             delta = now - (last_ok if last_ok.tzinfo else last_ok.replace(tzinfo=timezone.utc))
@@ -46,8 +74,11 @@ def monitor_snapshot(db: Session) -> dict:
     unhealthy = [
         m
         for m in metrics
-        if m["last_status"] in {"fallback", "error"}
-        or (m["consecutive_failures"] >= 3 and m["last_status"] not in {"needs_api", "skipped"})
+        if m.get("scrape_capable", True)
+        and (
+            m["last_status"] in {"fallback", "error"}
+            or (m["consecutive_failures"] >= 3 and m["last_status"] not in {"needs_api", "skipped"})
+        )
     ]
     return {
         "checked_at": now.isoformat(),
