@@ -157,7 +157,7 @@ def niche_payload() -> dict:
         "okpd": list(TRANSPORT_PROFILE_OKPD),
         "eis_search_passes": list(EIS_SEARCH_PASSES),
         # Bump when search/niche recall logic changes (deploy sanity check)
-        "search_engine": "phrase-and-or-v8",
+        "search_engine": "phrase-and-or-v9",
         "presets": {
             "default": {
                 "name": "Грузоперевозки + реф",

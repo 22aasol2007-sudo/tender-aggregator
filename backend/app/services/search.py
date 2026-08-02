@@ -95,20 +95,6 @@ def _okpd_hit(code: str):
     return Tender.okpd2.ilike(bindparam(f"ft_okpd_{n}", f"{code}%"))
 
 
-def _search_blob():
-    """Nullable-safe concatenation for multi-word phrase ANDs (avoids nested OR(AND(OR…)))."""
-    return func.concat_ws(
-        " ",
-        Tender.title,
-        Tender.customer,
-        Tender.description,
-        Tender.external_id,
-        Tender.okpd2,
-        Tender.region,
-        Tender.method,
-    )
-
-
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
     """One niche alternative: OKPD code, single stem, or multi-word phrase."""
     if _OKPD_TERM_RE.match(phrase):
@@ -118,11 +104,9 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word as ONE ilike on the searchable blob (%w1%w2%…).
-    # Do not wrap word hits in and_(): nested AND under match_any OR collapses to ~1 row on PG/psycopg.
-    n = next(_bind_seq)
-    pattern = "%" + "%".join(words) + "%"
-    return _search_blob().ilike(bindparam(f"ft_phrase_{n}", pattern))
+    # Multi-word: one glued ILIKE per field (%w1%w2%), same as stems.
+    # Avoid concat_ws / and_ under match_any OR — both collapsed Postgres hits to ~1 row.
+    return _field_hit("%".join(words), null_safe=null_safe)
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
