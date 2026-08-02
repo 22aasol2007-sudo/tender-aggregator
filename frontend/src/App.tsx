@@ -687,7 +687,16 @@ export default function App() {
               Проверка: {formatDate(monitor.checked_at)} · порог тишины {monitor.silence_minutes} мин ·
               проблемных: {monitor.unhealthy_count}
               {monitor.alerts.length > 0 ? ` · алертов: ${monitor.alerts.length}` : ""}
+              {" · "}
+              Грузовые в базе: {monitor.freight_matched ?? "—"} / всего {monitor.total_tenders ?? "—"}
             </p>
+          )}
+          {monitor?.alerts && monitor.alerts.length > 0 && (
+            <ul className="monitor-alerts">
+              {monitor.alerts.map((a) => (
+                <li key={`${a.source}-${a.message.slice(0, 40)}`}>{a.message}</li>
+              ))}
+            </ul>
           )}
           <div className="list">
             {(monitor?.sources || metrics).map((m) => (
@@ -766,7 +775,33 @@ export default function App() {
                 />
                 <span className="field-hint">
                   Формат: HTTPS JSON endpoint со списком (items/data/results). HTML-страница площадки не подойдёт.
+                  {row.guide?.url_hint ? ` ${row.guide.url_hint}` : ""}
                 </span>
+                {row.guide && (
+                  <details className="cred-guide">
+                    <summary>Как получить ключ</summary>
+                    {row.guide.paid_note && <p className="muted">{row.guide.paid_note}</p>}
+                    <p className="muted">
+                      Сайт:{" "}
+                      <a href={row.guide.website} target="_blank" rel="noreferrer">
+                        {row.guide.website}
+                      </a>
+                      {row.guide.signup_url && row.guide.signup_url !== row.guide.website && (
+                        <>
+                          {" · "}
+                          <a href={row.guide.signup_url} target="_blank" rel="noreferrer">
+                            API / заявка
+                          </a>
+                        </>
+                      )}
+                    </p>
+                    <ol className="cred-guide-steps">
+                      {row.guide.steps.map((step, i) => (
+                        <li key={i}>{step}</li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
                 <label>API токен</label>
                 <input
                   type="password"

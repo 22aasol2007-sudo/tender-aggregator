@@ -42,6 +42,7 @@ from app.schemas import (
     ScrapeEnqueueOut,
     ScrapeRequest,
     ScrapeRunOut,
+    SourceCredentialGuideOut,
     SourceCredentialIn,
     SourceCredentialOut,
     SourceCredentialTestIn,
@@ -269,6 +270,9 @@ def stats(db: Session = Depends(get_db)) -> StatsOut:
         )
     }
     last = db.query(func.max(ScrapeRun.finished_at)).scalar()
+    from app.services.monitor import freight_metrics
+
+    freight = freight_metrics(db)
     payload = StatsOut(
         total=total,
         active=active,
@@ -276,6 +280,8 @@ def stats(db: Session = Depends(get_db)) -> StatsOut:
         by_law=by_law,
         last_scrape=last,
         database=_db_label(),
+        freight_matched=freight["freight_matched"],
+        total_tenders=freight["total_tenders"],
     )
     cache_set(cache_key, payload.model_dump(mode="json"), settings.api_cache_ttl_seconds)
     return payload
@@ -898,6 +904,19 @@ def get_scrape_credentials(
 ) -> list[SourceCredentialOut]:
     """Masked credential status. Tokens never returned in full."""
     return [SourceCredentialOut.model_validate(row) for row in list_credential_status(db)]
+
+
+@router.get(
+    "/admin/scrape-credential-guides",
+    response_model=list[SourceCredentialGuideOut],
+)
+def get_scrape_credential_guides(
+    _admin: User = Depends(require_admin),
+) -> list[SourceCredentialGuideOut]:
+    """How-to obtain API keys for commercial sources (no secrets)."""
+    from app.services.api_guides import list_api_source_guides
+
+    return [SourceCredentialGuideOut.model_validate(g) for g in list_api_source_guides()]
 
 
 @router.put("/admin/scrape-credentials/{source}", response_model=SourceCredentialOut)

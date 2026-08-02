@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from app.services.history import content_hash_for, record_changes
 from app.services.normalize import (
     extract_okpd2,
     make_fingerprint,
+    make_soft_fingerprint,
     normalize_price,
     normalize_region,
     normalize_status,
@@ -135,6 +137,59 @@ def _mark_duplicates(db: Session, fingerprint: str, keeper_id: int) -> None:
             other.duplicate_of_id = keeper_id
 
 
+def _mark_soft_cross_source_duplicates(db: Session, tender: Tender) -> None:
+    """Light soft dedup: same normalized title+customer within ±7d across sources."""
+    if tender.is_duplicate:
+        return
+    soft = make_soft_fingerprint(tender.title, tender.customer)
+    if not soft:
+        return
+    title = (tender.title or "").strip()
+    customer = (tender.customer or "").strip()
+    if not title or not customer:
+        return
+    anchor = tender.published_at or tender.created_at
+    if anchor is None:
+        return
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    since = anchor - timedelta(days=7)
+    until = anchor + timedelta(days=7)
+    # Exact stored title+customer (already normalize_text'd on save).
+    others = (
+        db.query(Tender)
+        .filter(
+            Tender.id != tender.id,
+            Tender.source != tender.source,
+            Tender.title == title,
+            Tender.customer == customer,
+            or_(
+                and_(
+                    Tender.published_at.isnot(None),
+                    Tender.published_at >= since,
+                    Tender.published_at <= until,
+                ),
+                and_(
+                    Tender.published_at.is_(None),
+                    Tender.created_at >= since,
+                    Tender.created_at <= until,
+                ),
+            ),
+        )
+        .limit(30)
+        .all()
+    )
+    for other in others:
+        if other.id < tender.id:
+            tender.is_duplicate = True
+            tender.duplicate_of_id = other.id
+            other.is_duplicate = False
+            other.duplicate_of_id = None
+        elif not other.is_duplicate:
+            other.is_duplicate = True
+            other.duplicate_of_id = tender.id
+
+
 def _is_junk_item(item: ParsedTender) -> bool:
     junk_titles = {"опубликовано", "название", "наименование", "заказчик", "цена", "статус"}
     ext = (item.external_id or "").strip()
@@ -186,6 +241,7 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
             db.flush()
             _link_customer(db, tender, bump_stats=True)
             _mark_duplicates(db, tender.fingerprint or "", tender.id)
+            _mark_soft_cross_source_duplicates(db, tender)
             upserted += 1
             touched_ids.append(tender.id)
             new_ids.append(tender.id)
@@ -212,6 +268,7 @@ def upsert_tenders_collect_new(db: Session, items: list[ParsedTender]) -> tuple[
         _link_customer(db, existing, bump_stats=False)
         record_changes(db, existing, before)
         _mark_duplicates(db, existing.fingerprint or "", existing.id)
+        _mark_soft_cross_source_duplicates(db, existing)
         upserted += 1
         touched_ids.append(existing.id)
 

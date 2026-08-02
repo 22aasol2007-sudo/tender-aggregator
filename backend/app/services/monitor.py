@@ -5,15 +5,22 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import SourceHealth
+from app.models import SourceHealth, Tender
 from app.parsers import get_parsers
 from app.services.health import ensure_source_rows, source_metrics
+from app.services.niche import TRANSPORT_SHORT_Q
+from app.services.search import apply_fulltext
 from app.services.telegram import send_telegram_message
 
 
 CRITICAL_SOURCES = ("zakupki_44", "zakupki_223")
 # Statuses that mean "configured gap / intentional skip" — never «молчит»
 _NON_SILENT_STATUSES = frozenset({"needs_api", "skipped", "unknown"})
+
+_PROXY_HINT = (
+    " ЕИС (zakupki.gov.ru) часто режет datacenter IP: нужен ISP/residential RU-прокси "
+    "(SCRAPE_PROXY_URL / HTTP(S)_PROXY). Без него HOT-сбор с ЕИС пустой или captcha/geo."
+)
 
 
 def _parser_flags(source_id: str) -> dict:
@@ -31,12 +38,22 @@ def _parser_flags(source_id: str) -> dict:
     }
 
 
+def freight_metrics(db: Session) -> dict[str, int]:
+    """Counts matching niche short_q vs all non-duplicate tenders."""
+    total = db.query(Tender).filter(Tender.is_duplicate.is_(False)).count()
+    q = db.query(Tender).filter(Tender.is_duplicate.is_(False))
+    q = apply_fulltext(q, TRANSPORT_SHORT_Q, match_any=True)
+    freight_matched = q.count()
+    return {"freight_matched": freight_matched, "total_tenders": total}
+
+
 def monitor_snapshot(db: Session) -> dict:
     ensure_source_rows(db)
     metrics = source_metrics(db)
     now = datetime.now(timezone.utc)
     silence_minutes = settings.source_silence_minutes
     alerts: list[dict] = []
+    freight = freight_metrics(db)
 
     for row in metrics:
         flags = _parser_flags(row["source"])
@@ -78,9 +95,11 @@ def monitor_snapshot(db: Session) -> dict:
                 or row.get("last_status") == "empty"
             ):
                 msg += (
-                    ". Прокси есть, но ЕИС пуст — нужен ISP/residential RU-прокси "
+                    ". Прокси есть, но ЕИС пуст — нужен именно ISP/residential RU "
                     "(datacenter часто режется captcha/geo)."
                 )
+            else:
+                msg += _PROXY_HINT
             alerts.append(
                 {
                     "source": row["source"],
@@ -104,6 +123,8 @@ def monitor_snapshot(db: Session) -> dict:
         "sources": metrics,
         "unhealthy_count": len(unhealthy),
         "alerts": alerts,
+        "freight_matched": freight["freight_matched"],
+        "total_tenders": freight["total_tenders"],
     }
 
 

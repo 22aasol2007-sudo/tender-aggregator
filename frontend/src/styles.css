@@ -536,6 +536,38 @@ a {
   padding-top: 0.25rem;
 }
 
+.cred-guide {
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel, #fff) 92%, var(--accent, #2a6) 8%);
+}
+
+.cred-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.cred-guide-steps {
+  margin: 0.4rem 0 0.2rem 1.1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.monitor-alerts {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.15rem;
+  color: var(--danger, #b33);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
 .dash-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr;

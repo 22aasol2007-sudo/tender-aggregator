@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     enrich_on_scrape: bool = False
     enrich_new_only: bool = True
     enrich_limit_per_scrape: int = 8
-    source_silence_minutes: int = 30
+    source_silence_minutes: int = 15
     monitor_telegram_chat_id: str | None = None
     # When true, API/scheduler only enqueue scrape/monitor jobs; run `python -m app.worker`
     scrape_via_worker: bool = True

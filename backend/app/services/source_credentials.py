@@ -114,6 +114,9 @@ def resolve_credentials(source: str, db: Session | None = None) -> tuple[str | N
             session.close()
 
 
+from app.services.api_guides import get_api_source_guide
+
+
 def list_credential_status(db: Session) -> list[dict[str, Any]]:
     rows = {
         r.source: r
@@ -136,6 +139,7 @@ def list_credential_status(db: Session) -> list[dict[str, Any]]:
                 "url_from_db": resolved.url_from_db,
                 "token_from_db": resolved.token_from_db,
                 "updated_at": rows[source].updated_at if source in rows else None,
+                "guide": get_api_source_guide(source),
             }
         )
     return out

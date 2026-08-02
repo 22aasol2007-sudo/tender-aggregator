@@ -49,6 +49,8 @@ export type Stats = {
   by_law: Record<string, number>;
   last_scrape: string | null;
   database: string;
+  freight_matched?: number;
+  total_tenders?: number;
 };
 
 export type Dashboard = {
@@ -129,7 +131,7 @@ export type Filters = {
 
 /** Fallback if GET /api/niche unavailable — keep in sync with niche.py TRANSPORT_SHORT_*. */
 export const TRANSPORT_DEFAULT_Q =
-  "перевоз, транспортн, грузоперевоз, рефрижератор, автоперевоз, экспедиц, логистик, изотерм, хладотранспорт, перевозка грузов, транспортные услуги, 49.41";
+  "49.41, 49.4, 52.29, перевозка грузов, грузоперевоз, автоперевоз, транспортные услуги, транспортно-экспедиц, рефрижератор, хладотранспорт, изотерм, услуги грузового транспорта, доставка грузов";
 
 export const TRANSPORT_DEFAULT_EXCLUDE =
   "программное обеспечение, разработка сайта, лицензия ПО, антивирус, серверное оборудование, оргтехника, канцеляр, офисная мебель, уборка помещений, охранные услуги";
@@ -476,7 +478,20 @@ export type MonitorSnapshot = {
   silence_minutes: number;
   sources: SourceMetric[];
   unhealthy_count: number;
-  alerts: { source: string; message: string }[];
+  alerts: { source: string; message: string; silent_for_minutes?: number | null }[];
+  freight_matched?: number;
+  total_tenders?: number;
+};
+
+export type SourceCredentialGuide = {
+  source: string;
+  display_name: string;
+  website: string;
+  signup_url: string | null;
+  steps: string[];
+  url_hint: string | null;
+  env_names: string[];
+  paid_note: string | null;
 };
 
 export type SourceCredential = {
@@ -489,6 +504,7 @@ export type SourceCredential = {
   url_from_db: boolean;
   token_from_db: boolean;
   updated_at: string | null;
+  guide?: SourceCredentialGuide | null;
 };
 
 export type SourceCredentialTestResult = {

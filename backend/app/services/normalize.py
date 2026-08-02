@@ -135,3 +135,12 @@ def make_fingerprint(
         ]
     )
     return hashlib.sha1(base.encode("utf-8")).hexdigest()
+
+
+def make_soft_fingerprint(title: str | None, customer: str | None) -> str | None:
+    """Cross-source soft key: normalized title + customer (no price/region)."""
+    t = (normalize_text(title) or "").lower().strip()
+    c = (normalize_text(customer) or "").lower().strip()
+    if len(t) < 12 or not c:
+        return None
+    return hashlib.sha1(f"{t}|{c}".encode("utf-8")).hexdigest()

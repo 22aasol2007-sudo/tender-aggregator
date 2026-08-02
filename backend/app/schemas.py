@@ -63,6 +63,8 @@ class StatsOut(BaseModel):
     by_law: dict[str, int]
     last_scrape: datetime | None = None
     database: str
+    freight_matched: int = 0
+    total_tenders: int = 0
 
 
 class NichePresetOut(BaseModel):
@@ -269,6 +271,17 @@ class ScrapeEnqueueOut(BaseModel):
     runs: list[ScrapeRunOut] | None = None
 
 
+class SourceCredentialGuideOut(BaseModel):
+    source: str
+    display_name: str
+    website: str
+    signup_url: str | None = None
+    steps: list[str] = Field(default_factory=list)
+    url_hint: str | None = None
+    env_names: list[str] = Field(default_factory=list)
+    paid_note: str | None = None
+
+
 class SourceCredentialOut(BaseModel):
     source: str
     label: str
@@ -279,6 +292,7 @@ class SourceCredentialOut(BaseModel):
     url_from_db: bool = False
     token_from_db: bool = False
     updated_at: datetime | None = None
+    guide: SourceCredentialGuideOut | None = None
 
 
 class SourceCredentialIn(BaseModel):

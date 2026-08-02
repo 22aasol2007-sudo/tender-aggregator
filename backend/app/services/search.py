@@ -15,6 +15,7 @@ COMMA_SPLIT_RE = re.compile(r"[,;]+")
 SPACE_SPLIT_RE = re.compile(r"\s+")
 
 # Full niche OR queries exceed the old 40-term cap; keep a hard ceiling for safety.
+# TRANSPORT_INCLUDE_TERMS ≈ 62 — leave headroom for user extras.
 MATCH_ANY_TERM_LIMIT = 80
 RANK_TERM_LIMIT = 40
 
