@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import and_, bindparam, func, not_, or_, select, text, union as sql_union
+from sqlalchemy import and_, bindparam, false, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -120,11 +120,20 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Fresh select(id) per term — do NOT derive id branches from `query`.
-        # Chaining query.filter(…).with_entities(id).union(…) into query.id.in_(…)
-        # correlates the subquery and drops phrase matches on Postgres.
-        id_parts = [select(Tender.id).where(_phrase_hit(term, null_safe=False)) for term in selected]
-        return query.filter(Tender.id.in_(sql_union(*id_parts)))
+        # Multi-term OR cannot be one SQL statement: nested or_/UNION of ILIKE
+        # trees drops phrase branches on Postgres (0–1 hits). Resolve each term
+        # with its own query (proven single-term path), then filter by id set.
+        matched: set[int] = set()
+        for term in selected:
+            rows = (
+                query.filter(_phrase_hit(term, null_safe=False))
+                .with_entities(Tender.id)
+                .all()
+            )
+            matched.update(int(r[0]) for r in rows)
+        if not matched:
+            return query.filter(false())
+        return query.filter(Tender.id.in_(matched))
 
     for term in terms:
         query = query.filter(_phrase_hit(term, null_safe=False))
