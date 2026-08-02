@@ -58,29 +58,34 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
     return (okpd + rest)[:limit]
 
 
+def _like_param(term: str, *, prefix: str = "ft_like"):
+    """Fresh bindparam per use — reusing one bind across OR/AND nests collapses Postgres matches."""
+    n = next(_bind_seq)
+    return bindparam(f"{prefix}_{n}", f"%{term}%")
+
+
 def _field_hit(term: str, *, null_safe: bool = False):
     """True when any searchable field contains term."""
-    n = next(_bind_seq)
-    like = bindparam(f"ft_like_{n}", f"%{term}%")
     if not null_safe:
         return or_(
-            Tender.title.ilike(like),
-            Tender.customer.ilike(like),
-            Tender.description.ilike(like),
-            Tender.external_id.ilike(like),
-            Tender.okpd2.ilike(like),
-            Tender.region.ilike(like),
-            Tender.method.ilike(like),
+            Tender.title.ilike(_like_param(term)),
+            Tender.customer.ilike(_like_param(term)),
+            Tender.description.ilike(_like_param(term)),
+            Tender.external_id.ilike(_like_param(term)),
+            Tender.okpd2.ilike(_like_param(term)),
+            Tender.region.ilike(_like_param(term)),
+            Tender.method.ilike(_like_param(term)),
         )
+    n = next(_bind_seq)
     empty = bindparam(f"ft_empty_{n}", "")
     return or_(
-        func.coalesce(Tender.title, empty).ilike(like),
-        func.coalesce(Tender.customer, empty).ilike(like),
-        func.coalesce(Tender.description, empty).ilike(like),
-        func.coalesce(Tender.external_id, empty).ilike(like),
-        func.coalesce(Tender.okpd2, empty).ilike(like),
-        func.coalesce(Tender.region, empty).ilike(like),
-        func.coalesce(Tender.method, empty).ilike(like),
+        func.coalesce(Tender.title, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.customer, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.description, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.external_id, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.okpd2, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.region, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.method, empty).ilike(_like_param(term)),
     )
 
 
@@ -99,7 +104,8 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word phrase: all words must appear (possibly in different fields)
+    # Multi-word phrase: all words must appear (possibly in different fields).
+    # Each word gets its own field OR; unique binds keep nested OR(AND(...)) correct on PG.
     return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
 
 

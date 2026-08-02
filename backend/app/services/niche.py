@@ -4,21 +4,24 @@ from __future__ import annotations
 
 # High-recall default for UI (stems + phrases + OKPD). Avoid ultra-broad «груз».
 # Multi-word phrases are AND-of-words; OKPD matches okpd2 only.
-# OKPD first; strong cargo phrases; skip noisy bare «логистик».
+# OKPD first; cargo stems; phrases; skip bare «логистик» (use «логистическ»).
 TRANSPORT_SHORT_TERMS: list[str] = [
     "49.41",
     "49.4",
     "52.29",
-    "перевозка грузов",
     "грузоперевоз",
+    "перевоз",
+    "рефрижератор",
     "автоперевоз",
+    "экспедиц",
+    "изотерм",
+    "хладотранспорт",
+    "логистическ",
+    "перевозка грузов",
+    "доставка грузов",
     "транспортные услуги",
     "транспортно-экспедиц",
-    "рефрижератор",
-    "хладотранспорт",
-    "изотерм",
     "услуги грузового транспорта",
-    "доставка грузов",
 ]
 
 # OR-terms (comma-separated in TRANSPORT_Q). Multi-word = phrase match.
@@ -154,7 +157,7 @@ def niche_payload() -> dict:
         "okpd": list(TRANSPORT_PROFILE_OKPD),
         "eis_search_passes": list(EIS_SEARCH_PASSES),
         # Bump when search/niche recall logic changes (deploy sanity check)
-        "search_engine": "phrase-and-or-v5",
+        "search_engine": "phrase-and-or-v6",
         "presets": {
             "default": {
                 "name": "Грузоперевозки + реф",
