@@ -58,41 +58,41 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
     return (okpd + rest)[:limit]
 
 
-def _like_param(term: str, *, prefix: str = "ft_like"):
-    """Fresh bindparam per use — reusing one bind across OR/AND nests collapses Postgres matches."""
-    n = next(_bind_seq)
-    return bindparam(f"{prefix}_{n}", f"%{term}%")
-
-
 def _field_hit(term: str, *, null_safe: bool = False):
-    """True when any searchable field contains term."""
+    """True when any searchable field contains term.
+
+    Positive path uses plain string patterns (SQLAlchemy anonymous binds). Named
+    bindparam values were getting corrupted across multi-term OR/UNION on Postgres,
+    collapsing phrase branches to 0–1 hits.
+    """
+    pattern = f"%{term}%"
     if not null_safe:
         return or_(
-            Tender.title.ilike(_like_param(term)),
-            Tender.customer.ilike(_like_param(term)),
-            Tender.description.ilike(_like_param(term)),
-            Tender.external_id.ilike(_like_param(term)),
-            Tender.okpd2.ilike(_like_param(term)),
-            Tender.region.ilike(_like_param(term)),
-            Tender.method.ilike(_like_param(term)),
+            Tender.title.ilike(pattern),
+            Tender.customer.ilike(pattern),
+            Tender.description.ilike(pattern),
+            Tender.external_id.ilike(pattern),
+            Tender.okpd2.ilike(pattern),
+            Tender.region.ilike(pattern),
+            Tender.method.ilike(pattern),
         )
+    # Exclude path: COALESCE so NOT(field_hit) does not drop rows on NULL.
     n = next(_bind_seq)
     empty = bindparam(f"ft_empty_{n}", "")
     return or_(
-        func.coalesce(Tender.title, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.customer, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.description, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.external_id, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.okpd2, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.region, empty).ilike(_like_param(term)),
-        func.coalesce(Tender.method, empty).ilike(_like_param(term)),
+        func.coalesce(Tender.title, empty).ilike(pattern),
+        func.coalesce(Tender.customer, empty).ilike(pattern),
+        func.coalesce(Tender.description, empty).ilike(pattern),
+        func.coalesce(Tender.external_id, empty).ilike(pattern),
+        func.coalesce(Tender.okpd2, empty).ilike(pattern),
+        func.coalesce(Tender.region, empty).ilike(pattern),
+        func.coalesce(Tender.method, empty).ilike(pattern),
     )
 
 
 def _okpd_hit(code: str):
     """OKPD codes match okpd2 prefix only — never free-text (prices/dates)."""
-    n = next(_bind_seq)
-    return Tender.okpd2.ilike(bindparam(f"ft_okpd_{n}", f"{code}%"))
+    return Tender.okpd2.ilike(f"{code}%")
 
 
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
@@ -105,7 +105,6 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
     # Multi-word phrase: all words must appear (possibly in different fields).
-    # Safe when applied as a single filter; match_any multi-term uses UNION below.
     return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
 
 
@@ -121,9 +120,8 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Nested or_(phrase, phrase, …) miscompiles on Postgres (phrase branches
-        # collapse to ~0–1 hits). UNION of per-term filters matches the proven
-        # single-term path for each alternative.
+        # Per-term UNION: each alternative uses the proven single-filter path.
+        # Nested or_(complex ILIKE trees) historically dropped phrase branches on PG.
         id_union = query.filter(_phrase_hit(selected[0], null_safe=False)).with_entities(Tender.id)
         for term in selected[1:]:
             id_union = id_union.union(
