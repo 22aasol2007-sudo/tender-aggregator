@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import bindparam, func, not_, or_, text
+from sqlalchemy import and_, bindparam, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -96,7 +96,7 @@ def _okpd_hit(code: str):
 
 
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
-    """One niche alternative: OKPD code, single stem, or multi-word phrase."""
+    """One niche alternative: OKPD code, single stem, or AND of words in a phrase."""
     if _OKPD_TERM_RE.match(phrase):
         return _okpd_hit(phrase)
     words = [w for w in SPACE_SPLIT_RE.split(phrase) if w]
@@ -104,9 +104,9 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word: one glued ILIKE per field (%w1%w2%), same as stems.
-    # Avoid concat_ws / and_ under match_any OR — both collapsed Postgres hits to ~1 row.
-    return _field_hit("%".join(words), null_safe=null_safe)
+    # Multi-word phrase: all words must appear (possibly in different fields).
+    # Safe when applied as a single filter; match_any multi-term uses UNION below.
+    return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
@@ -121,7 +121,15 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        return query.filter(or_(*[_phrase_hit(term, null_safe=False) for term in selected]))
+        # Nested or_(phrase, phrase, …) miscompiles on Postgres (phrase branches
+        # collapse to ~0–1 hits). UNION of per-term filters matches the proven
+        # single-term path for each alternative.
+        id_union = query.filter(_phrase_hit(selected[0], null_safe=False)).with_entities(Tender.id)
+        for term in selected[1:]:
+            id_union = id_union.union(
+                query.filter(_phrase_hit(term, null_safe=False)).with_entities(Tender.id)
+            )
+        return query.filter(Tender.id.in_(id_union))
 
     for term in terms:
         query = query.filter(_phrase_hit(term, null_safe=False))
