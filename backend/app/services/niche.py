@@ -17,7 +17,10 @@ TRANSPORT_SHORT_TERMS: list[str] = [
     "изотерм",
     "хладотранспорт",
     "логистическ",
-    "перевозка грузов",
+    # Morphology-friendly stems (exact «транспортные услуги» rarely matches titles)
+    "транспортн",
+    "доставк",
+    "перевозк грузов",
     "доставка грузов",
     "транспортные услуги",
     "транспортно-экспедиц",
@@ -156,7 +159,7 @@ def niche_payload() -> dict:
         "okpd": list(TRANSPORT_PROFILE_OKPD),
         "eis_search_passes": list(EIS_SEARCH_PASSES),
         # Bump when search/niche recall logic changes (deploy sanity check)
-        "search_engine": "phrase-and-or-v18-crossfield-and",
+        "search_engine": "phrase-and-or-v19-short-stems",
         "presets": {
             "default": {
                 "name": "Грузоперевозки + реф",
