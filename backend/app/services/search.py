@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import and_, bindparam, func, not_, or_, text
+from sqlalchemy import bindparam, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -110,7 +110,7 @@ def _search_blob():
 
 
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
-    """One niche alternative: OKPD code, single stem, or AND of words in a phrase."""
+    """One niche alternative: OKPD code, single stem, or multi-word phrase."""
     if _OKPD_TERM_RE.match(phrase):
         return _okpd_hit(phrase)
     words = [w for w in SPACE_SPLIT_RE.split(phrase) if w]
@@ -118,10 +118,11 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word: all words in the searchable blob (cross-field). Flat AND of ILIKEs
-    # composes under match_any OR; nested and_(*field_or) previously collapsed to ~1 hit on PG.
-    blob = _search_blob()
-    return and_(*[blob.ilike(_like_param(w)) for w in words])
+    # Multi-word as ONE ilike on the searchable blob (%w1%w2%…).
+    # Do not wrap word hits in and_(): nested AND under match_any OR collapses to ~1 row on PG/psycopg.
+    n = next(_bind_seq)
+    pattern = "%" + "%".join(words) + "%"
+    return _search_blob().ilike(bindparam(f"ft_phrase_{n}", pattern))
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
