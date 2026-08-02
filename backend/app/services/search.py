@@ -24,16 +24,6 @@ _OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
 
 _bind_seq = itertools.count(1)
 
-_SEARCH_COLS = (
-    "title",
-    "customer",
-    "description",
-    "external_id",
-    "okpd2",
-    "region",
-    "method",
-)
-
 
 def split_terms(value: str | None) -> list[str]:
     if not value:
@@ -113,31 +103,14 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
 
 
 def _ids_for_term(session, term: str) -> set[int]:
-    """Fetch matching ids with raw SQL (avoids ORM multi-clause bind/cache bugs).
+    """Resolve one niche alternative to tender ids via the proven single-term ORM path.
 
-    Must mirror _phrase_hit: OKPD prefix, single-stem ILIKE, or glued multi-word
-    (%w1%w2%) in any searchable field. concat_ws AND-of-words was returning ~0
-    on live Postgres while the glued ORM path matched dozens of rows.
+    Never combine multiple _phrase_hit trees with or_()/UNION in one SQL statement —
+    that collapses phrase branches on live Postgres. Separate queries + Python set
+    union keep full recall.
     """
-    n = next(_bind_seq)
-    if _OKPD_TERM_RE.match(term):
-        key = f"okpd_{n}"
-        sql = text(f"SELECT id FROM tenders WHERE okpd2 ILIKE :{key}")
-        rows = session.execute(sql, {key: f"{term}%"}).fetchall()
-        return {int(r[0]) for r in rows}
-
-    words = [w for w in SPACE_SPLIT_RE.split(term) if w]
-    if not words:
-        return set()
-
-    # Single stem or glued multi-word — same pattern shape as _phrase_hit/_field_hit.
-    needle = words[0] if len(words) == 1 else "%".join(words)
-    pattern = f"%{needle}%"
-    params = {f"p{n}_{i}": pattern for i in range(len(_SEARCH_COLS))}
-    ors = " OR ".join(f"{col} ILIKE :p{n}_{i}" for i, col in enumerate(_SEARCH_COLS))
-    sql = text(f"SELECT id FROM tenders WHERE {ors}")
-    rows = session.execute(sql, params).fetchall()
-    return {int(r[0]) for r in rows}
+    rows = session.query(Tender).filter(_phrase_hit(term, null_safe=False)).all()
+    return {int(row.id) for row in rows}
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
@@ -152,8 +125,7 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Multi-term: raw SQL per term, merge ids. ORM or_/UNION of complex ILIKE
-        # trees collapses phrase branches on Postgres.
+        # Multi-term: merge ids from separate single-term queries.
         matched: set[int] = set()
         session = query.session
         for term in selected:
