@@ -150,44 +150,6 @@ LEGACY_IT_KEYWORDS = {"программ", "сервер", "строитель", 
 
 def niche_payload() -> dict:
     """Public GET /api/niche payload — keep FE defaults in sync."""
-    import inspect
-
-    from app.database import SessionLocal
-    from app.models import Tender
-    from app.services import search as search_mod
-
-    src = inspect.getsource(search_mod.apply_fulltext)
-    marker = "per-term-id-merge" if "matched: set[int]" in src else "legacy-sql-or"
-
-    term_counts: dict[str, int] = {}
-    merge_count = -1
-    try:
-        db = SessionLocal()
-        base = db.query(Tender).filter(Tender.is_duplicate.is_(False))
-        for term in search_mod.split_terms(TRANSPORT_SHORT_Q):
-            term_counts[term] = (
-                base.filter(search_mod._phrase_hit(term, null_safe=False)).count()
-            )
-        merge_count = search_mod.apply_fulltext(
-            db.query(Tender).filter(Tender.is_duplicate.is_(False)),
-            TRANSPORT_SHORT_Q,
-            match_any=True,
-        ).count()
-    except Exception as exc:  # pragma: no cover - deploy diagnostics only
-        term_counts = {"_error": str(exc)}
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-    tops = ",".join(
-        f"{k}:{v}"
-        for k, v in sorted(
-            term_counts.items(),
-            key=lambda kv: -kv[1] if isinstance(kv[1], int) else 0,
-        )[:6]
-    )
     return {
         "short_q": TRANSPORT_SHORT_Q,
         "full_q": TRANSPORT_FULL_Q,
@@ -195,7 +157,7 @@ def niche_payload() -> dict:
         "okpd": list(TRANSPORT_PROFILE_OKPD),
         "eis_search_passes": list(EIS_SEARCH_PASSES),
         # Bump when search/niche recall logic changes (deploy sanity check)
-        "search_engine": f"phrase-and-or-v14:{marker}:merge={merge_count}:tops={tops}",
+        "search_engine": "phrase-and-or-v15-rawsql",
         "presets": {
             "default": {
                 "name": "Грузоперевозки + реф",

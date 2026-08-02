@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import and_, bindparam, false, func, not_, or_, text
+from sqlalchemy import bindparam, false, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -23,6 +23,16 @@ RANK_TERM_LIMIT = 40
 _OKPD_TERM_RE = re.compile(r"^\d{2}(?:\.\d{1,3}){0,4}$")
 
 _bind_seq = itertools.count(1)
+
+_SEARCH_COLS = (
+    "title",
+    "customer",
+    "description",
+    "external_id",
+    "okpd2",
+    "region",
+    "method",
+)
 
 
 def split_terms(value: str | None) -> list[str]:
@@ -59,12 +69,7 @@ def prioritize_search_terms(terms: list[str], *, limit: int) -> list[str]:
 
 
 def _field_hit(term: str, *, null_safe: bool = False):
-    """True when any searchable field contains term.
-
-    Positive path uses plain string patterns (SQLAlchemy anonymous binds). Named
-    bindparam values were getting corrupted across multi-term OR/UNION on Postgres,
-    collapsing phrase branches to 0–1 hits.
-    """
+    """True when any searchable field contains term (ORM path for single-term / AND)."""
     pattern = f"%{term}%"
     if not null_safe:
         return or_(
@@ -76,7 +81,6 @@ def _field_hit(term: str, *, null_safe: bool = False):
             Tender.region.ilike(pattern),
             Tender.method.ilike(pattern),
         )
-    # Exclude path: COALESCE so NOT(field_hit) does not drop rows on NULL.
     n = next(_bind_seq)
     empty = bindparam(f"ft_empty_{n}", "")
     return or_(
@@ -96,7 +100,7 @@ def _okpd_hit(code: str):
 
 
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
-    """One niche alternative: OKPD code, single stem, or AND of words in a phrase."""
+    """One niche alternative: OKPD code, single stem, or multi-word glued ILIKE."""
     if _OKPD_TERM_RE.match(phrase):
         return _okpd_hit(phrase)
     words = [w for w in SPACE_SPLIT_RE.split(phrase) if w]
@@ -104,8 +108,35 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word phrase: all words must appear (possibly in different fields).
-    return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
+    # Glued pattern in any field (%w1%w2%) — avoids and_() which breaks match_any OR.
+    return _field_hit("%".join(words), null_safe=null_safe)
+
+
+def _ids_for_term(session, term: str) -> set[int]:
+    """Fetch matching ids with raw SQL (avoids ORM multi-clause bind/cache bugs)."""
+    if _OKPD_TERM_RE.match(term):
+        sql = text("SELECT id FROM tenders WHERE okpd2 ILIKE :p")
+        rows = session.execute(sql, {"p": f"{term}%"}).fetchall()
+        return {int(r[0]) for r in rows}
+
+    words = [w for w in SPACE_SPLIT_RE.split(term) if w]
+    if not words:
+        return set()
+
+    if len(words) == 1:
+        params = {f"p{i}": f"%{words[0]}%" for i in range(len(_SEARCH_COLS))}
+        ors = " OR ".join(f"{col} ILIKE :p{i}" for i, col in enumerate(_SEARCH_COLS))
+        sql = text(f"SELECT id FROM tenders WHERE {ors}")
+        rows = session.execute(sql, params).fetchall()
+        return {int(r[0]) for r in rows}
+
+    # Multi-word: all words appear in concat_ws blob (cross-field).
+    blob = "concat_ws(' ', title, customer, description, external_id, okpd2, region, method)"
+    params = {f"w{i}": f"%{w}%" for i, w in enumerate(words)}
+    ands = " AND ".join(f"{blob} ILIKE :w{i}" for i in range(len(words)))
+    sql = text(f"SELECT id FROM tenders WHERE {ands}")
+    rows = session.execute(sql, params).fetchall()
+    return {int(r[0]) for r in rows}
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
@@ -120,18 +151,12 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Multi-term: merge ids from separate single-term queries (one SQL OR of
-        # complex ILIKE trees drops phrase branches on Postgres).
-        session = query.session
+        # Multi-term: raw SQL per term, merge ids. ORM or_/UNION of complex ILIKE
+        # trees collapses phrase branches on Postgres.
         matched: set[int] = set()
+        session = query.session
         for term in selected:
-            # Fresh query each time — do not chain off the caller's Query object.
-            term_q = session.query(Tender)
-            # Re-apply existing WHERE criteria from the caller query, if any.
-            if query.whereclause is not None:
-                term_q = term_q.filter(query.whereclause)
-            term_q = term_q.filter(_phrase_hit(term, null_safe=False))
-            matched.update(int(t.id) for t in term_q.all())
+            matched |= _ids_for_term(session, term)
         if not matched:
             return query.filter(false())
         return query.filter(Tender.id.in_(matched))
@@ -148,7 +173,6 @@ def apply_exclusions(query: Query, exclude: str | None) -> Query:
         return query
 
     for term in terms:
-        # Exclusions stay null-safe; multi-word exclude = AND (all words present)
         query = query.filter(not_(_phrase_hit(term, null_safe=True)))
     return query
 
