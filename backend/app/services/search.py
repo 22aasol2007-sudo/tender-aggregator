@@ -120,14 +120,18 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Multi-term OR cannot be one SQL statement: nested or_/UNION of ILIKE
-        # trees drops phrase branches on Postgres (0–1 hits). Resolve each term
-        # with its own query (proven single-term path), then filter by id set.
-        # Avoid with_entities() here — it has dropped complex ILIKE WHERE clauses.
+        # Multi-term: merge ids from separate single-term queries (one SQL OR of
+        # complex ILIKE trees drops phrase branches on Postgres).
+        session = query.session
         matched: set[int] = set()
         for term in selected:
-            rows = query.filter(_phrase_hit(term, null_safe=False)).all()
-            matched.update(int(t.id) for t in rows)
+            # Fresh query each time — do not chain off the caller's Query object.
+            term_q = session.query(Tender)
+            # Re-apply existing WHERE criteria from the caller query, if any.
+            if query.whereclause is not None:
+                term_q = term_q.filter(query.whereclause)
+            term_q = term_q.filter(_phrase_hit(term, null_safe=False))
+            matched.update(int(t.id) for t in term_q.all())
         if not matched:
             return query.filter(false())
         return query.filter(Tender.id.in_(matched))

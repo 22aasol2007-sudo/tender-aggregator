@@ -150,6 +150,12 @@ LEGACY_IT_KEYWORDS = {"программ", "сервер", "строитель", 
 
 def niche_payload() -> dict:
     """Public GET /api/niche payload — keep FE defaults in sync."""
+    import inspect
+
+    from app.services import search as search_mod
+
+    src = inspect.getsource(search_mod.apply_fulltext)
+    marker = "per-term-id-merge" if "matched: set[int]" in src else "legacy-sql-or"
     return {
         "short_q": TRANSPORT_SHORT_Q,
         "full_q": TRANSPORT_FULL_Q,
@@ -157,7 +163,7 @@ def niche_payload() -> dict:
         "okpd": list(TRANSPORT_PROFILE_OKPD),
         "eis_search_passes": list(EIS_SEARCH_PASSES),
         # Bump when search/niche recall logic changes (deploy sanity check)
-        "search_engine": "phrase-and-or-v14",
+        "search_engine": f"phrase-and-or-v14:{marker}",
         "presets": {
             "default": {
                 "name": "Грузоперевозки + реф",
