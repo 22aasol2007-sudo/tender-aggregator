@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import and_, bindparam, func, not_, or_, text
+from sqlalchemy import and_, bindparam, func, not_, or_, select, text, union as sql_union
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -120,14 +120,11 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Per-term UNION: each alternative uses the proven single-filter path.
-        # Nested or_(complex ILIKE trees) historically dropped phrase branches on PG.
-        id_union = query.filter(_phrase_hit(selected[0], null_safe=False)).with_entities(Tender.id)
-        for term in selected[1:]:
-            id_union = id_union.union(
-                query.filter(_phrase_hit(term, null_safe=False)).with_entities(Tender.id)
-            )
-        return query.filter(Tender.id.in_(id_union))
+        # Fresh select(id) per term — do NOT derive id branches from `query`.
+        # Chaining query.filter(…).with_entities(id).union(…) into query.id.in_(…)
+        # correlates the subquery and drops phrase matches on Postgres.
+        id_parts = [select(Tender.id).where(_phrase_hit(term, null_safe=False)) for term in selected]
+        return query.filter(Tender.id.in_(sql_union(*id_parts)))
 
     for term in terms:
         query = query.filter(_phrase_hit(term, null_safe=False))
