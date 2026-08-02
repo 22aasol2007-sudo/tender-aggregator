@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import re
 
-from sqlalchemy import bindparam, false, func, not_, or_, text
+from sqlalchemy import and_, bindparam, false, func, not_, or_, text
 from sqlalchemy.orm import Query
 
 from app.database import is_postgres
@@ -90,7 +90,7 @@ def _okpd_hit(code: str):
 
 
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
-    """One niche alternative: OKPD code, single stem, or multi-word glued ILIKE."""
+    """One niche alternative: OKPD code, single stem, or cross-field AND of words."""
     if _OKPD_TERM_RE.match(phrase):
         return _okpd_hit(phrase)
     words = [w for w in SPACE_SPLIT_RE.split(phrase) if w]
@@ -98,17 +98,13 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Glued pattern in any field (%w1%w2%) — avoids and_() which breaks match_any OR.
-    return _field_hit("%".join(words), null_safe=null_safe)
+    # Cross-field AND (words may sit in different columns). Do not or_() these
+    # trees together — apply_fulltext merges per-term ids for match_any.
+    return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
 
 
 def _ids_for_term(session, term: str) -> set[int]:
-    """Resolve one niche alternative to tender ids via the proven single-term ORM path.
-
-    Never combine multiple _phrase_hit trees with or_()/UNION in one SQL statement —
-    that collapses phrase branches on live Postgres. Separate queries + Python set
-    union keep full recall.
-    """
+    """Resolve one niche alternative to tender ids via a dedicated single-term query."""
     rows = session.query(Tender).filter(_phrase_hit(term, null_safe=False)).all()
     return {int(row.id) for row in rows}
 
@@ -125,7 +121,7 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
             return query
         if len(selected) == 1:
             return query.filter(_phrase_hit(selected[0], null_safe=False))
-        # Multi-term: merge ids from separate single-term queries.
+        # Multi-term: merge ids from separate single-term queries (never one big or_).
         matched: set[int] = set()
         session = query.session
         for term in selected:
