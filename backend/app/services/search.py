@@ -95,6 +95,20 @@ def _okpd_hit(code: str):
     return Tender.okpd2.ilike(bindparam(f"ft_okpd_{n}", f"{code}%"))
 
 
+def _search_blob():
+    """Nullable-safe concatenation for multi-word phrase ANDs (avoids nested OR(AND(OR…)))."""
+    return func.concat_ws(
+        " ",
+        Tender.title,
+        Tender.customer,
+        Tender.description,
+        Tender.external_id,
+        Tender.okpd2,
+        Tender.region,
+        Tender.method,
+    )
+
+
 def _phrase_hit(phrase: str, *, null_safe: bool = False):
     """One niche alternative: OKPD code, single stem, or AND of words in a phrase."""
     if _OKPD_TERM_RE.match(phrase):
@@ -104,9 +118,10 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
         return _field_hit(phrase, null_safe=null_safe)
     if len(words) == 1:
         return _field_hit(words[0], null_safe=null_safe)
-    # Multi-word phrase: all words must appear (possibly in different fields).
-    # Each word gets its own field OR; unique binds keep nested OR(AND(...)) correct on PG.
-    return and_(*[_field_hit(w, null_safe=null_safe) for w in words])
+    # Multi-word: all words in the searchable blob (cross-field). Flat AND of ILIKEs
+    # composes under match_any OR; nested and_(*field_or) previously collapsed to ~1 hit on PG.
+    blob = _search_blob()
+    return and_(*[blob.ilike(_like_param(w)) for w in words])
 
 
 def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Query:
