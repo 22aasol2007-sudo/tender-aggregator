@@ -113,28 +113,29 @@ def _phrase_hit(phrase: str, *, null_safe: bool = False):
 
 
 def _ids_for_term(session, term: str) -> set[int]:
-    """Fetch matching ids with raw SQL (avoids ORM multi-clause bind/cache bugs)."""
+    """Fetch matching ids with raw SQL (avoids ORM multi-clause bind/cache bugs).
+
+    Must mirror _phrase_hit: OKPD prefix, single-stem ILIKE, or glued multi-word
+    (%w1%w2%) in any searchable field. concat_ws AND-of-words was returning ~0
+    on live Postgres while the glued ORM path matched dozens of rows.
+    """
+    n = next(_bind_seq)
     if _OKPD_TERM_RE.match(term):
-        sql = text("SELECT id FROM tenders WHERE okpd2 ILIKE :p")
-        rows = session.execute(sql, {"p": f"{term}%"}).fetchall()
+        key = f"okpd_{n}"
+        sql = text(f"SELECT id FROM tenders WHERE okpd2 ILIKE :{key}")
+        rows = session.execute(sql, {key: f"{term}%"}).fetchall()
         return {int(r[0]) for r in rows}
 
     words = [w for w in SPACE_SPLIT_RE.split(term) if w]
     if not words:
         return set()
 
-    if len(words) == 1:
-        params = {f"p{i}": f"%{words[0]}%" for i in range(len(_SEARCH_COLS))}
-        ors = " OR ".join(f"{col} ILIKE :p{i}" for i, col in enumerate(_SEARCH_COLS))
-        sql = text(f"SELECT id FROM tenders WHERE {ors}")
-        rows = session.execute(sql, params).fetchall()
-        return {int(r[0]) for r in rows}
-
-    # Multi-word: all words appear in concat_ws blob (cross-field).
-    blob = "concat_ws(' ', title, customer, description, external_id, okpd2, region, method)"
-    params = {f"w{i}": f"%{w}%" for i, w in enumerate(words)}
-    ands = " AND ".join(f"{blob} ILIKE :w{i}" for i in range(len(words)))
-    sql = text(f"SELECT id FROM tenders WHERE {ands}")
+    # Single stem or glued multi-word — same pattern shape as _phrase_hit/_field_hit.
+    needle = words[0] if len(words) == 1 else "%".join(words)
+    pattern = f"%{needle}%"
+    params = {f"p{n}_{i}": pattern for i in range(len(_SEARCH_COLS))}
+    ors = " OR ".join(f"{col} ILIKE :p{n}_{i}" for i, col in enumerate(_SEARCH_COLS))
+    sql = text(f"SELECT id FROM tenders WHERE {ors}")
     rows = session.execute(sql, params).fetchall()
     return {int(r[0]) for r in rows}
 
