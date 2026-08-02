@@ -123,14 +123,11 @@ def apply_fulltext(query: Query, q: str | None, *, match_any: bool = False) -> Q
         # Multi-term OR cannot be one SQL statement: nested or_/UNION of ILIKE
         # trees drops phrase branches on Postgres (0–1 hits). Resolve each term
         # with its own query (proven single-term path), then filter by id set.
+        # Avoid with_entities() here — it has dropped complex ILIKE WHERE clauses.
         matched: set[int] = set()
         for term in selected:
-            rows = (
-                query.filter(_phrase_hit(term, null_safe=False))
-                .with_entities(Tender.id)
-                .all()
-            )
-            matched.update(int(r[0]) for r in rows)
+            rows = query.filter(_phrase_hit(term, null_safe=False)).all()
+            matched.update(int(t.id) for t in rows)
         if not matched:
             return query.filter(false())
         return query.filter(Tender.id.in_(matched))
