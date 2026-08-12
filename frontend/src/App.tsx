@@ -67,7 +67,11 @@ import {
   triggerContractScrape,
   lookupMarketCache,
   ingestContractsToMarketCache,
+  createRfq,
+  fetchRfqDrafts,
+  markRfqSent,
   MarketLookupResult,
+  RfqResult,
 } from "./api";
 
 type Tab = "feed" | "dashboard" | "watches" | "searches" | "profile" | "monitor" | "customers" | "contracts";
@@ -105,10 +109,20 @@ export default function App() {
   const [topSuppliers, setTopSuppliers] = useState<ContractAnalytics["top_suppliers"]>([]);
   const [contractQ, setContractQ] = useState("");
   const [contractBusy, setContractBusy] = useState(false);
-  const [cacheProduct, setCacheProduct] = useState("гофроупаковка");
+  const [cacheProduct, setCacheProduct] = useState("гофрокороб");
   const [cacheCity, setCacheCity] = useState("Москва");
+  const [cacheQty, setCacheQty] = useState("5000");
+  const [gofraFlute, setGofraFlute] = useState("3ply");
+  const [gofraGrade, setGofraGrade] = useState("t23");
+  const [gofraL, setGofraL] = useState("300");
+  const [gofraW, setGofraW] = useState("200");
+  const [gofraH, setGofraH] = useState("150");
   const [cacheResult, setCacheResult] = useState<MarketLookupResult | null>(null);
   const [cacheBusy, setCacheBusy] = useState(false);
+  const [rfqBusy, setRfqBusy] = useState(false);
+  const [rfqResult, setRfqResult] = useState<RfqResult | null>(null);
+  const [rfqDrafts, setRfqDrafts] = useState<Array<Record<string, unknown>>>([]);
+  const [rfqFormUrl, setRfqFormUrl] = useState<string | null>(null);
   const [compliance, setCompliance] = useState<ComplianceResult | null>(null);
   const [credStatus, setCredStatus] = useState<SourceCredential[]>([]);
   const [credDrafts, setCredDrafts] = useState<Record<string, { api_url: string; api_token: string }>>({});
@@ -1012,31 +1026,84 @@ export default function App() {
           )}
 
           <div className="panel" style={{ marginBottom: "1rem" }}>
-            <h3>Кэш рынка (экономия токенов)</h3>
+            <h3>Кэш рынка + RFQ (ниша: косметика × гофра, Москва)</h3>
             <p className="muted">
-              Если вчера уже считали «гофроупаковка → Москва», сегодня отдаём сохранённые офферы без нового deep-search.
-              База клиента остаётся приватной; в общий кэш идут только обезличенные КП/контракты.
+              Observed/estimate — ориентир. Сделку подтверждаем только по firm (ответ поставщика).
+              Пилот: k-anonymity N=3. Карантин не прячет демпинг — показываем отдельно.
             </p>
-            <div className="hero-actions" style={{ flexWrap: "wrap", marginBottom: "0.75rem" }}>
+            <div className="hero-actions" style={{ flexWrap: "wrap", marginBottom: "0.5rem" }}>
               <input
-                placeholder="товар / категория"
+                placeholder="товар"
                 value={cacheProduct}
                 onChange={(e) => setCacheProduct(e.target.value)}
-                style={{ minWidth: "180px" }}
+                style={{ minWidth: "140px" }}
               />
               <input
                 placeholder="город"
                 value={cacheCity}
                 onChange={(e) => setCacheCity(e.target.value)}
-                style={{ minWidth: "140px" }}
+                style={{ minWidth: "100px" }}
               />
+              <input
+                placeholder="qty"
+                value={cacheQty}
+                onChange={(e) => setCacheQty(e.target.value)}
+                style={{ width: "90px" }}
+              />
+              <input
+                placeholder="flute"
+                value={gofraFlute}
+                onChange={(e) => setGofraFlute(e.target.value)}
+                style={{ width: "80px" }}
+                title="3ply / 5ply / e / b"
+              />
+              <input
+                placeholder="grade"
+                value={gofraGrade}
+                onChange={(e) => setGofraGrade(e.target.value)}
+                style={{ width: "70px" }}
+              />
+              <input
+                placeholder="L"
+                value={gofraL}
+                onChange={(e) => setGofraL(e.target.value)}
+                style={{ width: "60px" }}
+              />
+              <input
+                placeholder="W"
+                value={gofraW}
+                onChange={(e) => setGofraW(e.target.value)}
+                style={{ width: "60px" }}
+              />
+              <input
+                placeholder="H"
+                value={gofraH}
+                onChange={(e) => setGofraH(e.target.value)}
+                style={{ width: "60px" }}
+              />
+            </div>
+            <div className="hero-actions" style={{ flexWrap: "wrap", marginBottom: "0.75rem" }}>
               <button
                 className="btn btn-primary"
                 type="button"
                 disabled={cacheBusy || !cacheProduct.trim()}
                 onClick={() => {
                   setCacheBusy(true);
-                  void lookupMarketCache({ product: cacheProduct.trim(), city: cacheCity.trim() || undefined })
+                  const attrs: Record<string, unknown> = {};
+                  if (gofraFlute.trim()) attrs.flute = gofraFlute.trim();
+                  if (gofraGrade.trim()) attrs.grade = gofraGrade.trim();
+                  if (gofraL.trim()) attrs.length_mm = Number(gofraL);
+                  if (gofraW.trim()) attrs.width_mm = Number(gofraW);
+                  if (gofraH.trim()) attrs.height_mm = Number(gofraH);
+                  void lookupMarketCache({
+                    product: cacheProduct.trim(),
+                    city: cacheCity.trim() || undefined,
+                    qty: cacheQty ? Number(cacheQty) : undefined,
+                    unit: "шт",
+                    attrs,
+                    niche_pilot: true,
+                    private_only: profile?.private_only,
+                  })
                     .then(setCacheResult)
                     .catch((err) => setError(err instanceof Error ? err.message : "Кэш недоступен"))
                     .finally(() => setCacheBusy(false));
@@ -1044,6 +1111,40 @@ export default function App() {
               >
                 {cacheBusy ? "Проверка…" : "Проверить кэш"}
               </button>
+              {user && (
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={rfqBusy || !cacheProduct.trim()}
+                  onClick={() => {
+                    setRfqBusy(true);
+                    const attrs: Record<string, unknown> = {};
+                    if (gofraFlute.trim()) attrs.flute = gofraFlute.trim();
+                    if (gofraGrade.trim()) attrs.grade = gofraGrade.trim();
+                    if (gofraL.trim()) attrs.length_mm = Number(gofraL);
+                    if (gofraW.trim()) attrs.width_mm = Number(gofraW);
+                    if (gofraH.trim()) attrs.height_mm = Number(gofraH);
+                    void createRfq({
+                      product: cacheProduct.trim(),
+                      city: cacheCity.trim() || "Москва",
+                      qty: cacheQty ? Number(cacheQty) : undefined,
+                      unit: "шт",
+                      attrs,
+                    })
+                      .then(async (rfq) => {
+                        setRfqResult(rfq);
+                        setRfqFormUrl(rfq.form_url || null);
+                        const d = await fetchRfqDrafts(rfq.id);
+                        setRfqDrafts(d.drafts || []);
+                        setRfqFormUrl(d.form_url || rfq.form_url || null);
+                      })
+                      .catch((err) => setError(err instanceof Error ? err.message : "RFQ ошибка"))
+                      .finally(() => setRfqBusy(false));
+                  }}
+                >
+                  {rfqBusy ? "RFQ…" : "Создать RFQ (warm-first)"}
+                </button>
+              )}
               {user?.is_admin && (
                 <button
                   className="btn btn-ghost"
@@ -1088,7 +1189,7 @@ export default function App() {
                     <>
                       <strong>{cacheResult.match_type === "soft" ? "SOFT HINT" : "MISS"}</strong> (
                       {cacheResult.reason})
-                      {cacheResult.warning ? ` — ${cacheResult.warning}` : " — нужен RFQ, затем save"}
+                      {cacheResult.warning ? ` — ${cacheResult.warning}` : " — создайте RFQ"}
                     </>
                   )}
                 </p>
@@ -1117,6 +1218,73 @@ export default function App() {
                             {o.age_days != null ? ` · ${o.age_days}д назад` : ""}
                           </p>
                           {o.disclaimer && <p className="muted">{o.disclaimer}</p>}
+                          {o.price_layer !== "firm" && (
+                            <p className="muted">Hard-gate: нельзя подтвердить сделку по observed/estimate.</p>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {(cacheResult.quarantine_offers?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <h4>Карантин (возможен честный демпинг — вручную)</h4>
+                    <div className="list">
+                      {cacheResult.quarantine_offers!.slice(0, 5).map((o, idx) => (
+                        <article key={(o.id as number) ?? idx} className="tender">
+                          <div>
+                            <div className="tender-meta">
+                              <span className="chip chip-law">quarantine</span>
+                              <span className="chip">{String(o.quarantine_reason || "")}</span>
+                            </div>
+                            <h2>{String(o.supplier_name || "Поставщик")}</h2>
+                            <p className="muted">{String(o.dumping_note || "")}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {rfqResult && (
+              <div style={{ marginTop: "1rem" }}>
+                <h4>
+                  RFQ #{rfqResult.id} · {rfqResult.status} · targets {rfqResult.targets_count ?? "—"}
+                </h4>
+                {rfqFormUrl && (
+                  <p className="muted">
+                    Форма для поставщика: <code>{rfqFormUrl}</code>
+                  </p>
+                )}
+                <div className="hero-actions" style={{ marginBottom: "0.5rem" }}>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={() => {
+                      void markRfqSent(rfqResult.id)
+                        .then(setRfqResult)
+                        .catch((err) => setError(err instanceof Error ? err.message : "mark-sent failed"));
+                    }}
+                  >
+                    Отметить отправленным
+                  </button>
+                </div>
+                {rfqDrafts.length > 0 && (
+                  <div className="list">
+                    {rfqDrafts.slice(0, 6).map((d, idx) => (
+                      <article key={(d.target_id as number) ?? idx} className="tender">
+                        <div>
+                          <div className="tender-meta">
+                            <span className="chip chip-accent">{d.warm ? "warm" : "cold"}</span>
+                            <span className="chip">{String(d.channel || "manual")}</span>
+                            <span className="chip">{String(d.source || "")}</span>
+                          </div>
+                          <h2>{String(d.supplier_name || "Поставщик")}</h2>
+                          <p className="muted" style={{ whiteSpace: "pre-wrap" }}>
+                            {String(d.body || "").slice(0, 280)}
+                            {String(d.body || "").length > 280 ? "…" : ""}
+                          </p>
                         </div>
                       </article>
                     ))}
@@ -1389,6 +1557,30 @@ export default function App() {
               }
             />
           </div>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.75rem" }}>
+            <input
+              type="checkbox"
+              checked={Boolean(profile.private_only)}
+              onChange={(e) =>
+                setProfile({
+                  ...profile,
+                  private_only: e.target.checked,
+                  share_consent: e.target.checked ? false : profile.share_consent,
+                })
+              }
+            />
+            Private-only (ИБ запретил share — только своя база/RFQ)
+          </label>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={Boolean(profile.share_consent) && !profile.private_only}
+              disabled={Boolean(profile.private_only)}
+              onChange={(e) => setProfile({ ...profile, share_consent: e.target.checked })}
+            />
+            Share consent (обезличенные observed в общий кэш ниши)
+          </label>
+          <p className="muted">Ниша по умолчанию: cosmetics_moscow_gofra · 90 дней только гофра/картон.</p>
           <label>Telegram chat id</label>
           <input
             value={user.telegram_chat_id || ""}

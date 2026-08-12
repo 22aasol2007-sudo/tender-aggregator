@@ -100,6 +100,9 @@ export type Profile = {
   keywords: string[];
   min_price: number | null;
   max_price: number | null;
+  private_only?: boolean;
+  share_consent?: boolean;
+  niche_id?: string | null;
 };
 
 export type TenderChange = {
@@ -841,6 +844,7 @@ export type MarketLookupResult = {
     price_layer?: string;
     trust_score?: number;
     quarantined?: boolean;
+    quarantine_reason?: string | null;
     incomparable?: boolean;
     supplier_name?: string | null;
     supplier_inn?: string | null;
@@ -855,7 +859,9 @@ export type MarketLookupResult = {
     observed_at?: string;
     disclaimer?: string;
     warning?: string;
+    dumping_note?: string;
   }>;
+  quarantine_offers?: Array<Record<string, unknown>>;
   offer_count?: number | null;
   hit_count?: number | null;
   token_saved_estimate?: number | null;
@@ -867,6 +873,7 @@ export type MarketLookupResult = {
   warning?: string | null;
   price_layers_note?: string | null;
   orchestration?: Record<string, unknown> | null;
+  anonymized?: boolean | null;
 };
 
 export async function lookupMarketCache(body: {
@@ -874,6 +881,11 @@ export async function lookupMarketCache(body: {
   city?: string;
   qty?: number;
   unit?: string;
+  attrs?: Record<string, unknown>;
+  allow_stale?: boolean;
+  include_quarantined?: boolean;
+  private_only?: boolean;
+  niche_pilot?: boolean;
 }): Promise<MarketLookupResult> {
   return api("/market-cache/lookup", {
     method: "POST",
@@ -887,8 +899,10 @@ export async function saveMarketCache(body: {
   city?: string;
   qty?: number;
   unit?: string;
+  attrs?: Record<string, unknown>;
   summary?: Record<string, unknown>;
   offers?: Array<Record<string, unknown>>;
+  share_consent?: boolean;
 }): Promise<{ saved: boolean; fingerprint: string; offers_saved: number }> {
   return api("/market-cache/save", {
     method: "POST",
@@ -900,9 +914,91 @@ export async function saveMarketCache(body: {
 export async function ingestContractsToMarketCache(q?: string, region?: string): Promise<{
   queries_touched: number;
   offers_saved: number;
+  contracts_read?: number;
 }> {
   const sp = new URLSearchParams();
   if (q) sp.set("q", q);
   if (region) sp.set("region", region);
   return api(`/market-cache/ingest-contracts?${sp}`, { method: "POST" });
+}
+
+export type RfqResult = {
+  id: number;
+  product: string;
+  city: string;
+  qty?: number | null;
+  unit?: string | null;
+  attrs?: Record<string, unknown>;
+  fingerprint: string;
+  status: string;
+  form_token: string;
+  form_url?: string | null;
+  targets_count?: number | null;
+  private_only?: boolean;
+  share_consent?: boolean;
+};
+
+export async function fetchSourcingNiche(): Promise<Record<string, unknown>> {
+  return api("/sourcing/niche");
+}
+
+export async function createRfq(body: {
+  product: string;
+  city?: string;
+  qty?: number;
+  unit?: string;
+  attrs?: Record<string, unknown>;
+  notes?: string;
+  max_cold?: number;
+}): Promise<RfqResult> {
+  return api("/rfq", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchRfqDrafts(rfqId: number): Promise<{
+  rfq_id: number;
+  form_url: string;
+  warm_count: number;
+  cold_count: number;
+  drafts: Array<Record<string, unknown>>;
+  design_partner?: Record<string, unknown>;
+}> {
+  return api(`/rfq/${rfqId}/drafts`);
+}
+
+export async function markRfqSent(rfqId: number): Promise<RfqResult> {
+  return api(`/rfq/${rfqId}/mark-sent`, { method: "POST" });
+}
+
+export async function confirmRfqDeal(body: {
+  rfq_id: number;
+  supplier_inn?: string;
+  supplier_name?: string;
+  offer_id?: number;
+  accepted_risk?: boolean;
+  checklist: Record<string, boolean>;
+}): Promise<Record<string, unknown>> {
+  return api("/rfq/confirm-deal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function submitExecutionFeedback(body: {
+  confirmation_id: number;
+  delivered_on_time?: boolean;
+  quality_ok?: boolean;
+  actual_price?: number;
+  incident?: boolean;
+  notes?: string;
+}): Promise<Record<string, unknown>> {
+  return api("/rfq/execution-feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

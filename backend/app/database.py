@@ -181,9 +181,21 @@ def _migrate_sqlite_columns() -> None:
                 "quarantine_reason": "ALTER TABLE market_offer_observations ADD COLUMN quarantine_reason VARCHAR(64)",
                 "shareable": "ALTER TABLE market_offer_observations ADD COLUMN shareable BOOLEAN DEFAULT 0",
                 "incomparable": "ALTER TABLE market_offer_observations ADD COLUMN incomparable BOOLEAN DEFAULT 0",
+                "owner_user_id": "ALTER TABLE market_offer_observations ADD COLUMN owner_user_id INTEGER",
             }
             for col, stmt in alters.items():
                 if col not in mo:
+                    conn.execute(text(stmt))
+
+        profile_cols = conn.execute(text("PRAGMA table_info(company_profiles)")).fetchall()
+        if profile_cols:
+            pex = {r[1] for r in profile_cols}
+            for col, stmt in {
+                "private_only": "ALTER TABLE company_profiles ADD COLUMN private_only BOOLEAN DEFAULT 0",
+                "share_consent": "ALTER TABLE company_profiles ADD COLUMN share_consent BOOLEAN DEFAULT 0",
+                "niche_id": "ALTER TABLE company_profiles ADD COLUMN niche_id VARCHAR(64) DEFAULT 'cosmetics_moscow_gofra'",
+            }.items():
+                if col not in pex:
                     conn.execute(text(stmt))
 
         rows = conn.execute(text("PRAGMA table_info(tenders)")).fetchall()
@@ -242,6 +254,10 @@ def _migrate_postgres_columns() -> None:
         "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS quarantine_reason VARCHAR(64)",
         "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS shareable BOOLEAN DEFAULT FALSE",
         "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS incomparable BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS owner_user_id INTEGER",
+        "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS private_only BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS share_consent BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS niche_id VARCHAR(64) DEFAULT 'cosmetics_moscow_gofra'",
     ]
     with engine.begin() as conn:
         for stmt in stmts:

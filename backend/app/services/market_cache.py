@@ -96,12 +96,17 @@ def build_fingerprint(
     city: str | None = None,
     qty: float | None = None,
     unit: str | None = None,
+    attrs: dict | None = None,
 ) -> dict[str, str]:
+    from app.services.cosmetics_gofra_niche import attrs_fingerprint_part, normalize_gofra_attrs
+
     category_key = " ".join(_tokens(product)) or "unknown"
     city_key = normalize_city(city)
     band = qty_band(qty)
     unit_key = (unit or "").casefold().strip()[:32]
-    material = f"{category_key}|{city_key}|{band}|{unit_key}"
+    attrs_n = normalize_gofra_attrs(attrs)
+    attr_part = attrs_fingerprint_part(attrs_n)
+    material = f"{category_key}|{city_key}|{band}|{unit_key}|{attr_part}"
     fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()[:40]
     return {
         "fingerprint": fingerprint,
@@ -109,6 +114,7 @@ def build_fingerprint(
         "city_key": city_key,
         "qty_band": band,
         "unit": unit_key or None,
+        "attrs_key": attr_part or None,
     }
 
 
@@ -217,8 +223,15 @@ def _min_trust() -> float:
     return float(getattr(settings, "market_cache_min_trust", 0.6))
 
 
-def _min_share_n() -> int:
-    return max(1, int(getattr(settings, "market_cache_min_share_n", 5)))
+def _min_share_n(*, product: str | None = None, niche_pilot: bool = False) -> int:
+    default = max(1, int(getattr(settings, "market_cache_min_share_n", 5)))
+    pilot = max(1, int(getattr(settings, "market_cache_pilot_min_share_n", 3)))
+    if niche_pilot:
+        return pilot
+    text = (product or "").casefold()
+    if any(k in text for k in ("гофр", "короб", "картон", "упаков")):
+        return pilot
+    return default
 
 
 def _offer_comparable(raw: dict[str, Any]) -> bool:
@@ -258,46 +271,117 @@ def lookup_market_cache(
     city: str | None = None,
     qty: float | None = None,
     unit: str | None = None,
+    attrs: dict | None = None,
     allow_stale: bool = False,
     include_quarantined: bool = False,
+    private_only: bool = False,
+    user_id: int | None = None,
+    niche_pilot: bool = False,
 ) -> dict[str, Any]:
-    meta = build_fingerprint(product=product, city=city, qty=qty, unit=unit)
+    meta = build_fingerprint(product=product, city=city, qty=qty, unit=unit, attrs=attrs)
     now = datetime.now(timezone.utc)
     ttl = ttl_days_for(product)
+    layers_note = (
+        "estimate=оценка; observed=кэш/контракт/история; firm=свежий ответ поставщика. "
+        "Сделку подтверждать только по firm. Observed под дедлайном ≠ firm."
+    )
+    orch_miss = {
+        "next": "warm_rfq",
+        "steps": ["client_supplier_book", "contract_winners", "limited_cold_rfq"],
+        "avoid": ["deep_search_default", "autoselect_winner"],
+        "require_firm_for_deal": True,
+        "private_only": private_only,
+    }
+
+    # IB / private-only: no shared market names — only own observations
+    if private_only:
+        if not user_id:
+            return {
+                "hit": False,
+                "reason": "private_only_needs_auth",
+                "fingerprint": meta["fingerprint"],
+                "meta": meta,
+                "match_type": None,
+                "price_layers_note": layers_note,
+                "orchestration": orch_miss,
+                "offers": [],
+                "quarantine_offers": [],
+                "summary": {"mode": "private_only"},
+                "ttl_days": ttl,
+                "warning": "Режим private-only: общий кэш отключён. Запустите RFQ по своей базе.",
+            }
+        own = (
+            db.query(MarketOfferObservation)
+            .filter(
+                MarketOfferObservation.fingerprint == meta["fingerprint"],
+                MarketOfferObservation.owner_user_id == user_id,
+                MarketOfferObservation.trust_score >= _min_trust(),
+            )
+            .order_by(MarketOfferObservation.id.desc())
+            .limit(40)
+            .all()
+        )
+        offer_dicts = []
+        quarantine_offers = []
+        for o in own:
+            d = _offer_dict(o, now=now, ttl=ttl)
+            if o.quarantined:
+                d["dumping_note"] = (
+                    "Карантин: возможен честный демпинг — проверьте вручную, не скрываем оффер."
+                )
+                quarantine_offers.append(d)
+                if include_quarantined:
+                    offer_dicts.append(d)
+            else:
+                offer_dicts.append(d)
+        actionable = bool(offer_dicts)
+        return {
+            "hit": actionable,
+            "reason": "private_hit" if actionable else "private_miss",
+            "fingerprint": meta["fingerprint"],
+            "meta": meta,
+            "match_type": "private",
+            "summary": {"mode": "private_only", "n": len(offer_dicts)},
+            "anonymized": False,
+            "offer_count": len(offer_dicts),
+            "offers": offer_dicts,
+            "quarantine_offers": quarantine_offers,
+            "freshness": "fresh" if actionable else None,
+            "ttl_days": ttl,
+            "warning": None if actionable else "Нет своих firm/observed по этому SKU — нужен RFQ.",
+            "price_layers_note": layers_note,
+            "orchestration": {
+                "next": "use_private_cache" if actionable else "warm_rfq",
+                "allow_autoselect": False,
+                "require_firm_for_deal": True,
+                "private_only": True,
+                "steps": ["show_own_offers"] if actionable else ["client_book", "fresh_rfq"],
+            },
+        }
+
     row = db.query(MarketQueryCache).filter(MarketQueryCache.fingerprint == meta["fingerprint"]).first()
 
     match_type = "exact"
     if row is None:
-        soft = (
-            db.query(MarketQueryCache)
-            .filter(
-                MarketQueryCache.category_key == meta["category_key"],
-                MarketQueryCache.city_key == meta["city_key"],
-            )
-            .order_by(MarketQueryCache.updated_at.desc())
-            .first()
+        soft_q = db.query(MarketQueryCache).filter(
+            MarketQueryCache.category_key == meta["category_key"],
+            MarketQueryCache.city_key == meta["city_key"],
         )
-        if soft is None:
+        # Soft match must not mix different gofra SKUs when attrs present
+        if meta.get("attrs_key"):
+            soft_q = soft_q.filter(MarketQueryCache.fingerprint == meta["fingerprint"])
+        soft = soft_q.order_by(MarketQueryCache.updated_at.desc()).first()
+        if soft is None or (meta.get("attrs_key") and soft.fingerprint != meta["fingerprint"]):
             return {
                 "hit": False,
                 "reason": "miss",
                 "fingerprint": meta["fingerprint"],
                 "meta": meta,
                 "match_type": None,
-                "price_layers_note": (
-                    "estimate=оценка, observed=кэш/контракт, firm=свежий ответ поставщику. "
-                    "Для сделки нужен firm."
-                ),
-                "orchestration": {
-                    "next": "warm_rfq",
-                    "steps": [
-                        "client_supplier_book",
-                        "contract_winners",
-                        "limited_cold_rfq",
-                    ],
-                    "avoid": ["deep_search_default", "autoselect_winner"],
-                },
+                "price_layers_note": layers_note,
+                "orchestration": orch_miss,
                 "offers": [],
+                "quarantine_offers": [],
                 "summary": None,
                 "ttl_days": ttl,
             }
@@ -318,29 +402,45 @@ def lookup_market_cache(
             "age_days": round(age, 2) if age is not None else None,
             "ttl_days": ttl,
             "offers": [],
+            "quarantine_offers": [],
             "summary": row.result_summary,
             "expires_at": row.expires_at,
             "warning": "Кэш устарел. Нужен refresh RFQ; не используйте как firm.",
-            "orchestration": {"next": "refresh_rfq", "steps": ["cached_shortlist_as_hint", "fresh_rfq"]},
-            "price_layers_note": (
-                "estimate=оценка, observed=кэш/контракт, firm=свежий ответ поставщику."
-            ),
+            "orchestration": {"next": "refresh_rfq", "steps": ["cached_shortlist_as_hint", "fresh_rfq"], "require_firm_for_deal": True},
+            "price_layers_note": layers_note,
         }
 
-    q = db.query(MarketOfferObservation).filter(
-        or_(
-            MarketOfferObservation.query_cache_id == row.id,
-            MarketOfferObservation.fingerprint == row.fingerprint,
-        )
+    base_filter = or_(
+        MarketOfferObservation.query_cache_id == row.id,
+        MarketOfferObservation.fingerprint == row.fingerprint,
     )
-    if not include_quarantined:
-        q = q.filter(MarketOfferObservation.quarantined.is_(False))
+    q = db.query(MarketOfferObservation).filter(base_filter)
     q = q.filter(MarketOfferObservation.trust_score >= _min_trust())
     # Cross-client safety: never leak firm / private rows via shared lookup
     q = q.filter(
         MarketOfferObservation.shareable.is_(True),
         MarketOfferObservation.price_layer != "firm",
     )
+
+    # Quarantine always visible separately (honest dumping must not disappear)
+    q_all = q
+    quarantined_rows = (
+        q_all.filter(MarketOfferObservation.quarantined.is_(True))
+        .order_by(MarketOfferObservation.landed_unit_price.asc().nullslast())
+        .limit(15)
+        .all()
+    )
+    quarantine_offers = []
+    for o in quarantined_rows:
+        d = _offer_dict(o, now=now, ttl=ttl)
+        d["dumping_note"] = (
+            "Карантин (outlier/low_trust): возможен честный демпинг — смотрите вручную, "
+            "не автовыбор."
+        )
+        quarantine_offers.append(d)
+
+    if not include_quarantined:
+        q = q.filter(MarketOfferObservation.quarantined.is_(False))
     offers = (
         q.order_by(
             MarketOfferObservation.landed_unit_price.asc().nullslast(),
@@ -350,10 +450,9 @@ def lookup_market_cache(
         .all()
     )
 
-    min_n = _min_share_n()
+    min_n = _min_share_n(product=product, niche_pilot=niche_pilot)
     anonymized = False
     if 0 < len(offers) < min_n:
-        # k-anonymity: too few shared observations → aggregate only
         prices = [o.landed_unit_price or o.price_value for o in offers if (o.landed_unit_price or o.price_value)]
         prices = [float(p) for p in prices if p is not None]
         anonymized = True
@@ -368,15 +467,19 @@ def lookup_market_cache(
                     "median_price": ordered[len(ordered) // 2],
                     "min_price": ordered[0],
                     "max_price": ordered[-1],
-                    "note": f"Мало наблюдений (<{min_n}) — без имён поставщиков",
+                    "pilot_min_n": min_n,
+                    "note": f"Мало наблюдений (<{min_n}) — без имён поставщиков; запустите RFQ",
                 }
             )
         summary_out = agg_summary
     else:
         offer_dicts = [_offer_dict(o, now=now, ttl=ttl) for o in offers]
+        if include_quarantined:
+            for qo in quarantine_offers:
+                if qo["id"] not in {x.get("id") for x in offer_dicts}:
+                    offer_dicts.append(qo)
         summary_out = row.result_summary or {}
 
-    # Soft match: never present as actionable cache answer
     actionable = match_type == "exact" and freshness in {"fresh", "aging"} and (
         bool(offer_dicts) or anonymized
     )
@@ -405,6 +508,7 @@ def lookup_market_cache(
             "city_key": row.city_key,
             "qty_band": row.qty_band,
             "unit": row.unit,
+            "attrs_key": meta.get("attrs_key"),
         },
         "summary": summary_out,
         "anonymized": anonymized,
@@ -421,7 +525,7 @@ def lookup_market_cache(
             "Похожий запрос (soft) — только ориентир, не ответ."
             if match_type == "soft"
             else (
-                "Мало наблюдений — показана только агрегированная статистика."
+                "Мало наблюдений — агрегат; пилот ниши: RFQ наполняет кэш быстрее."
                 if anonymized
                 else (
                     None
@@ -430,10 +534,7 @@ def lookup_market_cache(
                 )
             )
         ),
-        "price_layers_note": (
-            "estimate=оценка; observed=кэш/история; firm=свежий ответ этому клиенту. "
-            "Сделка только на firm."
-        ),
+        "price_layers_note": layers_note,
         "orchestration": {
             "next": "use_cache" if actionable and offer_dicts else "warm_rfq",
             "allow_autoselect": False,
@@ -441,8 +542,10 @@ def lookup_market_cache(
             "steps": ["show_observed"]
             if actionable and offer_dicts
             else ["show_aggregate_or_hint", "client_book", "fresh_rfq"],
+            "quarantine_visible": True,
         },
         "offers": offer_dicts,
+        "quarantine_offers": quarantine_offers,
     }
 
 
@@ -455,6 +558,7 @@ def _offer_dict(o: MarketOfferObservation, *, now: datetime, ttl: int) -> dict[s
         "price_layer": layer,
         "trust_score": o.trust_score,
         "quarantined": bool(o.quarantined),
+        "quarantine_reason": o.quarantine_reason,
         "incomparable": bool(o.incomparable),
         "shareable": bool(o.shareable),
         "supplier_name": o.supplier_name,
@@ -476,7 +580,7 @@ def _offer_dict(o: MarketOfferObservation, *, now: datetime, ttl: int) -> dict[s
         "age_days": round(age, 2) if age is not None else None,
         "freshness": _freshness(age, ttl),
         "payload": o.payload or {},
-        "disclaimer": "Не оферта. Для сделки нужен firm RFQ."
+        "disclaimer": "Не оферта. Observed/estimate нельзя подтверждать как сделку — нужен firm RFQ."
         if layer != "firm"
         else "Firm-оффер: проверьте срок действия КП.",
     }
@@ -489,12 +593,14 @@ def save_market_result(
     city: str | None = None,
     qty: float | None = None,
     unit: str | None = None,
+    attrs: dict | None = None,
     offers: list[dict[str, Any]] | None = None,
     summary: dict[str, Any] | None = None,
     query_raw: str | None = None,
     share_consent: bool = False,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
-    meta = build_fingerprint(product=product, city=city, qty=qty, unit=unit)
+    meta = build_fingerprint(product=product, city=city, qty=qty, unit=unit, attrs=attrs)
     now = datetime.now(timezone.utc)
     ttl = ttl_days_for(product)
     row = db.query(MarketQueryCache).filter(MarketQueryCache.fingerprint == meta["fingerprint"]).first()
@@ -548,7 +654,6 @@ def save_market_result(
 
     source_mix: dict[str, int] = dict(row.source_mix or {})
     saved_offers = 0
-    skipped_private = 0
     quarantined_n = 0
     for raw in offers or []:
         source_type = str(raw.get("source_type") or "rfq")[:32]
@@ -562,20 +667,26 @@ def save_market_result(
         price = raw.get("landed_unit_price")
         if price is None:
             price = raw.get("price_value")
-        q_reason = _quarantine_reason(price=price if price is None else float(price), peer_prices=peer_prices, trust=trust)
+        q_reason = _quarantine_reason(
+            price=price if price is None else float(price), peer_prices=peer_prices, trust=trust
+        )
         quarantined = q_reason is not None
         comparable = _offer_comparable(raw)
 
-        # k-anonymity enforced at lookup; with consent mark observed/contract shareable
         shareable = want_share
         if want_share and layer == "estimate":
-            shareable = False  # estimates are weak — do not pollute shared market
+            shareable = False
 
         price_value = raw.get("price_value")
         landed = raw.get("landed_unit_price")
         if shareable:
             price_value = _bucket_price(price_value if price_value is None else float(price_value), True)
             landed = _bucket_price(landed if landed is None else float(landed), True)
+
+        # Private firm / private-only: bind to owner so lookup works without share
+        owner_id = owner_user_id
+        if layer == "firm" or not shareable:
+            owner_id = owner_user_id or raw.get("owner_user_id")
 
         obs = MarketOfferObservation(
             fingerprint=meta["fingerprint"],
@@ -587,6 +698,7 @@ def save_market_result(
             quarantine_reason=q_reason,
             shareable=shareable,
             incomparable=not comparable,
+            owner_user_id=int(owner_id) if owner_id is not None else None,
             supplier_name=(raw.get("supplier_name") or None),
             supplier_inn=(raw.get("supplier_inn") or None),
             city_from=raw.get("city_from"),
@@ -609,8 +721,6 @@ def save_market_result(
         saved_offers += 1
         if quarantined:
             quarantined_n += 1
-        if not shareable and want_share is False and layer == "firm":
-            skipped_private += 0  # firm saved but private by layer
         source_mix[source_type] = int(source_mix.get(source_type, 0)) + 1
 
     row.offer_count = int(row.offer_count or 0) + saved_offers
@@ -627,7 +737,8 @@ def save_market_result(
         "expires_at": row.expires_at,
         "ttl_days": ttl,
         "share_consent_applied": bool(share_consent),
-        "note": "Firm-офферы не шарятся между клиентами. Soft/HIT учитывает trust и TTL.",
+        "attrs_key": meta.get("attrs_key"),
+        "note": "Firm-офферы не шарятся. Карантин виден отдельно. Soft≠HIT.",
     }
 
 

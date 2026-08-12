@@ -35,6 +35,7 @@ from app.schemas import (
     CustomerDetailOut,
     CustomerOut,
     DashboardOut,
+    ExecutionFeedbackIn,
     FilterPresetIn,
     FilterPresetOut,
     HealthOut,
@@ -47,6 +48,10 @@ from app.schemas import (
     ProfileIn,
     ProfileOut,
     RegisterIn,
+    RfqCreateIn,
+    RfqDealConfirmIn,
+    RfqFormSubmitIn,
+    RfqOut,
     SavedSearchIn,
     SavedSearchOut,
     ScrapeEnqueueOut,
@@ -94,6 +99,19 @@ from app.services.market_cache import (
     save_market_result,
     upsert_client_supplier,
 )
+from app.services.rfq import (
+    add_execution_feedback,
+    build_outreach_drafts,
+    confirm_deal,
+    create_rfq,
+    design_partner_status,
+    ingest_rfq_response,
+    mark_rfq_sent,
+    rfq_form_url,
+)
+from app.services.cosmetics_gofra_niche import niche_payload as gofra_niche_payload
+from app.models import RfqRequest
+from sqlalchemy.orm import selectinload
 from app.services.enrich import enrich_tender
 from app.services.export import dashboard_payload, tenders_to_csv, tenders_to_xlsx
 from app.services.filters import apply_tender_filters
@@ -232,6 +250,14 @@ def update_profile(
     profile.keywords = body.keywords
     profile.min_price = body.min_price
     profile.max_price = body.max_price
+    if body.private_only is not None:
+        profile.private_only = body.private_only
+    if body.share_consent is not None:
+        profile.share_consent = body.share_consent and not bool(profile.private_only)
+    if body.niche_id is not None:
+        profile.niche_id = body.niche_id
+    if profile.private_only:
+        profile.share_consent = False
     db.commit()
     db.refresh(profile)
     return ProfileOut.model_validate(profile)
@@ -957,14 +983,27 @@ async def scrape_contracts(
 
 
 @router.post("/market-cache/lookup", response_model=MarketLookupOut)
-def market_cache_lookup(body: MarketLookupIn, db: Session = Depends(get_db)) -> MarketLookupOut:
+def market_cache_lookup(
+    body: MarketLookupIn,
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> MarketLookupOut:
+    private_only = body.private_only
+    if private_only is None and user is not None:
+        profile = db.query(CompanyProfile).filter(CompanyProfile.user_id == user.id).one_or_none()
+        private_only = bool(getattr(profile, "private_only", False)) if profile else False
     result = lookup_market_cache(
         db,
         product=body.product,
         city=body.city,
         qty=body.qty,
         unit=body.unit,
+        attrs=body.attrs or None,
         allow_stale=body.allow_stale,
+        include_quarantined=body.include_quarantined,
+        private_only=bool(private_only),
+        user_id=user.id if user else None,
+        niche_pilot=body.niche_pilot,
     )
     return MarketLookupOut(**result)
 
@@ -972,9 +1011,14 @@ def market_cache_lookup(body: MarketLookupIn, db: Session = Depends(get_db)) -> 
 @router.post("/market-cache/save")
 def market_cache_save(
     body: MarketSaveIn,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    profile = db.query(CompanyProfile).filter(CompanyProfile.user_id == user.id).one_or_none()
+    private_only = bool(getattr(profile, "private_only", False)) if profile else False
+    share = bool(body.share_consent) and not private_only
+    if profile and profile.share_consent is False:
+        share = False
     offers = [o.model_dump() for o in body.offers]
     return save_market_result(
         db,
@@ -982,10 +1026,12 @@ def market_cache_save(
         city=body.city,
         qty=body.qty,
         unit=body.unit,
+        attrs=body.attrs or None,
         offers=offers,
         summary=body.summary,
         query_raw=body.query_raw,
-        share_consent=body.share_consent,
+        share_consent=share,
+        owner_user_id=user.id,
     )
 
 
@@ -1003,6 +1049,221 @@ def market_cache_ingest_contracts(
         except Exception:  # noqa: BLE001
             db.rollback()
     return ingest_contracts_into_cache(db, q=q, region=region, limit=limit)
+
+
+def _rfq_out(req: RfqRequest) -> RfqOut:
+    return RfqOut(
+        id=req.id,
+        product=req.product,
+        city=req.city,
+        qty=req.qty,
+        unit=req.unit,
+        attrs=req.attrs or {},
+        fingerprint=req.fingerprint,
+        status=req.status,
+        form_token=req.form_token,
+        form_url=rfq_form_url(req),
+        max_cold_targets=req.max_cold_targets,
+        share_consent=req.share_consent,
+        private_only=req.private_only,
+        sent_at=req.sent_at,
+        created_at=req.created_at,
+        targets_count=len(req.targets or []),
+    )
+
+
+@router.get("/sourcing/niche")
+def sourcing_niche() -> dict:
+    """GTM niche: cosmetics × gofra (Moscow). Separate from tender /niche."""
+    return gofra_niche_payload()
+
+
+@router.post("/rfq", response_model=RfqOut)
+def rfq_create(
+    body: RfqCreateIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RfqOut:
+    req = create_rfq(
+        db,
+        user=user,
+        product=body.product,
+        city=body.city,
+        qty=body.qty,
+        unit=body.unit,
+        attrs=body.attrs,
+        notes=body.notes,
+        max_cold=body.max_cold,
+    )
+    req = (
+        db.query(RfqRequest)
+        .options(selectinload(RfqRequest.targets))
+        .filter(RfqRequest.id == req.id)
+        .one()
+    )
+    return _rfq_out(req)
+
+
+@router.post("/rfq/confirm-deal")
+def rfq_confirm_deal(
+    body: RfqDealConfirmIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        conf = confirm_deal(
+            db,
+            user=user,
+            rfq_id=body.rfq_id,
+            supplier_inn=body.supplier_inn,
+            supplier_name=body.supplier_name,
+            offer_id=body.offer_id,
+            accepted_risk=body.accepted_risk,
+            checklist=body.checklist,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {
+        "id": conf.id,
+        "rfq_id": conf.rfq_id,
+        "price_layer": conf.price_layer,
+        "status": conf.status,
+        "accepted_risk": conf.accepted_risk,
+        "supplier_name": conf.supplier_name,
+        "supplier_inn": conf.supplier_inn,
+    }
+
+
+@router.post("/rfq/execution-feedback")
+def rfq_execution_feedback(
+    body: ExecutionFeedbackIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        fb = add_execution_feedback(
+            db,
+            user=user,
+            confirmation_id=body.confirmation_id,
+            delivered_on_time=body.delivered_on_time,
+            quality_ok=body.quality_ok,
+            actual_price=body.actual_price,
+            incident=body.incident,
+            notes=body.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {
+        "id": fb.id,
+        "confirmation_id": fb.confirmation_id,
+        "incident": fb.incident,
+        "moat": "execution_feedback_updates_trust",
+    }
+
+
+@router.get("/rfq/form/{form_token}")
+def rfq_form_meta(form_token: str, db: Session = Depends(get_db)) -> dict:
+    req = db.query(RfqRequest).filter(RfqRequest.form_token == form_token).first()
+    if not req or req.status in {"cancelled", "closed"}:
+        raise HTTPException(status_code=404, detail="Form not found")
+    return {
+        "product": req.product,
+        "city": req.city,
+        "qty": req.qty,
+        "unit": req.unit,
+        "attrs": req.attrs or {},
+        "status": req.status,
+    }
+
+
+@router.post("/rfq/form/{form_token}")
+def rfq_form_submit(form_token: str, body: RfqFormSubmitIn, db: Session = Depends(get_db)) -> dict:
+    try:
+        return ingest_rfq_response(
+            db,
+            form_token=form_token,
+            supplier_name=body.supplier_name,
+            supplier_inn=body.supplier_inn,
+            unit=body.unit,
+            qty=body.qty,
+            price_value=body.price_value,
+            currency=body.currency,
+            vat=body.vat,
+            delivery_price=body.delivery_price,
+            lead_time_days=body.lead_time_days,
+            payment_terms=body.payment_terms,
+            city_from=body.city_from,
+            raw_message=body.raw_message,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/rfq/{rfq_id}", response_model=RfqOut)
+def rfq_get(
+    rfq_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RfqOut:
+    req = (
+        db.query(RfqRequest)
+        .options(selectinload(RfqRequest.targets))
+        .filter(RfqRequest.id == rfq_id, RfqRequest.user_id == user.id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    return _rfq_out(req)
+
+
+@router.get("/rfq/{rfq_id}/drafts")
+def rfq_drafts(
+    rfq_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    req = (
+        db.query(RfqRequest)
+        .options(selectinload(RfqRequest.targets))
+        .filter(RfqRequest.id == rfq_id, RfqRequest.user_id == user.id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    drafts = build_outreach_drafts(req)
+    return {
+        "rfq_id": req.id,
+        "form_url": rfq_form_url(req),
+        "warm_count": sum(1 for d in drafts if d.get("warm")),
+        "cold_count": sum(1 for d in drafts if not d.get("warm")),
+        "drafts": drafts,
+        "design_partner": design_partner_status(db, user.id),
+    }
+
+
+@router.post("/rfq/{rfq_id}/mark-sent", response_model=RfqOut)
+def rfq_mark_sent(
+    rfq_id: int,
+    target_ids: list[int] | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RfqOut:
+    req = db.query(RfqRequest).filter(RfqRequest.id == rfq_id, RfqRequest.user_id == user.id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    req = mark_rfq_sent(db, req, target_ids=target_ids)
+    req = (
+        db.query(RfqRequest)
+        .options(selectinload(RfqRequest.targets))
+        .filter(RfqRequest.id == req.id)
+        .one()
+    )
+    return _rfq_out(req)
+
+
+@router.get("/me/design-partner")
+def me_design_partner(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return design_partner_status(db, user.id)
 
 
 @router.get("/me/suppliers", response_model=list[ClientSupplierOut])

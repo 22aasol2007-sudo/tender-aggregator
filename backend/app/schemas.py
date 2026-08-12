@@ -179,6 +179,9 @@ class ProfileOut(BaseModel):
     keywords: list[Any] = Field(default_factory=list)
     min_price: float | None = None
     max_price: float | None = None
+    private_only: bool = False
+    share_consent: bool = False
+    niche_id: str | None = "cosmetics_moscow_gofra"
 
 
 class ProfileIn(BaseModel):
@@ -188,6 +191,9 @@ class ProfileIn(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     min_price: float | None = None
     max_price: float | None = None
+    private_only: bool | None = None
+    share_consent: bool | None = None
+    niche_id: str | None = None
 
 
 class TelegramIn(BaseModel):
@@ -383,7 +389,11 @@ class MarketLookupIn(BaseModel):
     city: str | None = None
     qty: float | None = None
     unit: str | None = None
+    attrs: dict[str, Any] = Field(default_factory=dict)
     allow_stale: bool = False
+    include_quarantined: bool = False
+    private_only: bool | None = None
+    niche_pilot: bool = True
 
 
 class MarketOfferIn(BaseModel):
@@ -412,6 +422,7 @@ class MarketSaveIn(BaseModel):
     city: str | None = None
     qty: float | None = None
     unit: str | None = None
+    attrs: dict[str, Any] = Field(default_factory=dict)
     query_raw: str | None = None
     share_consent: bool = False
     summary: dict[str, Any] = Field(default_factory=dict)
@@ -426,6 +437,7 @@ class MarketLookupOut(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
     summary: dict[str, Any] | None = None
     offers: list[dict[str, Any]] = Field(default_factory=list)
+    quarantine_offers: list[dict[str, Any]] = Field(default_factory=list)
     offer_count: int | None = None
     hit_count: int | None = None
     token_saved_estimate: int | None = None
@@ -459,4 +471,68 @@ class ClientSupplierOut(BaseModel):
     notes: str | None = None
     tags: list[Any] = Field(default_factory=list)
     updated_at: datetime | None = None
+
+
+class RfqCreateIn(BaseModel):
+    product: str = Field(min_length=2, max_length=500)
+    city: str | None = "Москва"
+    qty: float | None = None
+    unit: str | None = "шт"
+    attrs: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+    max_cold: int | None = Field(default=None, ge=0, le=30)
+
+
+class RfqOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    product: str
+    city: str
+    qty: float | None = None
+    unit: str | None = None
+    attrs: dict[str, Any] | None = None
+    fingerprint: str
+    status: str
+    form_token: str
+    form_url: str | None = None
+    max_cold_targets: int = 6
+    share_consent: bool = False
+    private_only: bool = False
+    sent_at: datetime | None = None
+    created_at: datetime | None = None
+    targets_count: int | None = None
+
+
+class RfqFormSubmitIn(BaseModel):
+    supplier_name: str = Field(min_length=1, max_length=500)
+    supplier_inn: str | None = None
+    unit: str | None = None
+    qty: float | None = None
+    price_value: float | None = None
+    currency: str = "RUB"
+    vat: str | None = None
+    delivery_price: float | None = None
+    lead_time_days: int | None = None
+    payment_terms: str | None = None
+    city_from: str | None = None
+    raw_message: str | None = None
+
+
+class RfqDealConfirmIn(BaseModel):
+    rfq_id: int
+    supplier_inn: str | None = None
+    supplier_name: str | None = None
+    offer_id: int | None = None
+    accepted_risk: bool = False
+    checklist: dict[str, bool] = Field(default_factory=dict)
+
+
+class ExecutionFeedbackIn(BaseModel):
+    confirmation_id: int
+    delivered_on_time: bool | None = None
+    quality_ok: bool | None = None
+    actual_price: float | None = None
+    incident: bool = False
+    notes: str | None = None
 

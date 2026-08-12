@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     market_cache_tokens_saved_per_hit: int = 120000
     market_cache_min_trust: float = 0.6
     market_cache_min_share_n: int = 5
+    market_cache_pilot_min_share_n: int = 3
+    rfq_max_cold_targets: int = 6
+    public_app_url: str = "http://localhost:5173"
     eis_max_pages: int = 8
     scrape_concurrency: int = 1
     scrape_source_timeout_seconds: float = 100.0

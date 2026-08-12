@@ -57,9 +57,14 @@ python -m app.worker
 
 Вкладка UI **Контракты**: поиск по истории, медиана/P25–P75 цен, топ победителей. API: `GET /api/contracts`, `GET /api/contracts/analytics`, `GET /api/suppliers`, `POST /api/contracts/scrape` (admin).
 
-**Кэш рынка (экономия токенов):** повторные похожие запросы (товар+город+объём) отдают сохранённые обезличенные офферы без нового deep-search.  
-Слои цены: `estimate` / `observed` / `firm`. Soft-match ≠ HIT. TTL по категории, trust score, quarantine outliers, k-anonymity (N≥5), firm не шарится.  
+**Кэш рынка (экономия токенов):** повторные похожие запросы (товар+город+объём+атрибуты SKU) отдают сохранённые обезличенные офферы без нового deep-search.  
+Слои цены: `estimate` / `observed` / `firm`. Soft-match ≠ HIT. TTL по категории, trust score, quarantine outliers (видимы отдельно — честный демпинг не прячется), k-anonymity (пилот гофры N=3, иначе N≥5), firm не шарится.  
+`private_only` в профиле: общий кэш выключен, только свои RFQ/офферы.  
 API: `POST /api/market-cache/lookup`, `POST /api/market-cache/save` (`share_consent`), `POST /api/market-cache/ingest-contracts`, `GET/POST /api/me/suppliers`.
+
+**GTM ниша (90 дней):** косметика Москвы × гофроупаковка. Атрибуты SKU: flute/grade/L×W×H/color/print.  
+**E2E RFQ:** warm-first (клиентская база → кэш → limited cold), форма поставщика, hard-gate сделки только на `firm` + чеклист, execution feedback → trust/moat.  
+API: `GET /api/sourcing/niche`, `POST /api/rfq`, `GET /api/rfq/{id}/drafts`, `POST /api/rfq/form/{token}`, `POST /api/rfq/confirm-deal`, `POST /api/rfq/execution-feedback`.
 
 ## Деплой
 

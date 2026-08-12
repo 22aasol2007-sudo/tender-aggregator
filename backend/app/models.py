@@ -48,6 +48,9 @@ class CompanyProfile(Base):
     keywords: Mapped[list] = mapped_column(JSON, default=list)
     min_price: Mapped[float | None] = mapped_column(Float)
     max_price: Mapped[float | None] = mapped_column(Float)
+    private_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    share_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    niche_id: Mapped[str | None] = mapped_column(String(64), default="cosmetics_moscow_gofra")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped[User] = relationship(back_populates="profile")
@@ -397,6 +400,7 @@ class MarketOfferObservation(Base):
     quarantine_reason: Mapped[str | None] = mapped_column(String(64))
     shareable: Mapped[bool] = mapped_column(Boolean, default=False)
     incomparable: Mapped[bool] = mapped_column(Boolean, default=False)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # private firm / private-only
     supplier_name: Mapped[str | None] = mapped_column(Text)
     supplier_inn: Mapped[str | None] = mapped_column(String(16))
     city_from: Mapped[str | None] = mapped_column(String(128))
@@ -440,3 +444,90 @@ class ClientSupplierBook(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class RfqRequest(Base):
+    __tablename__ = "rfq_requests"
+    __table_args__ = (
+        Index("ix_rfq_user", "user_id"),
+        Index("ix_rfq_fingerprint", "fingerprint"),
+        Index("ix_rfq_form_token", "form_token"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    product: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str] = mapped_column(String(128), default="Москва")
+    qty: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(32))
+    attrs: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    notes: Mapped[str | None] = mapped_column(Text)
+    form_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    max_cold_targets: Mapped[int] = mapped_column(Integer, default=6)
+    share_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    private_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    targets: Mapped[list[RfqTarget]] = relationship(back_populates="rfq")
+
+
+class RfqTarget(Base):
+    __tablename__ = "rfq_targets"
+    __table_args__ = (Index("ix_rfq_targets_rfq", "rfq_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rfq_id: Mapped[int] = mapped_column(ForeignKey("rfq_requests.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    supplier_name: Mapped[str | None] = mapped_column(Text)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    contact_email: Mapped[str | None] = mapped_column(String(255))
+    contact_phone: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    warm: Mapped[bool] = mapped_column(Boolean, default=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    response_payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    rfq: Mapped[RfqRequest] = relationship(back_populates="targets")
+
+
+class RfqDealConfirmation(Base):
+    __tablename__ = "rfq_deal_confirmations"
+    __table_args__ = (Index("ix_rfq_deal_user", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rfq_id: Mapped[int] = mapped_column(ForeignKey("rfq_requests.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    offer_id: Mapped[int | None] = mapped_column(ForeignKey("market_offer_observations.id"))
+    supplier_name: Mapped[str | None] = mapped_column(Text)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    price_layer: Mapped[str] = mapped_column(String(16), default="firm")
+    accepted_risk: Mapped[bool] = mapped_column(Boolean, default=False)
+    checklist: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="confirmed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SourcingExecutionFeedback(Base):
+    """Post-deal reality vs quote — core data moat."""
+
+    __tablename__ = "sourcing_execution_feedback"
+    __table_args__ = (Index("ix_exec_feedback_supplier", "supplier_inn"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    confirmation_id: Mapped[int] = mapped_column(ForeignKey("rfq_deal_confirmations.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    delivered_on_time: Mapped[bool | None] = mapped_column(Boolean)
+    quality_ok: Mapped[bool | None] = mapped_column(Boolean)
+    actual_price: Mapped[float | None] = mapped_column(Float)
+    incident: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
