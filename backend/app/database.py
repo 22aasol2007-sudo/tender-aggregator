@@ -88,6 +88,9 @@ def _ensure_composite_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_contracts_supplier_id ON contracts (supplier_id)",
         "CREATE INDEX IF NOT EXISTS ix_contracts_purchase_number ON contracts (purchase_number)",
         "CREATE INDEX IF NOT EXISTS ix_suppliers_wins ON suppliers (win_count)",
+        "CREATE INDEX IF NOT EXISTS ix_market_query_expires ON market_query_cache (expires_at)",
+        "CREATE INDEX IF NOT EXISTS ix_market_offer_fingerprint ON market_offer_observations (fingerprint)",
+        "CREATE INDEX IF NOT EXISTS ix_client_supplier_user ON client_supplier_books (user_id)",
     ]
     with engine.begin() as conn:
         for stmt in stmts:

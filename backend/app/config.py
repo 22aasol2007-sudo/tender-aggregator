@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     contracts_scrape_interval_minutes: int = 30
     contracts_max_pages: int = 5
     seed_contracts_if_empty: bool = True
+    market_cache_ttl_days: int = 14
+    market_cache_tokens_saved_per_hit: int = 120000
     eis_max_pages: int = 8
     scrape_concurrency: int = 1
     scrape_source_timeout_seconds: float = 100.0

@@ -376,3 +376,77 @@ class SupplierWinStatOut(BaseModel):
 class ContractAnalyticsOut(BaseModel):
     stats: dict[str, Any]
     top_suppliers: list[SupplierWinStatOut]
+
+
+class MarketLookupIn(BaseModel):
+    product: str = Field(min_length=2, max_length=500)
+    city: str | None = None
+    qty: float | None = None
+    unit: str | None = None
+    allow_stale: bool = False
+
+
+class MarketOfferIn(BaseModel):
+    source_type: str = "rfq"
+    supplier_name: str | None = None
+    supplier_inn: str | None = None
+    city_from: str | None = None
+    city_to: str | None = None
+    unit: str | None = None
+    qty: float | None = None
+    price_value: float | None = None
+    currency: str = "RUB"
+    vat: str | None = None
+    delivery_price: float | None = None
+    landed_unit_price: float | None = None
+    lead_time_days: int | None = None
+    payment_terms: str | None = None
+    confidence: float = 0.7
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketSaveIn(BaseModel):
+    product: str = Field(min_length=2, max_length=500)
+    city: str | None = None
+    qty: float | None = None
+    unit: str | None = None
+    query_raw: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    offers: list[MarketOfferIn] = Field(default_factory=list)
+
+
+class MarketLookupOut(BaseModel):
+    hit: bool
+    reason: str
+    fingerprint: str
+    match_type: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] | None = None
+    offers: list[dict[str, Any]] = Field(default_factory=list)
+    offer_count: int | None = None
+    hit_count: int | None = None
+    token_saved_estimate: int | None = None
+    tokens_saved_this_hit: int | None = None
+    expires_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ClientSupplierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+    supplier_inn: str | None = None
+    contacts: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class ClientSupplierOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    supplier_inn: str | None = None
+    contacts: dict[str, Any] | None = None
+    notes: str | None = None
+    tags: list[Any] = Field(default_factory=list)
+    updated_at: datetime | None = None
+

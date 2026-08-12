@@ -27,6 +27,8 @@ from app.models import (
 )
 from app.parsers import list_sources
 from app.schemas import (
+    ClientSupplierIn,
+    ClientSupplierOut,
     ContractAnalyticsOut,
     ContractListResponse,
     ContractOut,
@@ -38,6 +40,9 @@ from app.schemas import (
     HealthOut,
     JobOut,
     LoginIn,
+    MarketLookupIn,
+    MarketLookupOut,
+    MarketSaveIn,
     NicheOut,
     ProfileIn,
     ProfileOut,
@@ -82,6 +87,13 @@ from app.services.contracts import (
     top_suppliers_by_wins,
 )
 from app.services.customers import customer_history
+from app.services.market_cache import (
+    ingest_contracts_into_cache,
+    list_client_suppliers,
+    lookup_market_cache,
+    save_market_result,
+    upsert_client_supplier,
+)
 from app.services.enrich import enrich_tender
 from app.services.export import dashboard_payload, tenders_to_csv, tenders_to_xlsx
 from app.services.filters import apply_tender_filters
@@ -942,6 +954,82 @@ async def scrape_contracts(
         return ScrapeEnqueueOut(mode="sync", runs=[ScrapeRunOut.model_validate(r) for r in runs])
     job = enqueue_job(db, "contracts", {"search_string": q})
     return ScrapeEnqueueOut(mode="queued", job=JobOut.model_validate(job))
+
+
+@router.post("/market-cache/lookup", response_model=MarketLookupOut)
+def market_cache_lookup(body: MarketLookupIn, db: Session = Depends(get_db)) -> MarketLookupOut:
+    result = lookup_market_cache(
+        db,
+        product=body.product,
+        city=body.city,
+        qty=body.qty,
+        unit=body.unit,
+        allow_stale=body.allow_stale,
+    )
+    return MarketLookupOut(**result)
+
+
+@router.post("/market-cache/save")
+def market_cache_save(
+    body: MarketSaveIn,
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    offers = [o.model_dump() for o in body.offers]
+    return save_market_result(
+        db,
+        product=body.product,
+        city=body.city,
+        qty=body.qty,
+        unit=body.unit,
+        offers=offers,
+        summary=body.summary,
+        query_raw=body.query_raw,
+    )
+
+
+@router.post("/market-cache/ingest-contracts")
+def market_cache_ingest_contracts(
+    q: str | None = None,
+    region: str | None = None,
+    limit: int = Query(200, ge=1, le=2000),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    if settings.seed_contracts_if_empty:
+        try:
+            seed_contracts_if_empty(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+    return ingest_contracts_into_cache(db, q=q, region=region, limit=limit)
+
+
+@router.get("/me/suppliers", response_model=list[ClientSupplierOut])
+def my_suppliers(
+    q: str | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ClientSupplierOut]:
+    rows = list_client_suppliers(db, user.id, q=q)
+    return [ClientSupplierOut.model_validate(r) for r in rows]
+
+
+@router.post("/me/suppliers", response_model=ClientSupplierOut)
+def add_my_supplier(
+    body: ClientSupplierIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ClientSupplierOut:
+    row = upsert_client_supplier(
+        db,
+        user_id=user.id,
+        name=body.name,
+        supplier_inn=body.supplier_inn,
+        contacts=body.contacts,
+        notes=body.notes,
+        tags=body.tags,
+    )
+    return ClientSupplierOut.model_validate(row)
 
 
 @router.post("/compliance/check")

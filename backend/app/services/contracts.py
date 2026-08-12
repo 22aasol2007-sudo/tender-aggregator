@@ -263,6 +263,13 @@ async def run_contract_scrape(
             db.commit()
             db.refresh(run)
             runs.append(run)
+        # Bootstrap shared market cache from fresh contracts (token-free)
+        try:
+            from app.services.market_cache import ingest_contracts_into_cache
+
+            ingest_contracts_into_cache(db, limit=150)
+        except Exception:  # noqa: BLE001
+            db.rollback()
         return runs
     finally:
         if owns:

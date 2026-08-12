@@ -827,3 +827,67 @@ export async function triggerContractScrape(q?: string): Promise<{ mode: string 
   if (q) sp.set("q", q);
   return api(`/contracts/scrape?${sp}`, { method: "POST" });
 }
+
+export type MarketLookupResult = {
+  hit: boolean;
+  reason: string;
+  fingerprint: string;
+  match_type?: string | null;
+  meta?: Record<string, unknown>;
+  summary?: Record<string, unknown> | null;
+  offers: Array<{
+    id?: number;
+    source_type: string;
+    supplier_name?: string | null;
+    supplier_inn?: string | null;
+    price_value?: number | null;
+    landed_unit_price?: number | null;
+    delivery_price?: number | null;
+    city_to?: string | null;
+    confidence?: number;
+    observed_at?: string;
+  }>;
+  offer_count?: number | null;
+  hit_count?: number | null;
+  token_saved_estimate?: number | null;
+  tokens_saved_this_hit?: number | null;
+  expires_at?: string | null;
+};
+
+export async function lookupMarketCache(body: {
+  product: string;
+  city?: string;
+  qty?: number;
+  unit?: string;
+}): Promise<MarketLookupResult> {
+  return api("/market-cache/lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function saveMarketCache(body: {
+  product: string;
+  city?: string;
+  qty?: number;
+  unit?: string;
+  summary?: Record<string, unknown>;
+  offers?: Array<Record<string, unknown>>;
+}): Promise<{ saved: boolean; fingerprint: string; offers_saved: number }> {
+  return api("/market-cache/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function ingestContractsToMarketCache(q?: string, region?: string): Promise<{
+  queries_touched: number;
+  offers_saved: number;
+}> {
+  const sp = new URLSearchParams();
+  if (q) sp.set("q", q);
+  if (region) sp.set("region", region);
+  return api(`/market-cache/ingest-contracts?${sp}`, { method: "POST" });
+}

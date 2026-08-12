@@ -343,3 +343,94 @@ class Contract(Base):
 
     supplier_ref: Mapped[Supplier | None] = relationship(back_populates="contracts")
     tender_ref: Mapped[Tender | None] = relationship()
+
+
+class MarketQueryCache(Base):
+    """Cross-client cache of normalized sourcing queries (shared market intelligence)."""
+
+    __tablename__ = "market_query_cache"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_market_query_fingerprint"),
+        Index("ix_market_query_expires", "expires_at"),
+        Index("ix_market_query_category_city", "category_key", "city_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    category_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    city_key: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    qty_band: Mapped[str] = mapped_column(String(32), default="unknown")
+    unit: Mapped[str | None] = mapped_column(String(32))
+    query_raw: Mapped[str | None] = mapped_column(Text)
+    result_summary: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    offer_count: Mapped[int] = mapped_column(Integer, default=0)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0)
+    token_saved_estimate: Mapped[int] = mapped_column(Integer, default=0)
+    source_mix: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    offers: Mapped[list[MarketOfferObservation]] = relationship(back_populates="query_cache")
+
+
+class MarketOfferObservation(Base):
+    """Anonymized offer / KP snapshot reusable across clients."""
+
+    __tablename__ = "market_offer_observations"
+    __table_args__ = (
+        Index("ix_market_offer_fingerprint", "fingerprint"),
+        Index("ix_market_offer_observed", "observed_at"),
+        Index("ix_market_offer_supplier_inn", "supplier_inn"),
+        Index("ix_market_offer_query_id", "query_cache_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    query_cache_id: Mapped[int | None] = mapped_column(ForeignKey("market_query_cache.id"))
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)  # rfq|contract|manual|estimate
+    supplier_name: Mapped[str | None] = mapped_column(Text)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    city_from: Mapped[str | None] = mapped_column(String(128))
+    city_to: Mapped[str | None] = mapped_column(String(128))
+    unit: Mapped[str | None] = mapped_column(String(32))
+    qty: Mapped[float | None] = mapped_column(Float)
+    price_value: Mapped[float | None] = mapped_column(Float)
+    currency: Mapped[str] = mapped_column(String(8), default="RUB")
+    vat: Mapped[str | None] = mapped_column(String(32))
+    delivery_price: Mapped[float | None] = mapped_column(Float)
+    landed_unit_price: Mapped[float | None] = mapped_column(Float)
+    lead_time_days: Mapped[int | None] = mapped_column(Integer)
+    payment_terms: Mapped[str | None] = mapped_column(String(128))
+    confidence: Mapped[float] = mapped_column(Float, default=0.7)
+    payload: Mapped[dict | None] = mapped_column(JSON, default=dict)  # sanitized fields only
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    query_cache: Mapped[MarketQueryCache | None] = relationship(back_populates="offers")
+
+
+class ClientSupplierBook(Base):
+    """Private per-user supplier list — NEVER shared across clients."""
+
+    __tablename__ = "client_supplier_books"
+    __table_args__ = (
+        UniqueConstraint("user_id", "supplier_inn", "name_normalized", name="uq_client_supplier"),
+        Index("ix_client_supplier_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(512), nullable=False)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    contacts: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    notes: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -65,6 +65,9 @@ import {
   fetchContracts,
   fetchContractAnalytics,
   triggerContractScrape,
+  lookupMarketCache,
+  ingestContractsToMarketCache,
+  MarketLookupResult,
 } from "./api";
 
 type Tab = "feed" | "dashboard" | "watches" | "searches" | "profile" | "monitor" | "customers" | "contracts";
@@ -102,6 +105,10 @@ export default function App() {
   const [topSuppliers, setTopSuppliers] = useState<ContractAnalytics["top_suppliers"]>([]);
   const [contractQ, setContractQ] = useState("");
   const [contractBusy, setContractBusy] = useState(false);
+  const [cacheProduct, setCacheProduct] = useState("гофроупаковка");
+  const [cacheCity, setCacheCity] = useState("Москва");
+  const [cacheResult, setCacheResult] = useState<MarketLookupResult | null>(null);
+  const [cacheBusy, setCacheBusy] = useState(false);
   const [compliance, setCompliance] = useState<ComplianceResult | null>(null);
   const [credStatus, setCredStatus] = useState<SourceCredential[]>([]);
   const [credDrafts, setCredDrafts] = useState<Record<string, { api_url: string; api_token: string }>>({});
@@ -1003,6 +1010,107 @@ export default function App() {
               </div>
             </div>
           )}
+
+          <div className="panel" style={{ marginBottom: "1rem" }}>
+            <h3>Кэш рынка (экономия токенов)</h3>
+            <p className="muted">
+              Если вчера уже считали «гофроупаковка → Москва», сегодня отдаём сохранённые офферы без нового deep-search.
+              База клиента остаётся приватной; в общий кэш идут только обезличенные КП/контракты.
+            </p>
+            <div className="hero-actions" style={{ flexWrap: "wrap", marginBottom: "0.75rem" }}>
+              <input
+                placeholder="товар / категория"
+                value={cacheProduct}
+                onChange={(e) => setCacheProduct(e.target.value)}
+                style={{ minWidth: "180px" }}
+              />
+              <input
+                placeholder="город"
+                value={cacheCity}
+                onChange={(e) => setCacheCity(e.target.value)}
+                style={{ minWidth: "140px" }}
+              />
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={cacheBusy || !cacheProduct.trim()}
+                onClick={() => {
+                  setCacheBusy(true);
+                  void lookupMarketCache({ product: cacheProduct.trim(), city: cacheCity.trim() || undefined })
+                    .then(setCacheResult)
+                    .catch((err) => setError(err instanceof Error ? err.message : "Кэш недоступен"))
+                    .finally(() => setCacheBusy(false));
+                }}
+              >
+                {cacheBusy ? "Проверка…" : "Проверить кэш"}
+              </button>
+              {user?.is_admin && (
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={cacheBusy}
+                  onClick={() => {
+                    setCacheBusy(true);
+                    void ingestContractsToMarketCache(contractQ || cacheProduct, cacheCity || undefined)
+                      .then((r) => {
+                        setError(null);
+                        setCacheResult({
+                          hit: true,
+                          reason: "ingested",
+                          fingerprint: "—",
+                          offers: [],
+                          offer_count: r.offers_saved,
+                          summary: { queries_touched: r.queries_touched, offers_saved: r.offers_saved },
+                        });
+                      })
+                      .catch((err) => setError(err instanceof Error ? err.message : "Ingest не удался"))
+                      .finally(() => setCacheBusy(false));
+                  }}
+                >
+                  Залить контракты в кэш
+                </button>
+              )}
+            </div>
+            {cacheResult && (
+              <div>
+                <p>
+                  {cacheResult.hit ? (
+                    <>
+                      <strong>HIT</strong> ({cacheResult.match_type || cacheResult.reason})
+                      {cacheResult.tokens_saved_this_hit != null &&
+                        ` · ~${cacheResult.tokens_saved_this_hit.toLocaleString("ru-RU")} токенов сэкономлено`}
+                      {cacheResult.hit_count != null && ` · обращений: ${cacheResult.hit_count}`}
+                    </>
+                  ) : (
+                    <>
+                      <strong>MISS</strong> ({cacheResult.reason}) — нужен новый RFQ/поиск, затем save в кэш
+                    </>
+                  )}
+                </p>
+                {cacheResult.offers?.length > 0 && (
+                  <div className="list">
+                    {cacheResult.offers.slice(0, 8).map((o, idx) => (
+                      <article key={o.id ?? idx} className="tender">
+                        <div>
+                          <div className="tender-meta">
+                            <span className="chip">{o.source_type}</span>
+                            {o.supplier_inn && <span className="chip">ИНН {o.supplier_inn}</span>}
+                          </div>
+                          <h2>{o.supplier_name || "Поставщик"}</h2>
+                          <p>
+                            цена: {formatPrice(o.landed_unit_price ?? o.price_value ?? null)}
+                            {o.city_to ? ` · ${o.city_to}` : ""}
+                            {o.confidence != null ? ` · conf ${Math.round(o.confidence * 100)}%` : ""}
+                          </p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="dash-grid">
             <div className="panel">
               <h3>Топ поставщиков по победам</h3>
