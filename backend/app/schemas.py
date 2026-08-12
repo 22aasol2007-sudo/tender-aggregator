@@ -536,3 +536,45 @@ class ExecutionFeedbackIn(BaseModel):
     incident: bool = False
     notes: str | None = None
 
+
+class ShortlistIn(BaseModel):
+    product: str = Field(min_length=2, max_length=500)
+    city: str | None = "Москва"
+    qty: float | None = None
+    unit: str | None = "шт"
+    attrs: dict[str, Any] = Field(default_factory=dict)
+    niche_id: str | None = None
+    limit: int | None = Field(default=None, ge=3, le=25)
+    include_web: bool | None = None
+
+
+class ShortlistCandidateOut(BaseModel):
+    name: str
+    inn: str | None = None
+    role: str = "unknown"
+    role_label: str | None = None
+    city: str | None = None
+    region: str | None = None
+    website: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    fit_score: float = 0
+    why: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+
+
+class ShortlistOut(BaseModel):
+    took_ms: int
+    niche_id: str
+    niche_title: str | None = None
+    product: str
+    city: str
+    qty: float | None = None
+    unit: str | None = None
+    attrs: dict[str, Any] = Field(default_factory=dict)
+    disclaimer: str
+    sources_used: list[str] = Field(default_factory=list)
+    web_research: dict[str, Any] = Field(default_factory=dict)
+    candidates: list[ShortlistCandidateOut] = Field(default_factory=list)
+
+

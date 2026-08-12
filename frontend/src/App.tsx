@@ -70,8 +70,10 @@ import {
   createRfq,
   fetchRfqDrafts,
   markRfqSent,
+  buildSupplierShortlist,
   MarketLookupResult,
   RfqResult,
+  ShortlistResult,
 } from "./api";
 
 type Tab = "feed" | "dashboard" | "watches" | "searches" | "profile" | "monitor" | "customers" | "contracts";
@@ -119,6 +121,8 @@ export default function App() {
   const [gofraH, setGofraH] = useState("150");
   const [cacheResult, setCacheResult] = useState<MarketLookupResult | null>(null);
   const [cacheBusy, setCacheBusy] = useState(false);
+  const [shortlistBusy, setShortlistBusy] = useState(false);
+  const [shortlistResult, setShortlistResult] = useState<ShortlistResult | null>(null);
   const [rfqBusy, setRfqBusy] = useState(false);
   const [rfqResult, setRfqResult] = useState<RfqResult | null>(null);
   const [rfqDrafts, setRfqDrafts] = useState<Array<Record<string, unknown>>>([]);
@@ -1111,6 +1115,35 @@ export default function App() {
               >
                 {cacheBusy ? "Проверка…" : "Проверить кэш"}
               </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={shortlistBusy || !cacheProduct.trim()}
+                onClick={() => {
+                  setShortlistBusy(true);
+                  setShortlistResult(null);
+                  const attrs: Record<string, unknown> = {};
+                  if (gofraFlute.trim()) attrs.flute = gofraFlute.trim();
+                  if (gofraGrade.trim()) attrs.grade = gofraGrade.trim();
+                  if (gofraL.trim()) attrs.length_mm = Number(gofraL);
+                  if (gofraW.trim()) attrs.width_mm = Number(gofraW);
+                  if (gofraH.trim()) attrs.height_mm = Number(gofraH);
+                  void buildSupplierShortlist({
+                    product: cacheProduct.trim(),
+                    city: cacheCity.trim() || "Москва",
+                    qty: cacheQty ? Number(cacheQty) : undefined,
+                    unit: "шт",
+                    attrs,
+                    niche_id: "cosmetics_moscow_gofra",
+                    limit: 12,
+                  })
+                    .then(setShortlistResult)
+                    .catch((err) => setError(err instanceof Error ? err.message : "Shortlist недоступен"))
+                    .finally(() => setShortlistBusy(false));
+                }}
+              >
+                {shortlistBusy ? "Ищем лучших…" : "Найти лучших за 5 мин"}
+              </button>
               {user && (
                 <button
                   className="btn btn-ghost"
@@ -1172,6 +1205,48 @@ export default function App() {
                 </button>
               )}
             </div>
+            {shortlistResult && (
+              <div style={{ marginBottom: "1rem" }}>
+                <p>
+                  <strong>Shortlist</strong> · {shortlistResult.candidates.length} кандидатов ·{" "}
+                  {shortlistResult.took_ms} мс
+                  {shortlistResult.niche_title ? ` · ${shortlistResult.niche_title}` : ""}
+                </p>
+                <p className="muted">{shortlistResult.disclaimer}</p>
+                {shortlistResult.web_research?.error && (
+                  <p className="muted">Веб-исследование: {shortlistResult.web_research.error}</p>
+                )}
+                <div className="list">
+                  {shortlistResult.candidates.map((c, idx) => (
+                    <article key={`${c.name}-${c.inn ?? idx}`} className="tender">
+                      <div>
+                        <strong>
+                          #{idx + 1} · fit {c.fit_score}
+                        </strong>{" "}
+                        — {c.name}
+                        {c.role_label ? ` · ${c.role_label}` : ""}
+                        {c.city || c.region ? ` · ${c.city || c.region}` : ""}
+                      </div>
+                      <div className="muted" style={{ fontSize: "0.9em" }}>
+                        {[c.website, c.email, c.phone, c.inn ? `ИНН ${c.inn}` : null]
+                          .filter(Boolean)
+                          .join(" · ") || "контакты уточнить"}
+                      </div>
+                      {c.why?.length > 0 && (
+                        <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.2rem" }}>
+                          {c.why.map((w) => (
+                            <li key={w}>{w}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="muted" style={{ fontSize: "0.85em", marginTop: "0.25rem" }}>
+                        источники: {(c.sources || []).join(", ") || "—"}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
             {cacheResult && (
               <div>
                 <p>

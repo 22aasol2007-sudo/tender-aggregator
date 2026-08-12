@@ -279,3 +279,12 @@ def init_db() -> None:
     _migrate_postgres_columns()
     _ensure_composite_indexes()
     _ensure_postgres_fts()
+
+    # Curated sourcing shortlist seeds (gofra × Moscow)
+    try:
+        from app.services.niche_supplier_seed import seed_gofra_niche_suppliers
+
+        with SessionLocal() as db:
+            seed_gofra_niche_suppliers(db)
+    except Exception:  # noqa: BLE001
+        pass

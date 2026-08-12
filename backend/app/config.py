@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     tenderland_api_token: str | None = None
     synapse_api_url: str | None = None
     synapse_api_token: str | None = None
+    # OpenAI-compatible LLM for 5-min supplier shortlist (optional)
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o-mini"
+    shortlist_web_timeout_s: float = 55.0
+    shortlist_limit_default: int = 12
+    shortlist_include_web_default: bool = True
 
     @field_validator("database_url", mode="before")
     @classmethod

@@ -57,6 +57,8 @@ from app.schemas import (
     ScrapeEnqueueOut,
     ScrapeRequest,
     ScrapeRunOut,
+    ShortlistIn,
+    ShortlistOut,
     SourceCredentialGuideOut,
     SourceCredentialIn,
     SourceCredentialOut,
@@ -1076,6 +1078,47 @@ def _rfq_out(req: RfqRequest) -> RfqOut:
 def sourcing_niche() -> dict:
     """GTM niche: cosmetics × gofra (Moscow). Separate from tender /niche."""
     return gofra_niche_payload()
+
+
+@router.get("/sourcing/niches")
+def sourcing_niches() -> dict:
+    from app.services.niches.registry import list_niches
+
+    return {"niches": list_niches()}
+
+
+@router.post("/sourcing/shortlist", response_model=ShortlistOut)
+def sourcing_shortlist(
+    body: ShortlistIn,
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> ShortlistOut:
+    """5-min supplier shortlist: seed + EIS + optional LLM web. No RFQ, no prices."""
+    from app.services.niche_supplier_seed import seed_gofra_niche_suppliers
+    from app.services.supplier_shortlist import build_shortlist
+
+    try:
+        seed_gofra_niche_suppliers(db)
+    except Exception:  # noqa: BLE001
+        pass
+
+    include_web = body.include_web
+    if include_web is None:
+        include_web = bool(getattr(settings, "shortlist_include_web_default", True))
+
+    result = build_shortlist(
+        db,
+        user=user,
+        niche_id=body.niche_id,
+        product=body.product,
+        city=body.city,
+        qty=body.qty,
+        unit=body.unit,
+        attrs=body.attrs or None,
+        limit=body.limit,
+        include_web=bool(include_web),
+    )
+    return ShortlistOut(**result)
 
 
 @router.post("/rfq", response_model=RfqOut)

@@ -531,3 +531,35 @@ class SourcingExecutionFeedback(Base):
     incident: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NicheSupplier(Base):
+    """Seeded / curated suppliers per sourcing niche (for 5-min shortlist)."""
+
+    __tablename__ = "niche_suppliers"
+    __table_args__ = (
+        Index("ix_niche_suppliers_niche", "niche_id"),
+        Index("ix_niche_suppliers_inn", "inn"),
+        Index("ix_niche_suppliers_name", "name_normalized"),
+        UniqueConstraint("niche_id", "name_normalized", "inn", name="uq_niche_supplier"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    niche_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(512), nullable=False)
+    inn: Mapped[str | None] = mapped_column(String(16))
+    role: Mapped[str] = mapped_column(String(32), default="unknown")  # manufacturer|dealer|unknown
+    city: Mapped[str | None] = mapped_column(String(128))
+    region: Mapped[str | None] = mapped_column(String(128))
+    website: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(64))
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    notes: Mapped[str | None] = mapped_column(Text)
+    trust_seed: Mapped[float] = mapped_column(Float, default=0.7)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

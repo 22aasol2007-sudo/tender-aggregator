@@ -942,6 +942,52 @@ export async function fetchSourcingNiche(): Promise<Record<string, unknown>> {
   return api("/sourcing/niche");
 }
 
+export type ShortlistCandidate = {
+  name: string;
+  inn?: string | null;
+  role?: string;
+  role_label?: string | null;
+  city?: string | null;
+  region?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  fit_score: number;
+  why: string[];
+  sources: string[];
+};
+
+export type ShortlistResult = {
+  took_ms: number;
+  niche_id: string;
+  niche_title?: string | null;
+  product: string;
+  city: string;
+  qty?: number | null;
+  unit?: string | null;
+  attrs?: Record<string, unknown>;
+  disclaimer: string;
+  sources_used: string[];
+  web_research?: { attempted?: boolean; count?: number; error?: string | null };
+  candidates: ShortlistCandidate[];
+};
+
+export async function buildSupplierShortlist(body: {
+  product: string;
+  city?: string;
+  qty?: number;
+  unit?: string;
+  attrs?: Record<string, unknown>;
+  niche_id?: string;
+  limit?: number;
+  include_web?: boolean;
+}): Promise<ShortlistResult> {
+  return api("/sourcing/shortlist", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function createRfq(body: {
   product: string;
   city?: string;
