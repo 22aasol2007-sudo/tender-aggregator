@@ -171,6 +171,21 @@ def _migrate_sqlite_columns() -> None:
             if "search_text" not in cexisting:
                 conn.execute(text("ALTER TABLE contracts ADD COLUMN search_text TEXT"))
 
+        moffer = conn.execute(text("PRAGMA table_info(market_offer_observations)")).fetchall()
+        if moffer:
+            mo = {r[1] for r in moffer}
+            alters = {
+                "price_layer": "ALTER TABLE market_offer_observations ADD COLUMN price_layer VARCHAR(16) DEFAULT 'observed'",
+                "trust_score": "ALTER TABLE market_offer_observations ADD COLUMN trust_score FLOAT DEFAULT 0.7",
+                "quarantined": "ALTER TABLE market_offer_observations ADD COLUMN quarantined BOOLEAN DEFAULT 0",
+                "quarantine_reason": "ALTER TABLE market_offer_observations ADD COLUMN quarantine_reason VARCHAR(64)",
+                "shareable": "ALTER TABLE market_offer_observations ADD COLUMN shareable BOOLEAN DEFAULT 0",
+                "incomparable": "ALTER TABLE market_offer_observations ADD COLUMN incomparable BOOLEAN DEFAULT 0",
+            }
+            for col, stmt in alters.items():
+                if col not in mo:
+                    conn.execute(text(stmt))
+
         rows = conn.execute(text("PRAGMA table_info(tenders)")).fetchall()
         if rows:
             existing = {r[1] for r in rows}
@@ -221,6 +236,12 @@ def _migrate_postgres_columns() -> None:
         "ALTER TABLE filter_presets ADD COLUMN IF NOT EXISTS is_shared BOOLEAN DEFAULT FALSE",
         "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS skipped INTEGER DEFAULT 0",
         "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS search_text TEXT",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS price_layer VARCHAR(16) DEFAULT 'observed'",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS trust_score DOUBLE PRECISION DEFAULT 0.7",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS quarantined BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS quarantine_reason VARCHAR(64)",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS shareable BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE market_offer_observations ADD COLUMN IF NOT EXISTS incomparable BOOLEAN DEFAULT FALSE",
     ]
     with engine.begin() as conn:
         for stmt in stmts:

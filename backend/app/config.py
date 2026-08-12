@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     seed_contracts_if_empty: bool = True
     market_cache_ttl_days: int = 14
     market_cache_tokens_saved_per_hit: int = 120000
+    market_cache_min_trust: float = 0.6
+    market_cache_min_share_n: int = 5
     eis_max_pages: int = 8
     scrape_concurrency: int = 1
     scrape_source_timeout_seconds: float = 100.0

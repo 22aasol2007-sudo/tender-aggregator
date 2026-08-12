@@ -390,7 +390,13 @@ class MarketOfferObservation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     query_cache_id: Mapped[int | None] = mapped_column(ForeignKey("market_query_cache.id"))
-    source_type: Mapped[str] = mapped_column(String(32), nullable=False)  # rfq|contract|manual|estimate
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)  # rfq|contract|manual|estimate|firm_rfq
+    price_layer: Mapped[str] = mapped_column(String(16), default="observed")  # estimate|observed|firm
+    trust_score: Mapped[float] = mapped_column(Float, default=0.7)
+    quarantined: Mapped[bool] = mapped_column(Boolean, default=False)
+    quarantine_reason: Mapped[str | None] = mapped_column(String(64))
+    shareable: Mapped[bool] = mapped_column(Boolean, default=False)
+    incomparable: Mapped[bool] = mapped_column(Boolean, default=False)
     supplier_name: Mapped[str | None] = mapped_column(Text)
     supplier_inn: Mapped[str | None] = mapped_column(String(16))
     city_from: Mapped[str | None] = mapped_column(String(128))

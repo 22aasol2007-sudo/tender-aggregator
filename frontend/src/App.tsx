@@ -1077,31 +1077,46 @@ export default function App() {
                   {cacheResult.hit ? (
                     <>
                       <strong>HIT</strong> ({cacheResult.match_type || cacheResult.reason})
+                      {cacheResult.freshness ? ` · freshness: ${cacheResult.freshness}` : ""}
+                      {cacheResult.age_days != null ? ` · возраст ${cacheResult.age_days}д` : ""}
+                      {cacheResult.ttl_days != null ? ` / TTL ${cacheResult.ttl_days}д` : ""}
                       {cacheResult.tokens_saved_this_hit != null &&
-                        ` · ~${cacheResult.tokens_saved_this_hit.toLocaleString("ru-RU")} токенов сэкономлено`}
-                      {cacheResult.hit_count != null && ` · обращений: ${cacheResult.hit_count}`}
+                        cacheResult.tokens_saved_this_hit > 0 &&
+                        ` · ~${cacheResult.tokens_saved_this_hit.toLocaleString("ru-RU")} токенов`}
                     </>
                   ) : (
                     <>
-                      <strong>MISS</strong> ({cacheResult.reason}) — нужен новый RFQ/поиск, затем save в кэш
+                      <strong>{cacheResult.match_type === "soft" ? "SOFT HINT" : "MISS"}</strong> (
+                      {cacheResult.reason})
+                      {cacheResult.warning ? ` — ${cacheResult.warning}` : " — нужен RFQ, затем save"}
                     </>
                   )}
                 </p>
+                {cacheResult.price_layers_note && <p className="muted">{cacheResult.price_layers_note}</p>}
+                {cacheResult.warning && cacheResult.hit && <p className="muted">{cacheResult.warning}</p>}
                 {cacheResult.offers?.length > 0 && (
                   <div className="list">
                     {cacheResult.offers.slice(0, 8).map((o, idx) => (
                       <article key={o.id ?? idx} className="tender">
                         <div>
                           <div className="tender-meta">
+                            <span className="chip chip-accent">{o.price_layer || "observed"}</span>
                             <span className="chip">{o.source_type}</span>
+                            {o.freshness && <span className="chip">{o.freshness}</span>}
+                            {o.trust_score != null && (
+                              <span className="chip">trust {Math.round(o.trust_score * 100)}%</span>
+                            )}
+                            {o.incomparable && <span className="chip chip-law">не сравнимо</span>}
                             {o.supplier_inn && <span className="chip">ИНН {o.supplier_inn}</span>}
                           </div>
                           <h2>{o.supplier_name || "Поставщик"}</h2>
                           <p>
                             цена: {formatPrice(o.landed_unit_price ?? o.price_value ?? null)}
+                            {o.unit ? ` / ${o.unit}` : ""}
                             {o.city_to ? ` · ${o.city_to}` : ""}
-                            {o.confidence != null ? ` · conf ${Math.round(o.confidence * 100)}%` : ""}
+                            {o.age_days != null ? ` · ${o.age_days}д назад` : ""}
                           </p>
+                          {o.disclaimer && <p className="muted">{o.disclaimer}</p>}
                         </div>
                       </article>
                     ))}

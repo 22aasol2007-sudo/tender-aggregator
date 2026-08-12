@@ -985,6 +985,7 @@ def market_cache_save(
         offers=offers,
         summary=body.summary,
         query_raw=body.query_raw,
+        share_consent=body.share_consent,
     )
 
 

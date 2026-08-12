@@ -388,6 +388,7 @@ class MarketLookupIn(BaseModel):
 
 class MarketOfferIn(BaseModel):
     source_type: str = "rfq"
+    price_layer: str | None = None  # estimate|observed|firm
     supplier_name: str | None = None
     supplier_inn: str | None = None
     city_from: str | None = None
@@ -402,6 +403,7 @@ class MarketOfferIn(BaseModel):
     lead_time_days: int | None = None
     payment_terms: str | None = None
     confidence: float = 0.7
+    trust_score: float | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -411,6 +413,7 @@ class MarketSaveIn(BaseModel):
     qty: float | None = None
     unit: str | None = None
     query_raw: str | None = None
+    share_consent: bool = False
     summary: dict[str, Any] = Field(default_factory=dict)
     offers: list[MarketOfferIn] = Field(default_factory=list)
 
@@ -429,6 +432,13 @@ class MarketLookupOut(BaseModel):
     tokens_saved_this_hit: int | None = None
     expires_at: datetime | None = None
     updated_at: datetime | None = None
+    freshness: str | None = None
+    age_days: float | None = None
+    ttl_days: int | None = None
+    warning: str | None = None
+    price_layers_note: str | None = None
+    orchestration: dict[str, Any] | None = None
+    anonymized: bool | None = None
 
 
 class ClientSupplierIn(BaseModel):

@@ -58,7 +58,8 @@ python -m app.worker
 Вкладка UI **Контракты**: поиск по истории, медиана/P25–P75 цен, топ победителей. API: `GET /api/contracts`, `GET /api/contracts/analytics`, `GET /api/suppliers`, `POST /api/contracts/scrape` (admin).
 
 **Кэш рынка (экономия токенов):** повторные похожие запросы (товар+город+объём) отдают сохранённые обезличенные офферы без нового deep-search.  
-API: `POST /api/market-cache/lookup`, `POST /api/market-cache/save`, `POST /api/market-cache/ingest-contracts`, приватная книга `GET/POST /api/me/suppliers`. TTL по умолчанию 14 дней (`MARKET_CACHE_TTL_DAYS`).
+Слои цены: `estimate` / `observed` / `firm`. Soft-match ≠ HIT. TTL по категории, trust score, quarantine outliers, k-anonymity (N≥5), firm не шарится.  
+API: `POST /api/market-cache/lookup`, `POST /api/market-cache/save` (`share_consent`), `POST /api/market-cache/ingest-contracts`, `GET/POST /api/me/suppliers`.
 
 ## Деплой
 

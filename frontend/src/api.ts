@@ -838,20 +838,35 @@ export type MarketLookupResult = {
   offers: Array<{
     id?: number;
     source_type: string;
+    price_layer?: string;
+    trust_score?: number;
+    quarantined?: boolean;
+    incomparable?: boolean;
     supplier_name?: string | null;
     supplier_inn?: string | null;
     price_value?: number | null;
     landed_unit_price?: number | null;
     delivery_price?: number | null;
     city_to?: string | null;
+    unit?: string | null;
     confidence?: number;
+    freshness?: string;
+    age_days?: number;
     observed_at?: string;
+    disclaimer?: string;
+    warning?: string;
   }>;
   offer_count?: number | null;
   hit_count?: number | null;
   token_saved_estimate?: number | null;
   tokens_saved_this_hit?: number | null;
   expires_at?: string | null;
+  freshness?: string | null;
+  age_days?: number | null;
+  ttl_days?: number | null;
+  warning?: string | null;
+  price_layers_note?: string | null;
+  orchestration?: Record<string, unknown> | null;
 };
 
 export async function lookupMarketCache(body: {
