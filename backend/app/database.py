@@ -84,6 +84,10 @@ def _ensure_composite_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_tenders_dup_published ON tenders (is_duplicate, published_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_tenders_customer_id_pub ON tenders (customer_id, published_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_worker_jobs_claim ON worker_jobs (status, priority ASC, id ASC)",
+        "CREATE INDEX IF NOT EXISTS ix_contracts_signed_at ON contracts (signed_at)",
+        "CREATE INDEX IF NOT EXISTS ix_contracts_supplier_id ON contracts (supplier_id)",
+        "CREATE INDEX IF NOT EXISTS ix_contracts_purchase_number ON contracts (purchase_number)",
+        "CREATE INDEX IF NOT EXISTS ix_suppliers_wins ON suppliers (win_count)",
     ]
     with engine.begin() as conn:
         for stmt in stmts:
@@ -158,13 +162,18 @@ def _migrate_sqlite_columns() -> None:
         "customer_kpp": "ALTER TABLE tenders ADD COLUMN customer_kpp VARCHAR(16)",
     }
     with engine.begin() as conn:
+        crow = conn.execute(text("PRAGMA table_info(contracts)")).fetchall()
+        if crow:
+            cexisting = {r[1] for r in crow}
+            if "search_text" not in cexisting:
+                conn.execute(text("ALTER TABLE contracts ADD COLUMN search_text TEXT"))
+
         rows = conn.execute(text("PRAGMA table_info(tenders)")).fetchall()
-        if not rows:
-            return
-        existing = {r[1] for r in rows}
-        for col, stmt in needed.items():
-            if col not in existing:
-                conn.execute(text(stmt))
+        if rows:
+            existing = {r[1] for r in rows}
+            for col, stmt in needed.items():
+                if col not in existing:
+                    conn.execute(text(stmt))
 
         preset_cols = conn.execute(text("PRAGMA table_info(filter_presets)")).fetchall()
         if preset_cols:
@@ -208,6 +217,7 @@ def _migrate_postgres_columns() -> None:
         "ALTER TABLE filter_presets ADD COLUMN IF NOT EXISTS user_id INTEGER",
         "ALTER TABLE filter_presets ADD COLUMN IF NOT EXISTS is_shared BOOLEAN DEFAULT FALSE",
         "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS skipped INTEGER DEFAULT 0",
+        "ALTER TABLE contracts ADD COLUMN IF NOT EXISTS search_text TEXT",
     ]
     with engine.begin() as conn:
         for stmt in stmts:

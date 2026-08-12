@@ -310,3 +310,69 @@ class SourceCredentialTestOut(BaseModel):
     ok: bool
     status_code: int | None = None
     detail: str
+
+
+class ContractOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    external_id: str
+    source: str
+    law: str | None = None
+    purchase_number: str | None = None
+    title: str
+    customer: str | None = None
+    customer_inn: str | None = None
+    supplier_name: str | None = None
+    supplier_inn: str | None = None
+    supplier_id: int | None = None
+    region: str | None = None
+    price: float | None = None
+    nmck: float | None = None
+    discount_pct: float | None = None
+    currency: str = "RUB"
+    status: str | None = None
+    okpd2: str | None = None
+    url: str
+    description: str | None = None
+    signed_at: datetime | None = None
+    published_at: datetime | None = None
+    tender_id: int | None = None
+
+
+class ContractListResponse(BaseModel):
+    items: list[ContractOut]
+    total: int
+    page: int
+    page_size: int
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class SupplierOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    inn: str | None = None
+    kpp: str | None = None
+    name: str
+    region: str | None = None
+    win_count: int = 0
+    total_contract_price: float = 0.0
+    avg_contract_price: float | None = None
+    avg_discount_pct: float | None = None
+    last_won_at: datetime | None = None
+
+
+class SupplierWinStatOut(BaseModel):
+    supplier_inn: str | None = None
+    supplier_name: str | None = None
+    wins: int
+    avg_price: float | None = None
+    avg_discount_pct: float | None = None
+    total_price: float | None = None
+    last_won_at: datetime | None = None
+
+
+class ContractAnalyticsOut(BaseModel):
+    stats: dict[str, Any]
+    top_suppliers: list[SupplierWinStatOut]

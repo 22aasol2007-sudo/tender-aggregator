@@ -60,9 +60,14 @@ import {
   Customer,
   MonitorSnapshot,
   SourceMetric,
+  Contract,
+  ContractAnalytics,
+  fetchContracts,
+  fetchContractAnalytics,
+  triggerContractScrape,
 } from "./api";
 
-type Tab = "feed" | "dashboard" | "watches" | "searches" | "profile" | "monitor" | "customers";
+type Tab = "feed" | "dashboard" | "watches" | "searches" | "profile" | "monitor" | "customers" | "contracts";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("feed");
@@ -91,6 +96,12 @@ export default function App() {
   const [monitor, setMonitor] = useState<MonitorSnapshot | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQ, setCustomerQ] = useState("");
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [contractTotal, setContractTotal] = useState(0);
+  const [contractStats, setContractStats] = useState<ContractAnalytics["stats"] | null>(null);
+  const [topSuppliers, setTopSuppliers] = useState<ContractAnalytics["top_suppliers"]>([]);
+  const [contractQ, setContractQ] = useState("");
+  const [contractBusy, setContractBusy] = useState(false);
   const [compliance, setCompliance] = useState<ComplianceResult | null>(null);
   const [credStatus, setCredStatus] = useState<SourceCredential[]>([]);
   const [credDrafts, setCredDrafts] = useState<Record<string, { api_url: string; api_token: string }>>({});
@@ -289,7 +300,24 @@ export default function App() {
     if (tab === "customers") {
       void fetchCustomers(customerQ).then(setCustomers).catch(() => setCustomers([]));
     }
-  }, [tab, user, customerQ]);
+    if (tab === "contracts") {
+      void (async () => {
+        try {
+          const [list, analytics] = await Promise.all([
+            fetchContracts({ q: contractQ || undefined, page: 1, page_size: 30 }),
+            fetchContractAnalytics({ q: contractQ || undefined, limit: 15 }),
+          ]);
+          setContracts(list.items);
+          setContractTotal(list.total);
+          setContractStats(analytics.stats);
+          setTopSuppliers(analytics.top_suppliers);
+        } catch {
+          setContracts([]);
+          setTopSuppliers([]);
+        }
+      })();
+    }
+  }, [tab, user, customerQ, contractQ]);
 
   async function onAuth(e: FormEvent) {
     e.preventDefault();
@@ -592,6 +620,7 @@ export default function App() {
               ["dashboard", "Дашборд"],
               ["monitor", "Мониторинг"],
               ["customers", "Заказчики"],
+              ["contracts", "Контракты"],
               ["watches", "В работу"],
               ["searches", "Поиски"],
               ["profile", "Профиль"],
@@ -912,6 +941,128 @@ export default function App() {
                 </div>
               </article>
             ))}
+          </div>
+        </section>
+      )}
+
+      {tab === "contracts" && (
+        <section className="panel">
+          <h3>История контрактов и победители</h3>
+          <p className="muted">
+            Цена контракта (не НМЦК) + кто выигрывал. Поиск по предмету / ОКПД / поставщику.
+          </p>
+          <div className="hero-actions" style={{ marginBottom: "1rem", flexWrap: "wrap" }}>
+            <input
+              placeholder="например: полиэтилен, 22.21, перевозка"
+              value={contractQ}
+              onChange={(e) => setContractQ(e.target.value)}
+              style={{ minWidth: "240px", flex: 1 }}
+            />
+            {user?.is_admin && (
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={contractBusy}
+                onClick={() => {
+                  setContractBusy(true);
+                  void triggerContractScrape(contractQ || undefined)
+                    .then(() => setError(null))
+                    .catch((err) => setError(err instanceof Error ? err.message : "Скрап контрактов не удался"))
+                    .finally(() => setContractBusy(false));
+                }}
+              >
+                {contractBusy ? "Запуск…" : "Обновить из ЕИС"}
+              </button>
+            )}
+          </div>
+          {contractStats && (
+            <div className="stats" style={{ marginBottom: "1rem" }}>
+              <div className="stat">
+                <div className="stat-label">Контрактов</div>
+                <div className="stat-value">{contractStats.count ?? contractTotal}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Медиана цены</div>
+                <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                  {formatPrice(contractStats.median_price ?? null)}
+                </div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">P25–P75</div>
+                <div className="stat-value" style={{ fontSize: "0.95rem" }}>
+                  {formatPrice(contractStats.p25_price ?? null)} – {formatPrice(contractStats.p75_price ?? null)}
+                </div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Ср. снижение от НМЦК</div>
+                <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                  {contractStats.avg_discount_pct != null
+                    ? `${contractStats.avg_discount_pct.toFixed(1)}%`
+                    : "—"}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="dash-grid">
+            <div className="panel">
+              <h3>Топ поставщиков по победам</h3>
+              <div className="list">
+                {topSuppliers.length === 0 && <p className="muted">Пока нет данных — запустите сбор или дождитесь seed.</p>}
+                {topSuppliers.map((s, idx) => (
+                  <article key={`${s.supplier_inn || s.supplier_name}-${idx}`} className="tender">
+                    <div>
+                      <div className="tender-meta">
+                        <span className="chip chip-accent">{s.wins} побед</span>
+                        {s.supplier_inn && <span className="chip">ИНН {s.supplier_inn}</span>}
+                        {s.avg_discount_pct != null && (
+                          <span className="chip">−{s.avg_discount_pct.toFixed(1)}% к НМЦК</span>
+                        )}
+                      </div>
+                      <h2>{s.supplier_name || "Без названия"}</h2>
+                      <p>
+                        ср. цена: {formatPrice(s.avg_price)} · сумма: {formatPrice(s.total_price)}
+                        {s.last_won_at ? ` · последний: ${formatDate(s.last_won_at)}` : ""}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div className="panel">
+              <h3>Контракты ({contractTotal})</h3>
+              <div className="list">
+                {contracts.map((c) => (
+                  <article key={c.id} className="tender">
+                    <div>
+                      <div className="tender-meta">
+                        {c.law && <span className="chip chip-law">{c.law}</span>}
+                        {c.okpd2 && <span className="chip">ОКПД {c.okpd2}</span>}
+                        {c.discount_pct != null && (
+                          <span className="chip">−{c.discount_pct.toFixed(1)}%</span>
+                        )}
+                        <span className="chip">{sourceLabel(c.source, sources)}</span>
+                      </div>
+                      <h2>
+                        <a href={c.url} target="_blank" rel="noreferrer">
+                          {c.title}
+                        </a>
+                      </h2>
+                      <p>
+                        Победитель: <strong>{c.supplier_name || "—"}</strong>
+                        {c.supplier_inn ? ` (ИНН ${c.supplier_inn})` : ""}
+                      </p>
+                      <p>
+                        Цена контракта: {formatPrice(c.price)}
+                        {c.nmck != null ? ` · НМЦК: ${formatPrice(c.nmck)}` : ""}
+                        {c.region ? ` · ${c.region}` : ""}
+                        {c.signed_at ? ` · ${formatDate(c.signed_at)}` : ""}
+                      </p>
+                      {c.customer && <p className="muted">Заказчик: {c.customer}</p>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       )}

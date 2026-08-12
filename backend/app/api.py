@@ -13,10 +13,12 @@ from app.config import settings
 from app.database import get_db, is_postgres
 from app.models import (
     CompanyProfile,
+    Contract,
     Customer,
     FilterPreset,
     SavedSearch,
     ScrapeRun,
+    Supplier,
     Tender,
     TenderChange,
     TenderWatch,
@@ -25,6 +27,9 @@ from app.models import (
 )
 from app.parsers import list_sources
 from app.schemas import (
+    ContractAnalyticsOut,
+    ContractListResponse,
+    ContractOut,
     CustomerDetailOut,
     CustomerOut,
     DashboardOut,
@@ -48,6 +53,8 @@ from app.schemas import (
     SourceCredentialTestIn,
     SourceCredentialTestOut,
     StatsOut,
+    SupplierOut,
+    SupplierWinStatOut,
     TelegramIn,
     TenderChangeOut,
     TenderListResponse,
@@ -67,6 +74,13 @@ from app.services.auth import (
     verify_password,
 )
 from app.services.compliance import check_compliance, check_tender_compliance
+from app.services.contracts import (
+    apply_contract_filters,
+    contract_price_stats,
+    run_contract_scrape,
+    seed_contracts_if_empty,
+    top_suppliers_by_wins,
+)
 from app.services.customers import customer_history
 from app.services.enrich import enrich_tender
 from app.services.export import dashboard_payload, tenders_to_csv, tenders_to_xlsx
@@ -793,6 +807,141 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)) -> CustomerDet
     out = CustomerDetailOut.model_validate(customer)
     out.history = [TenderOut.model_validate(t) for t in history]
     return out
+
+
+@router.get("/contracts", response_model=ContractListResponse)
+def list_contracts(
+    q: str | None = None,
+    law: str | None = None,
+    region: str | None = None,
+    okpd2: str | None = None,
+    supplier_inn: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    signed_from: datetime | None = None,
+    signed_to: datetime | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> ContractListResponse:
+    if settings.seed_contracts_if_empty:
+        try:
+            seed_contracts_if_empty(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+
+    query = apply_contract_filters(
+        db.query(Contract),
+        q=q,
+        law=law,
+        region=region,
+        okpd2=okpd2,
+        supplier_inn=supplier_inn,
+        min_price=min_price,
+        max_price=max_price,
+        signed_from=signed_from,
+        signed_to=signed_to,
+    )
+    total = query.count()
+    items = (
+        query.order_by(Contract.signed_at.desc().nullslast(), Contract.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    stats = contract_price_stats(db, q=q, okpd2=okpd2, region=region)
+    return ContractListResponse(
+        items=[ContractOut.model_validate(i) for i in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        stats=stats,
+    )
+
+
+@router.get("/contracts/analytics", response_model=ContractAnalyticsOut)
+def contracts_analytics(
+    q: str | None = None,
+    okpd2: str | None = None,
+    region: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> ContractAnalyticsOut:
+    if settings.seed_contracts_if_empty:
+        try:
+            seed_contracts_if_empty(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+    stats = contract_price_stats(db, q=q, okpd2=okpd2, region=region)
+    top = top_suppliers_by_wins(db, q=q, okpd2=okpd2, region=region, limit=limit)
+    return ContractAnalyticsOut(
+        stats=stats,
+        top_suppliers=[SupplierWinStatOut(**row) for row in top],
+    )
+
+
+@router.get("/suppliers", response_model=list[SupplierOut])
+def list_suppliers(
+    q: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> list[SupplierOut]:
+    if settings.seed_contracts_if_empty:
+        try:
+            seed_contracts_if_empty(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+    query = db.query(Supplier)
+    if q:
+        like = f"%{q.strip()}%"
+        query = query.filter(or_(Supplier.name.ilike(like), Supplier.inn.ilike(like)))
+    rows = query.order_by(Supplier.win_count.desc(), Supplier.id.desc()).limit(limit).all()
+    return [SupplierOut.model_validate(r) for r in rows]
+
+
+@router.get("/suppliers/{supplier_id}/contracts", response_model=ContractListResponse)
+def supplier_contracts(
+    supplier_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> ContractListResponse:
+    supplier = db.get(Supplier, supplier_id)
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    query = db.query(Contract).filter(Contract.supplier_id == supplier_id)
+    total = query.count()
+    items = (
+        query.order_by(Contract.signed_at.desc().nullslast(), Contract.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return ContractListResponse(
+        items=[ContractOut.model_validate(i) for i in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        stats=contract_price_stats(db, q=supplier.inn or supplier.name),
+    )
+
+
+@router.post("/contracts/scrape", response_model=ScrapeEnqueueOut)
+async def scrape_contracts(
+    q: str | None = Query(None, description="searchString для ЕИС"),
+    sync: bool = Query(False),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> ScrapeEnqueueOut:
+    if sync or not settings.scrape_via_worker:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+        runs = await run_contract_scrape(None, search_string=q)
+        return ScrapeEnqueueOut(mode="sync", runs=[ScrapeRunOut.model_validate(r) for r in runs])
+    job = enqueue_job(db, "contracts", {"search_string": q})
+    return ScrapeEnqueueOut(mode="queued", job=JobOut.model_validate(job))
 
 
 @router.post("/compliance/check")

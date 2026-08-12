@@ -18,7 +18,7 @@
 12. Дашборд  
 13. Мультипользователи (JWT)  
 14. Сохранённые поиски со счётчиком «новых»  
-15. Сравнение дублей с разных площадок  
+16. История контрактов ЕИС: победители, цена контракта, снижение от НМЦК, топ поставщиков  
 
 ## Запуск
 
@@ -53,7 +53,9 @@ python -m app.worker
 
 На Railway: сервис `api` (uvicorn) + сервис `worker` (та же Docker-команда `python -m app.worker`), общие `DATABASE_URL` и `SCRAPE_PROXY_URL`.
 
-Расписание: **hot** (~1.5 мин) — ЕИС + b2b/fabrikant/otc/rostender; **cold** (~12 мин) — остальные источники.
+Расписание: **hot** (~1.5 мин) — ЕИС + b2b/fabrikant/otc/rostender; **cold** (~12 мин) — остальные источники; **contracts** (~30 мин) — реестр контрактов ЕИС (44/223).
+
+Вкладка UI **Контракты**: поиск по истории, медиана/P25–P75 цен, топ победителей. API: `GET /api/contracts`, `GET /api/contracts/analytics`, `GET /api/suppliers`, `POST /api/contracts/scrape` (admin).
 
 ## Деплой
 

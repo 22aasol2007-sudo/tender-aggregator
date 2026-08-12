@@ -33,6 +33,13 @@ async def lifespan(_: FastAPI):
         if settings.seed_if_empty:
             seed_if_empty(db)
         seed_presets(db)
+        if settings.seed_contracts_if_empty:
+            try:
+                from app.services.contracts import seed_contracts_if_empty
+
+                seed_contracts_if_empty(db)
+            except Exception:  # noqa: BLE001
+                db.rollback()
     finally:
         db.close()
     start_scheduler()

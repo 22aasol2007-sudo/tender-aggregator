@@ -266,3 +266,80 @@ class SourceApiCredential(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Supplier(Base):
+    """Winner / contractor from concluded contracts (not the buyer)."""
+
+    __tablename__ = "suppliers"
+    __table_args__ = (
+        UniqueConstraint("inn", name="uq_suppliers_inn"),
+        Index("ix_suppliers_name_norm", "name_normalized"),
+        Index("ix_suppliers_wins", "win_count"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inn: Mapped[str | None] = mapped_column(String(16))
+    kpp: Mapped[str | None] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(512), nullable=False)
+    region: Mapped[str | None] = mapped_column(String(128))
+    win_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_contract_price: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_contract_price: Mapped[float | None] = mapped_column(Float)
+    avg_discount_pct: Mapped[float | None] = mapped_column(Float)
+    last_won_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    contracts: Mapped[list[Contract]] = relationship(back_populates="supplier_ref")
+
+
+class Contract(Base):
+    """Concluded contract / award from EIS registry (price = actual award, not NMCK)."""
+
+    __tablename__ = "contracts"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_contracts_source_external"),
+        Index("ix_contracts_signed_at", "signed_at"),
+        Index("ix_contracts_price", "price"),
+        Index("ix_contracts_region", "region"),
+        Index("ix_contracts_okpd2", "okpd2"),
+        Index("ix_contracts_supplier_id", "supplier_id"),
+        Index("ix_contracts_purchase_number", "purchase_number"),
+        Index("ix_contracts_law_signed", "law", "signed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)  # eis_contract_44 | eis_contract_223
+    law: Mapped[str | None] = mapped_column(String(16))
+    purchase_number: Mapped[str | None] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    customer: Mapped[str | None] = mapped_column(Text)
+    customer_inn: Mapped[str | None] = mapped_column(String(16))
+    supplier_name: Mapped[str | None] = mapped_column(Text)
+    supplier_inn: Mapped[str | None] = mapped_column(String(16))
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"))
+    region: Mapped[str | None] = mapped_column(String(128))
+    price: Mapped[float | None] = mapped_column(Float)  # contract / award price
+    nmck: Mapped[float | None] = mapped_column(Float)  # notice max price when known
+    discount_pct: Mapped[float | None] = mapped_column(Float)  # (nmck-price)/nmck*100
+    currency: Mapped[str] = mapped_column(String(8), default="RUB")
+    status: Mapped[str | None] = mapped_column(String(64))
+    okpd2: Mapped[str | None] = mapped_column(String(32))
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    search_text: Mapped[str | None] = mapped_column(Text)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tender_id: Mapped[int | None] = mapped_column(ForeignKey("tenders.id"), index=True)
+    scraped_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    supplier_ref: Mapped[Supplier | None] = relationship(back_populates="contracts")
+    tender_ref: Mapped[Tender | None] = relationship()

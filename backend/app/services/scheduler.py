@@ -74,11 +74,33 @@ async def _scheduled_monitor() -> None:
         db.close()
 
 
+async def _scheduled_contracts() -> None:
+    import asyncio
+
+    if settings.scrape_via_worker:
+        db = SessionLocal()
+        try:
+            enqueue_job(db, "contracts", {})
+        finally:
+            db.close()
+        return
+    try:
+        from app.services.contracts import run_contract_scrape
+
+        await asyncio.wait_for(
+            run_contract_scrape(None),
+            timeout=float(settings.scrape_job_timeout_seconds),
+        )
+    except TimeoutError:
+        pass
+
+
 def start_scheduler() -> None:
     if scheduler.running:
         return
     hot_min = max(1.0, float(settings.hot_scrape_interval_minutes))
     cold_min = max(5, int(settings.cold_scrape_interval_minutes))
+    contracts_min = max(15, int(settings.contracts_scrape_interval_minutes))
     scheduler.add_job(
         _scheduled_scrape_hot,
         "interval",
@@ -99,6 +121,16 @@ def start_scheduler() -> None:
         coalesce=True,
         misfire_grace_time=180,
     )
+    scheduler.add_job(
+        _scheduled_contracts,
+        "interval",
+        minutes=contracts_min,
+        id="scrape_contracts",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=180,
+    )
     # Backward-compatible id for operators; full scrape less often than hot
     scheduler.add_job(
         _scheduled_scrape,
@@ -110,7 +142,7 @@ def start_scheduler() -> None:
         coalesce=True,
         misfire_grace_time=120,
     )
-    # One-shot shortly after boot: hot first, then cold
+    # One-shot shortly after boot: hot first, then cold, then contracts
     scheduler.add_job(
         _scheduled_scrape_hot,
         "date",
@@ -124,6 +156,14 @@ def start_scheduler() -> None:
         "date",
         run_date=datetime.now(timezone.utc) + timedelta(seconds=45),
         id="scrape_cold_startup",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _scheduled_contracts,
+        "date",
+        run_date=datetime.now(timezone.utc) + timedelta(seconds=70),
+        id="scrape_contracts_startup",
         replace_existing=True,
         max_instances=1,
     )

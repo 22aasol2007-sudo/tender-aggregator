@@ -12,6 +12,7 @@ from app.models import WorkerJob
 # Lower number = higher priority
 JOB_PRIORITIES = {
     "scrape": 50,
+    "contracts": 80,
     "monitor": 100,
     "enrich": 200,
 }
@@ -47,6 +48,18 @@ def enqueue_job(
         for pending in pending_rows:
             if _sources_key(pending.payload) == key:
                 return pending
+    if job_type == "contracts":
+        pending = (
+            db.query(WorkerJob)
+            .filter(
+                WorkerJob.job_type == "contracts",
+                WorkerJob.status.in_(("pending", "running")),
+            )
+            .order_by(WorkerJob.id.desc())
+            .first()
+        )
+        if pending:
+            return pending
     if job_type == "enrich":
         pending = (
             db.query(WorkerJob)

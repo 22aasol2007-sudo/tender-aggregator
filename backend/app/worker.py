@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import SessionLocal, init_db
 from app.models import Tender, WorkerJob
 from app.services.aggregator import run_scrape
+from app.services.contracts import run_contract_scrape
 from app.services.enrich import enrich_tender
 from app.services.http_client import close_client
 from app.services.jobs import claim_next_job, finish_job
@@ -19,7 +20,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 MODE_TYPES = {
     "all": None,
-    "scrape": ["scrape", "monitor"],
+    "scrape": ["scrape", "monitor", "contracts"],
     "enrich": ["enrich"],
 }
 
@@ -91,6 +92,29 @@ async def process_one(allowed_types: list[str] | None = None) -> bool:
                 finish_job(db, job, result={"enriched": done, "requested": len(ids)})
             finally:
                 db.close()
+        elif job_type == "contracts":
+            search_string = payload.get("search_string")
+            runs = await asyncio.wait_for(
+                run_contract_scrape(None, search_string=search_string),
+                timeout=settings.scrape_job_timeout_seconds,
+            )
+            _finish_job_safe(
+                job_id,
+                result={
+                    "runs": [
+                        {
+                            "source": r.source,
+                            "status": r.status,
+                            "fetched": r.fetched,
+                            "upserted": r.upserted,
+                            "skipped": r.skipped,
+                            "error": r.error,
+                        }
+                        for r in runs
+                    ],
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
         elif job_type == "monitor":
             db = SessionLocal()
             try:

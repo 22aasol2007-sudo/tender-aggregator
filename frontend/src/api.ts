@@ -728,6 +728,102 @@ export function sourceLabel(source: string, sources?: SourceInfo[]): string {
     bank_guarantees: "Банк гарантий (ЕИС)",
     fedresurs: "Федресурс",
     kartoteka: "Картотека",
+    eis_contract_44: "ЕИС контракты · 44-ФЗ",
+    eis_contract_223: "ЕИС контракты · 223-ФЗ",
   };
   return map[source] || source;
+}
+
+export type Contract = {
+  id: number;
+  external_id: string;
+  source: string;
+  law: string | null;
+  purchase_number: string | null;
+  title: string;
+  customer: string | null;
+  customer_inn: string | null;
+  supplier_name: string | null;
+  supplier_inn: string | null;
+  supplier_id: number | null;
+  region: string | null;
+  price: number | null;
+  nmck: number | null;
+  discount_pct: number | null;
+  currency: string;
+  status: string | null;
+  okpd2: string | null;
+  url: string;
+  description: string | null;
+  signed_at: string | null;
+  published_at: string | null;
+  tender_id: number | null;
+};
+
+export type ContractListResponse = {
+  items: Contract[];
+  total: number;
+  page: number;
+  page_size: number;
+  stats: {
+    count?: number;
+    median_price?: number | null;
+    avg_price?: number | null;
+    p25_price?: number | null;
+    p75_price?: number | null;
+    avg_discount_pct?: number | null;
+  };
+};
+
+export type SupplierWinStat = {
+  supplier_inn: string | null;
+  supplier_name: string | null;
+  wins: number;
+  avg_price: number | null;
+  avg_discount_pct: number | null;
+  total_price: number | null;
+  last_won_at: string | null;
+};
+
+export type ContractAnalytics = {
+  stats: ContractListResponse["stats"];
+  top_suppliers: SupplierWinStat[];
+};
+
+export async function fetchContracts(params: {
+  q?: string;
+  law?: string;
+  region?: string;
+  okpd2?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<ContractListResponse> {
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.law) sp.set("law", params.law);
+  if (params.region) sp.set("region", params.region);
+  if (params.okpd2) sp.set("okpd2", params.okpd2);
+  sp.set("page", String(params.page ?? 1));
+  sp.set("page_size", String(params.page_size ?? 20));
+  return api(`/contracts?${sp}`);
+}
+
+export async function fetchContractAnalytics(params: {
+  q?: string;
+  okpd2?: string;
+  region?: string;
+  limit?: number;
+}): Promise<ContractAnalytics> {
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.okpd2) sp.set("okpd2", params.okpd2);
+  if (params.region) sp.set("region", params.region);
+  sp.set("limit", String(params.limit ?? 20));
+  return api(`/contracts/analytics?${sp}`);
+}
+
+export async function triggerContractScrape(q?: string): Promise<{ mode: string }> {
+  const sp = new URLSearchParams();
+  if (q) sp.set("q", q);
+  return api(`/contracts/scrape?${sp}`, { method: "POST" });
 }
