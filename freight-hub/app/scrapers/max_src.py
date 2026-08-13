@@ -35,6 +35,11 @@ class MaxIngest:
         self._backfill_added = 0
         self._last_error: str | None = None
         self._channels = list(DEFAULT_MAX_CHANNELS)
+        for url in getattr(config, "MAX_EXTRA_CHANNELS", []) or []:
+            slug = url.rstrip("/").split("/")[-1] or url
+            if any(c.get("url") == url for c in self._channels):
+                continue
+            self._channels.append({"slug": slug, "url": url, "title": slug})
         self._stopped = False
         self._task: asyncio.Task | None = None
         self._ok = False
@@ -145,7 +150,14 @@ class MaxIngest:
                 try:
                     chat = await c.join_channel(link)
                 except Exception:
-                    chat = await c.resolve_group_by_link(link)
+                    # Public /join/ invites and group links
+                    try:
+                        chat = await c.resolve_group_by_link(link)
+                    except Exception:
+                        if "/join/" in link:
+                            chat = await c.join_channel(link)
+                        else:
+                            raise
                 if not chat or not getattr(chat, "id", None):
                     raise RuntimeError("empty chat")
                 cid = int(chat.id)

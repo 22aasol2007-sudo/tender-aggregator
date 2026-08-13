@@ -1,8 +1,52 @@
 const $ = (id) => document.getElementById(id);
 let lastHealthAt = 0;
+let lastTgDown = false;
+let lastMuted = [];
 
-async function api(path, opts) {
-  const r = await fetch(path, opts);
+function metaContent(name) {
+  const el = document.querySelector(`meta[name="${name}"]`);
+  return el ? (el.getAttribute("content") || "") : "";
+}
+
+function writeToken() {
+  const injected = metaContent("hub-write-token");
+  if (injected) {
+    try { localStorage.setItem("hub_write_token", injected); } catch {}
+    return injected;
+  }
+  try { return localStorage.getItem("hub_write_token") || ""; } catch { return ""; }
+}
+
+function ensureWriteToken() {
+  let t = writeToken();
+  if (t) return t;
+  if (metaContent("write-token-required") !== "1") return "";
+  t = window.prompt("Токен записи (HUB_WRITE_TOKEN):") || "";
+  if (t) {
+    try { localStorage.setItem("hub_write_token", t); } catch {}
+  }
+  return t;
+}
+
+async function api(path, opts = {}) {
+  const method = (opts.method || "GET").toUpperCase();
+  const headers = { ...(opts.headers || {}) };
+  if (method !== "GET" && method !== "HEAD") {
+    const tok = ensureWriteToken();
+    if (tok) headers["X-Hub-Token"] = tok;
+  }
+  const r = await fetch(path, { ...opts, headers });
+  if (r.status === 401 && method !== "GET") {
+    try { localStorage.removeItem("hub_write_token"); } catch {}
+    const again = window.prompt("Нужен токен записи. Вставьте HUB_WRITE_TOKEN:") || "";
+    if (again) {
+      try { localStorage.setItem("hub_write_token", again); } catch {}
+      headers["X-Hub-Token"] = again;
+      const r2 = await fetch(path, { ...opts, headers });
+      if (!r2.ok) throw new Error(await r2.text());
+      return r2.json();
+    }
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -37,13 +81,17 @@ function parseList(val) {
   return [];
 }
 
-function contactHref(item) {
-  const phones = parseList(item.phones);
-  const contacts = parseList(item.contacts);
-  if (phones[0]) return { href: `tel:${phones[0]}`, label: phones[0] };
-  if (contacts[0]) return { href: `https://t.me/${contacts[0]}`, label: `@${contacts[0]}` };
-  if (item.url) return { href: item.url, label: "Открыть" };
-  return null;
+function allContacts(item) {
+  const phones = parseList(item.phones).filter(Boolean);
+  const contacts = parseList(item.contacts).filter(Boolean);
+  const out = [];
+  for (const p of phones) out.push({ kind: "phone", href: `tel:${p}`, label: p });
+  for (const c of contacts) {
+    const handle = String(c).replace(/^@/, "");
+    out.push({ kind: "tg", href: `https://t.me/${handle}`, label: `@${handle}` });
+  }
+  if (item.url) out.push({ kind: "url", href: item.url, label: "Открыть" });
+  return out;
 }
 
 function muteKey(item) {
@@ -80,17 +128,48 @@ function fmtAgo(sec) {
   return `${Math.round(sec / 3600)}ч назад`;
 }
 
+function renderMuteBar(muted) {
+  lastMuted = Array.isArray(muted) ? muted : [];
+  const bar = $("muteBar");
+  const list = $("muteList");
+  if (!bar || !list) return;
+  if (!lastMuted.length) {
+    bar.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  bar.hidden = false;
+  list.innerHTML = lastMuted.map((d) =>
+    `<button type="button" class="mute-chip" data-dir="${esc(d)}">${esc(d)} ×</button>`
+  ).join("");
+  list.querySelectorAll(".mute-chip").forEach((btn) => {
+    btn.onclick = async () => {
+      const direction = btn.dataset.dir;
+      await api(`/api/mute?direction=${encodeURIComponent(direction)}`, { method: "DELETE" });
+      await loadList();
+    };
+  });
+}
+
 function render(items, meta) {
   const list = $("list");
+  renderMuteBar(meta && meta.muted_directions);
+
   if (!items.length) {
     const reasons = (meta && meta.filter_reasons) || [];
     const tip = reasons.length
       ? reasons.join(" · ")
       : "Снимите узкие фильтры или обновите источники.";
+    const tgCta = lastTgDown
+      ? `<a class="btn" href="/tg-login">Войти в Telegram</a>`
+      : "";
     list.innerHTML = `<div class="empty">
       <div>Ничего не найдено</div>
       <div style="margin-top:8px">${esc(tip)}</div>
-      <button type="button" class="btn" id="emptyReset">Сбросить фильтры</button>
+      <div class="empty-actions">
+        ${tgCta}
+        <button type="button" class="btn ghost" id="emptyReset">Сбросить фильтры</button>
+      </div>
     </div>`;
     const btn = $("emptyReset");
     if (btn) btn.onclick = () => { resetFilters(); loadList().catch(alert); };
@@ -126,11 +205,23 @@ function render(items, meta) {
       await loadList();
     });
   });
+  list.querySelectorAll(".copy-contact").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const val = btn.dataset.copy || "";
+      try {
+        await navigator.clipboard.writeText(val);
+        btn.textContent = "Скопировано";
+        setTimeout(() => { btn.textContent = "Скопировать"; }, 1200);
+      } catch {
+        alert(val);
+      }
+    });
+  });
 }
 
 function cardHtml(item) {
   const fresh = ageSec(item) <= 300;
-  const contact = contactHref(item);
+  const contacts = allContacts(item);
   const facts = [];
   if (item.tonnage != null) facts.push(`<span><b>${esc(item.tonnage)}</b> т</span>`);
   if (item.volume_m3 != null) facts.push(`<span><b>${esc(item.volume_m3)}</b> м³</span>`);
@@ -153,20 +244,33 @@ function cardHtml(item) {
     : "";
   const mk = muteKey(item);
   const score = Math.max(0, Math.min(100, Number(item.score || 0)));
-  const cta = contact
-    ? `<a class="cta" href="${esc(contact.href)}" target="_blank" rel="noopener">Связаться</a>`
-    : `<button type="button" class="cta show" data-full="${encodeURIComponent(item.body || "")}">Открыть</button>`;
+
+  const primary = contacts[0];
+  const callBtn = primary && primary.kind === "phone"
+    ? `<a class="cta call" href="${esc(primary.href)}">Позвонить</a>`
+    : primary
+      ? `<a class="cta call" href="${esc(primary.href)}" target="_blank" rel="noopener">${esc(primary.kind === "tg" ? "Написать" : "Открыть")}</a>`
+      : `<button type="button" class="cta call show" data-full="${encodeURIComponent(item.body || "")}">Открыть</button>`;
+  const copyVal = primary ? primary.label.replace(/^@/, "") : "";
+  const copyBtn = copyVal
+    ? `<button type="button" class="cta copy copy-contact" data-copy="${esc(copyVal)}">Скопировать</button>`
+    : "";
+
+  const contactRows = contacts.map((c) =>
+    `<a class="contact-row" href="${esc(c.href)}" ${c.kind !== "phone" ? 'target="_blank" rel="noopener"' : ""}>${esc(c.label)}</a>`
+  ).join("");
 
   return `<article class="card${fresh ? " fresh" : ""}">
-    <div>
+    <div class="card-main">
       <div class="route">${esc(routeText(item))}</div>
       <div class="facts">${facts.join("") || "<span>детали в тексте</span>"}</div>
       <div class="meta-row">${meta.join('<span>·</span>')}</div>
       ${why}
+      ${contactRows ? `<div class="contacts">${contactRows}</div>` : ""}
     </div>
     <div class="actions">
       <div class="score-bar" title="Скор ${score}"><span style="width:${score}%"></span></div>
-      ${cta}
+      <div class="cta-row">${callBtn}${copyBtn}</div>
       <button type="button" class="ghost show" data-full="${encodeURIComponent(item.body || "")}">Текст</button>
       ${mk ? `<button type="button" class="ghost mute" data-dir="${esc(mk)}">Скрыть</button>` : ""}
     </div>
@@ -183,13 +287,14 @@ async function refreshHealth() {
     setStatus("sites", statuses.sites || "on");
     const ago = h.updated_ago_sec;
     $("updatedAgo").textContent = ago != null ? fmtAgo(ago) : "сейчас";
+    lastTgDown = !!(h.tg_down || h.tg_need_login || statuses.tg === "off");
 
     const banner = $("banner");
     if (h.hints && h.hints.length) {
       banner.hidden = false;
       const text = h.hints.join(" ");
-      if (text.includes("/tg-login")) {
-        banner.innerHTML = `${esc(text)} — <a href="/tg-login">войти в Telegram</a>`;
+      if (lastTgDown || text.includes("/tg-login")) {
+        banner.innerHTML = `${esc(text)} — <a class="banner-cta" href="/tg-login">Войти в Telegram</a>`;
       } else {
         banner.textContent = text;
       }
@@ -202,6 +307,7 @@ async function refreshHealth() {
     setStatus("max", "off");
     setStatus("sites", "warn");
     $("updatedAgo").textContent = "offline";
+    lastTgDown = true;
   }
 }
 
@@ -219,7 +325,7 @@ function currentParams() {
   if (frm) params.set("from", frm);
   if (to) params.set("to", to);
   params.set("min_score", minScore);
-  params.set("sort", $("sort").value || "time");
+  params.set("sort", $("sort").value || "ppk");
   params.set("shipper_only", $("shipperOnly").checked ? "true" : "false");
   if ($("reefer").checked) params.set("reefer", "true");
   if ($("hotOnly").checked) params.set("hot", "true");
@@ -244,7 +350,7 @@ function resetFilters() {
   $("from").value = "";
   $("to").value = "";
   $("body").value = "";
-  $("sort").value = "time";
+  $("sort").value = "ppk";
   $("shipperOnly").checked = true;
   $("reefer").checked = false;
   $("hotOnly").checked = false;
@@ -261,6 +367,7 @@ async function loadProfile() {
     $("pRadius").value = t.radius ?? "";
     $("pRadiusFar").value = t.radius_far ?? t.far_radius ?? "";
     $("pBackhaul").checked = !!t.backhaul;
+    renderMuteBar(p.muted_directions || []);
   } catch (e) {
     console.warn(e);
   }
@@ -276,12 +383,15 @@ async function saveProfile(extra = {}) {
     backhaul: $("pBackhaul").checked,
     ...extra,
   };
-  await api("/api/profile", {
+  const res = await api("/api/profile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  $("meta").textContent = "Профиль сохранён";
+  const km = res.km_recompute;
+  $("meta").textContent = km && km.updated
+    ? `Профиль сохранён · коридор пересчитан от «${km.base}» (${km.updated} заявок)`
+    : "Профиль сохранён";
 }
 
 const PRESETS = {
@@ -301,6 +411,13 @@ $("btnMore").addEventListener("click", () => {
   el.hidden = !el.hidden;
   $("btnMore").textContent = el.hidden ? "Ещё фильтры" : "Скрыть фильтры";
 });
+const clearMutes = $("btnClearMutes");
+if (clearMutes) {
+  clearMutes.addEventListener("click", async () => {
+    await api("/api/mute", { method: "DELETE" });
+    await loadList();
+  });
+}
 
 document.querySelectorAll("[data-preset]").forEach((btn) => {
   btn.addEventListener("click", async () => {
@@ -322,54 +439,34 @@ document.querySelectorAll("[data-preset]").forEach((btn) => {
 
 $("btnScrape").addEventListener("click", async () => {
   $("btnScrape").disabled = true;
-  $("btnScrape").textContent = "…";
   try {
-    const start = await api("/api/scrape?quick=true", { method: "POST" });
-    $("btnScrape").disabled = false;
-    $("btnScrape").textContent = "Обновить";
-    if (start.busy) {
-      $("meta").textContent = "Сбор уже идёт…";
-      return;
+    await api("/api/scrape?quick=true", { method: "POST" });
+    $("meta").textContent = "Обновление запущено…";
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const st = await api("/api/scrape/status");
+      if (!st.running) break;
     }
-    $("meta").textContent = "Быстрый сбор…";
-    const deadline = Date.now() + 90000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const last = await api("/api/scrape/status");
-      await loadList().catch(() => {});
-      if (!last.running) {
-        await refreshHealth();
-        await loadList();
-        $("meta").textContent = "Источники обновлены";
-        return;
-      }
-    }
-    $("meta").textContent = "Сбор ещё идёт…";
+    await refreshHealth();
+    await loadList();
   } catch (e) {
+    alert(e.message || e);
+  } finally {
     $("btnScrape").disabled = false;
-    $("btnScrape").textContent = "Обновить";
-    alert(String(e));
   }
 });
 
-["q", "from", "to", "minScore"].forEach((id) => {
+["q", "from", "to"].forEach((id) => {
   $(id).addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadList().catch(alert);
   });
 });
-["shipperOnly", "reefer", "hotOnly", "source", "sort"].forEach((id) => {
-  const el = $(id);
-  if (el) el.addEventListener("change", () => loadList().catch(alert));
-});
 
-setInterval(() => {
-  if (lastHealthAt) $("updatedAgo").textContent = fmtAgo((Date.now() - lastHealthAt) / 1000);
-}, 5000);
-
-refreshHealth();
-loadProfile();
-loadList().catch(console.error);
-setInterval(() => {
-  refreshHealth();
-  loadList().catch(() => {});
-}, 45000);
+(async function boot() {
+  writeToken();
+  await loadProfile();
+  await refreshHealth();
+  await loadList();
+  setInterval(() => refreshHealth().catch(() => {}), 20000);
+  setInterval(() => loadList().catch(() => {}), 45000);
+})();

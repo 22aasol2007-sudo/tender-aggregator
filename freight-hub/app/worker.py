@@ -116,7 +116,34 @@ class ScrapeWorker:
             else:
                 out.append(res)
         await self.db.cleanup_smart()
+        await self._track_zero_adds(out)
         return out
+
+    async def _track_zero_adds(self, results: list[dict]) -> None:
+        import json as _json
+
+        from app.alerts import maybe_alert_zero_streak
+
+        raw = await self.db.get_setting("zero_add_streaks")
+        try:
+            streaks = _json.loads(raw) if raw else {}
+        except Exception:
+            streaks = {}
+        if not isinstance(streaks, dict):
+            streaks = {}
+        for res in results:
+            src = str(res.get("source") or "")
+            if not src or not res.get("ok"):
+                continue
+            added = int(res.get("added") or 0)
+            prev = int(streaks.get(src) or 0)
+            streaks[src] = 0 if added > 0 else prev + 1
+            if added == 0 and streaks[src] >= config.ZERO_ADD_STREAK_WARN:
+                try:
+                    await maybe_alert_zero_streak(src, int(streaks[src]))
+                except Exception:
+                    pass
+        await self.db.set_setting("zero_add_streaks", _json.dumps(streaks, ensure_ascii=False))
 
     def _quick_scrapers(self) -> list[Any]:
         # Lightweight pass for the UI button — hot boards only, few pages.

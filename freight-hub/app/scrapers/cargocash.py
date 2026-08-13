@@ -42,20 +42,26 @@ class CargoCashScraper:
         by_id: dict[str, RawLoad] = {}
         async with httpx.AsyncClient(timeout=40.0, headers=headers, follow_redirects=True) as client:
             for page in range(1, self.list_pages + 1):
-                try:
-                    r = await client.get(
-                        "https://cargocash.ru/back/orders/list",
-                        params={"page": page},
-                    )
-                    if r.status_code != 200:
+                items: list[RawLoad] = []
+                ok_page = False
+                for attempt in range(3):
+                    try:
+                        r = await client.get(
+                            "https://cargocash.ru/back/orders/list",
+                            params={"page": page},
+                        )
+                        if r.status_code != 200:
+                            if attempt < 2:
+                                continue
+                            break
+                        items = self._parse_list(r.text)
+                        for it in items:
+                            by_id.setdefault(it.external_id, it)
+                        ok_page = True
                         break
-                    items = self._parse_list(r.text)
-                    if not items:
-                        break
-                    for it in items:
-                        by_id.setdefault(it.external_id, it)
-                except Exception as exc:
-                    log.warning("cargocash list page %s: %s", page, exc)
+                    except Exception as exc:
+                        log.warning("cargocash list page %s try %s: %s", page, attempt + 1, exc)
+                if not ok_page or not items:
                     break
 
             paths = [f"/orders/{slug}" for slug in CFD_NWFD_PFO_REGIONS + _BODY_PATHS]
@@ -91,6 +97,13 @@ class CargoCashScraper:
                 continue
             seen.add(eid)
             text = a.get_text(" ", strip=True)
+            # Board status chips — skip closed/completed orders
+            cls = " ".join(a.get("class") or []).lower()
+            low = text.lower()
+            if any(x in cls for x in ("completed", "archive", "closed", "done", "finished")):
+                continue
+            if re.search(r"\b(заверш[её]н|в архиве|снят)\b", low):
+                continue
             points = [p.get_text(strip=True) for p in a.select(".route .point")]
             frm = exact_city(points[0]) if len(points) >= 1 else None
             to = exact_city(points[1]) if len(points) >= 2 else None

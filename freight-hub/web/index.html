@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="hub-write-token" content="{{HUB_WRITE_TOKEN}}" />
+  <meta name="write-token-required" content="{{WRITE_TOKEN_REQUIRED}}" />
   <title>Freight Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -81,11 +83,20 @@
       <input id="from" type="text" placeholder="Откуда" />
       <input id="to" type="text" placeholder="Куда" />
       <select id="sort">
+        <option value="ppk">Дороже ₽/км</option>
+        <option value="near">Ближе к базе</option>
         <option value="time">Сначала новые</option>
         <option value="score">Сначала скор</option>
       </select>
+      <label class="check"><input id="shipperOnly" type="checkbox" checked /> Грузоотправители</label>
+      <label class="check"><input id="hotOnly" type="checkbox" /> Горячие</label>
       <button id="btnApply" class="btn" type="button">Показать</button>
       <button id="btnReset" class="btn ghost" type="button">Сбросить</button>
+    </div>
+    <div id="muteBar" class="mute-bar" hidden>
+      <span class="mute-label">Скрытые:</span>
+      <div id="muteList" class="mute-list"></div>
+      <button type="button" class="linkish" id="btnClearMutes">Снять все</button>
     </div>
     <div id="moreFilters" class="more-filters" hidden>
       <select id="body">
@@ -96,9 +107,7 @@
         <option value="board">Борт</option>
         <option value="box">Фургон</option>
       </select>
-      <label class="check"><input id="shipperOnly" type="checkbox" checked /> Без водителей</label>
       <label class="check"><input id="reefer" type="checkbox" /> Только реф</label>
-      <label class="check"><input id="hotOnly" type="checkbox" /> Горячие ≤30м</label>
       <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="40" /></label>
     </div>
   </section>

@@ -35,9 +35,21 @@
   <script>
     const st = (t, cls) => { const el = document.getElementById("st"); el.className = cls || "muted"; el.textContent = t; };
     const showPwd = () => { document.getElementById("pwdBox").style.display = "block"; document.getElementById("pwd").focus(); };
+    function writeToken() {
+      try { return localStorage.getItem("hub_write_token") || ""; } catch { return ""; }
+    }
+    function authHeaders(extra) {
+      const h = { ...(extra || {}) };
+      const t = writeToken() || (window.prompt("Токен записи (HUB_WRITE_TOKEN):") || "");
+      if (t) {
+        try { localStorage.setItem("hub_write_token", t); } catch {}
+        h["X-Hub-Token"] = t;
+      }
+      return h;
+    }
     async function finishOk(user) {
       st(`Готово: ${user || "ok"}. Перезапуск TG…`, "ok");
-      await fetch("/api/tg/restart", { method: "POST" });
+      await fetch("/api/tg/restart", { method: "POST", headers: authHeaders() });
       setTimeout(() => location.href = "/", 2000);
     }
     document.getElementById("btnPwd").onclick = async () => {
@@ -45,7 +57,7 @@
       st("Проверяю пароль…");
       const r = await fetch("/api/tg/qr/password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ password }),
       });
       const j = await r.json();
@@ -57,13 +69,13 @@
       document.getElementById("pwdBox").style.display = "none";
       box.innerHTML = "";
       st("Генерирую QR…");
-      const r = await fetch("/api/tg/qr", { method: "POST" });
+      const r = await fetch("/api/tg/qr", { method: "POST", headers: authHeaders() });
       const j = await r.json();
-      if (!j.ok) { st(j.error || "ошибка", "err"); return; }
+      if (!j.ok) { st(j.error || j.detail || "ошибка", "err"); return; }
       if (j.status === "already" || j.status === "done") { return finishOk(j.user); }
       box.innerHTML = `<img alt="QR" src="data:image/png;base64,${j.qr_png_base64}" />`;
       st("Отсканируйте QR в Telegram (Настройки → Устройства). Жду…");
-      const w = await fetch("/api/tg/qr/wait?timeout=180", { method: "POST" });
+      const w = await fetch("/api/tg/qr/wait?timeout=180", { method: "POST", headers: authHeaders() });
       const done = await w.json();
       if (done.ok) return finishOk(done.user);
       if (done.status === "need_2fa") {

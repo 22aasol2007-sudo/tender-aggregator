@@ -34,7 +34,16 @@ HARD_GEO_SKIP = {
 }
 
 ARCHIVE_RE = re.compile(
-    r"(заверш[её]н\w*|архив\w*|снят с публикации|заказ выполнен|исполнен\w*|удал[её]н\w*)",
+    r"(?:\bзаверш[её]н(?:о|а|ы)?\b|\bв архиве\b|\bархивн\w*\b|"
+    r"\bснят с публикации\b|\bзаказ выполнен\b|\bудал[её]н[оа]?\s+с\s+доски\b)",
+    re.I,
+)
+
+# Board-specific closed markers (status chips / labels, not free text noise)
+BOARD_CLOSED_RE = re.compile(
+    r"(?:класс=\"[^\"]*(?:completed|archive|closed|done)[^\"]*\"|"
+    r"data-status=\"(?:completed|closed|archive|done)\"|"
+    r">\s*(?:заверш[её]н|архив|снято)\s*<)",
     re.I,
 )
 
@@ -45,6 +54,8 @@ _PRICE_NUM_RE = re.compile(r"(\d[\d\s]{2,12}|\d+(?:[.,]\d+)?)", re.I)
 def is_archived_text(text: str | None) -> bool:
     if not text:
         return False
+    if BOARD_CLOSED_RE.search(text):
+        return True
     return bool(ARCHIVE_RE.search(text))
 
 
@@ -111,9 +122,54 @@ def _km_to_base(city: str | None, base: str = "москва") -> float | None:
     try:
         from freight_core.geo import distance_km
 
-        return distance_km(city, base)
+        return distance_km(city, (base or "москва").strip().lower() or "москва")
     except Exception:
         return None
+
+
+def _profile_base(profile_user: dict[str, Any]) -> str:
+    import json as _json
+
+    raw = profile_user.get("truck_profile")
+    prof: dict[str, Any] = {}
+    if isinstance(raw, dict):
+        prof = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, dict):
+                prof = parsed
+        except Exception:
+            pass
+    base = str(prof.get("base") or "москва").strip().lower()
+    return base or "москва"
+
+
+async def recompute_km_from_base(db: HubDB, base: str | None = None) -> dict[str, int]:
+    """Recalculate km_from/km_to for all loads relative to truck base city."""
+    import json as _json
+
+    if not base:
+        raw = await db.get_setting("truck_profile")
+        try:
+            prof = _json.loads(raw) if raw else {}
+        except Exception:
+            prof = {}
+        base = str((prof or {}).get("base") or "москва").strip().lower() or "москва"
+    assert db._db is not None
+    cur = await db._db.execute("SELECT id, from_city, to_city FROM loads")
+    rows = await cur.fetchall()
+    updated = 0
+    for r in rows:
+        kf = _km_to_base(r["from_city"], base)
+        kt = _km_to_base(r["to_city"], base)
+        await db._db.execute(
+            "UPDATE loads SET km_from=?, km_to=? WHERE id=?",
+            (kf, kt, r["id"]),
+        )
+        updated += 1
+    await db._db.commit()
+    return {"updated": updated, "base": base}
 
 
 def why_rank(
@@ -189,8 +245,8 @@ async def _persist(
         if dup and int(dup.get("score") or 0) >= score:
             return "skipped"
 
-    km_from = _km_to_base(from_city)
-    km_to = _km_to_base(to_city)
+    km_from = _km_to_base(from_city, _profile_base(profile_user))
+    km_to = _km_to_base(to_city, _profile_base(profile_user))
     price = raw.price or parsed.price
     route_km, price_per_km = calc_price_per_km(price, from_city, to_city)
     title = raw.title
@@ -224,8 +280,15 @@ async def _persist(
         "score_ok": 1 if result.ok else 0,
     }
     status = await db.upsert_load(item)
-    if status == "added" and raw.source in {"telegram", "max"}:
-        await db.set_setting(f"last_ingest_{raw.source}", str(time.time()))
+    if status == "added":
+        if raw.source in {"telegram", "max"}:
+            await db.set_setting(f"last_ingest_{raw.source}", str(time.time()))
+        try:
+            from app.alerts import maybe_alert_hot
+
+            await maybe_alert_hot(item)
+        except Exception:
+            pass
     return status
 
 

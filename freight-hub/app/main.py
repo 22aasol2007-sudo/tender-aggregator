@@ -5,14 +5,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import app._bootstrap  # noqa: F401
 from app import config
+from app.auth import require_write_token
 from app.db import HubDB
 from app.scrapers.max_src import MaxIngest
 from app.scrapers.telegram_src import TelegramIngest
@@ -229,17 +230,45 @@ async def health() -> dict[str, Any]:
     web_count = sum(int((st.get("by_source") or {}).get(s) or 0) for s in web_sources)
     sites_status = "on" if web_count > 0 else "warn"
 
+    tg_need_login = False
     if not tg_alive:
         if not config.API_ID or not config.API_HASH:
             hints.append("Нет API_ID/API_HASH — основной объём заявок идёт из Telegram.")
         else:
             note = str((tg_h or {}).get("note") or "")
-            if "need_qr_login" in note or "two different IP" in note or "session_revoked" in note:
-                hints.append("Telegram: нужна облачная сессия. Войдите: /tg-login")
+            low = note.lower()
+            if any(
+                x in low
+                for x in (
+                    "need_qr_login",
+                    "two different ip",
+                    "session_revoked",
+                    "authkey",
+                    "unauthorized",
+                    "revoked",
+                    "start_failed",
+                )
+            ):
+                tg_need_login = True
+                hints.append("Telegram: сессия отозвана или недействительна. Войдите: /tg-login")
             else:
+                tg_need_login = True
                 hints.append("Telegram отключён. Проверьте сессию: /tg-login")
     elif tg_h.get("failed_count"):
         hints.append(f"Telegram: не резолвится чатов: {tg_h.get('failed_count')}")
+
+    zero_raw = await db.get_setting("zero_add_streaks")
+    try:
+        zero_streaks = _json.loads(zero_raw) if zero_raw else {}
+    except Exception:
+        zero_streaks = {}
+    if isinstance(zero_streaks, dict):
+        for src, n in zero_streaks.items():
+            try:
+                if int(n) >= config.ZERO_ADD_STREAK_WARN:
+                    hints.append(f"Источник «{src}»: 0 добавлений {n} циклов")
+            except (TypeError, ValueError):
+                pass
 
     if config.ENABLE_MAX and not mx_alive:
         note = mx_h.get("note") or "off"
@@ -291,6 +320,10 @@ async def health() -> dict[str, Any]:
         "statuses": {"tg": tg_status, "max": max_status, "sites": sites_status},
         "updated_ago_sec": max(0, int(now - latest_ts)) if latest_ts else 0,
         "hints": hints,
+        "tg_need_login": tg_need_login,
+        "tg_down": not tg_alive,
+        "zero_add_streaks": zero_streaks if isinstance(zero_streaks, dict) else {},
+        "write_token_required": bool(config.HUB_WRITE_TOKEN),
         "public_url": "https://freight-edge.vercel.app",
         "optimizations": {
             "parallel_scrape": True,
@@ -322,7 +355,7 @@ async def loads(
     hide_drivers: bool = True,
     hot: bool = False,
     geo: bool = True,
-    sort: str = Query("time", pattern="^(time|score)$"),
+    sort: str = Query("time", pattern="^(time|score|ppk|near)$"),
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
@@ -332,6 +365,7 @@ async def loads(
     profile = await db.get_json_setting("truck_profile", {})
     if not isinstance(profile, dict):
         profile = {}
+    base_city = str(profile.get("base") or "москва").strip().lower() or "москва"
     try:
         near = float(profile.get("radius") or 150)
     except (TypeError, ValueError):
@@ -394,12 +428,19 @@ async def loads(
         if frm or to:
             filter_reasons.append("узкий маршрут")
         if geo:
-            filter_reasons.append(f"коридор {int(near)}/{int(far)} км от базы")
+            filter_reasons.append(f"коридор {int(near)}/{int(far)} км от базы «{base_city}»")
         if not filter_reasons:
             filter_reasons.append("нет свежих заявок — нажмите «Обновить»")
-    rank_explain = (
-        f"Сверху — ближе к базе ({int(near)} км) и выше скор; коридор до {int(far)} км."
-    )
+    if sort == "ppk":
+        rank_explain = (
+            f"Сорт: дороже ₽/км (выше оплата). База «{base_city}», коридор {int(near)}/{int(far)} км."
+        )
+    elif sort == "near":
+        rank_explain = f"Сорт: ближе к базе «{base_city}». Коридор {int(near)}/{int(far)} км."
+    elif sort == "score":
+        rank_explain = f"Сорт: выше скор. База «{base_city}», коридор {int(near)}/{int(far)} км."
+    else:
+        rank_explain = f"Сорт: новые. База «{base_city}», коридор {int(near)}/{int(far)} км."
     return {
         "items": rows,
         "count": len(rows),
@@ -407,6 +448,8 @@ async def loads(
         "rank_explain": rank_explain,
         "near_km": near,
         "far_km": far,
+        "base": base_city,
+        "muted_directions": muted,
     }
 
 
@@ -417,16 +460,26 @@ async def get_profile() -> dict[str, Any]:
     return {"truck_profile": profile or {}, "muted_directions": muted or []}
 
 
-@app.post("/api/profile")
+@app.post("/api/profile", dependencies=[Depends(require_write_token)])
 async def set_profile(profile: TruckProfile) -> dict[str, Any]:
+    prev = await db.get_json_setting("truck_profile", {})
+    if not isinstance(prev, dict):
+        prev = {}
     data = {k: v for k, v in profile.model_dump().items() if v not in (None, "", False)}
     if profile.backhaul:
         data["backhaul"] = True
     await db.set_json_setting("truck_profile", data)
-    return {"ok": True, "truck_profile": data}
+    old_base = str(prev.get("base") or "москва").strip().lower() or "москва"
+    new_base = str(data.get("base") or old_base).strip().lower() or "москва"
+    km_info: dict[str, Any] = {}
+    if new_base != old_base:
+        from app.ingest import recompute_km_from_base
+
+        km_info = await recompute_km_from_base(db, new_base)
+    return {"ok": True, "truck_profile": data, "km_recompute": km_info}
 
 
-@app.post("/api/mute")
+@app.post("/api/mute", dependencies=[Depends(require_write_token)])
 async def mute_direction(body: MuteIn) -> dict[str, Any]:
     muted = await db.get_json_setting("muted_directions", [])
     if not isinstance(muted, list):
@@ -438,13 +491,21 @@ async def mute_direction(body: MuteIn) -> dict[str, Any]:
     return {"ok": True, "muted_directions": muted}
 
 
-@app.delete("/api/mute")
-async def clear_mutes() -> dict[str, Any]:
+@app.delete("/api/mute", dependencies=[Depends(require_write_token)])
+async def clear_mutes(direction: str | None = Query(None)) -> dict[str, Any]:
+    if direction:
+        muted = await db.get_json_setting("muted_directions", [])
+        if not isinstance(muted, list):
+            muted = []
+        d = direction.lower().strip()
+        muted = [x for x in muted if str(x).lower().strip() != d]
+        await db.set_json_setting("muted_directions", muted)
+        return {"ok": True, "muted_directions": muted}
     await db.set_json_setting("muted_directions", [])
     return {"ok": True, "muted_directions": []}
 
 
-@app.post("/api/maintenance/reparse-kinds")
+@app.post("/api/maintenance/reparse-kinds", dependencies=[Depends(require_write_token)])
 async def reparse_kinds(limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any]:
     """Upgrade cargo-like other rows with route+tonnage to shipper."""
     from app.parse import parse_load
@@ -470,7 +531,7 @@ async def reparse_kinds(limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any
     return {"ok": True, "scanned": len(rows), "updated": updated}
 
 
-@app.post("/api/maintenance/backup")
+@app.post("/api/maintenance/backup", dependencies=[Depends(require_write_token)])
 async def backup_db() -> dict[str, Any]:
     """Copy SQLite DB to /data/backups/hub-YYYYmmdd-HHMMSS.db"""
     import shutil
@@ -493,7 +554,7 @@ async def backup_db() -> dict[str, Any]:
     return {"ok": True, "path": str(dest), "size": dest.stat().st_size}
 
 
-@app.post("/api/scrape")
+@app.post("/api/scrape", dependencies=[Depends(require_write_token)])
 async def scrape_now(quick: bool = True) -> dict[str, Any]:
     """Start a scrape and return immediately (does not wait for boards)."""
     return worker.start_manual(quick=quick)
@@ -504,28 +565,28 @@ async def scrape_status() -> dict[str, Any]:
     return worker.manual_status()
 
 
-@app.post("/api/tg/qr")
+@app.post("/api/tg/qr", dependencies=[Depends(require_write_token)])
 async def tg_qr_start() -> dict[str, Any]:
     from app import tg_login
 
     return await tg_login.start_qr()
 
 
-@app.post("/api/tg/qr/wait")
+@app.post("/api/tg/qr/wait", dependencies=[Depends(require_write_token)])
 async def tg_qr_wait(timeout: float = Query(120, ge=30, le=300)) -> dict[str, Any]:
     from app import tg_login
 
     return await tg_login.wait_qr(timeout=timeout)
 
 
-@app.post("/api/tg/qr/password")
+@app.post("/api/tg/qr/password", dependencies=[Depends(require_write_token)])
 async def tg_qr_password(body: TgPasswordIn) -> dict[str, Any]:
     from app import tg_login
 
     return await tg_login.submit_2fa(body.password)
 
 
-@app.post("/api/tg/restart")
+@app.post("/api/tg/restart", dependencies=[Depends(require_write_token)])
 async def tg_restart() -> dict[str, Any]:
     global tg
     if tg:
@@ -549,8 +610,17 @@ async def tg_login_page() -> FileResponse:
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(WEB / "index.html")
+async def index() -> Response:
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    token = ""
+    if config.HUB_INJECT_UI_TOKEN and config.HUB_WRITE_TOKEN:
+        token = config.HUB_WRITE_TOKEN
+    html = html.replace("{{HUB_WRITE_TOKEN}}", token)
+    html = html.replace(
+        "{{WRITE_TOKEN_REQUIRED}}",
+        "1" if config.HUB_WRITE_TOKEN else "0",
+    )
+    return HTMLResponse(html)
 
 
 app.mount("/static", StaticFiles(directory=str(WEB)), name="static")

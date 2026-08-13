@@ -203,6 +203,14 @@ class Perevozka24Scraper:
             text = el.get_text(" ", strip=True)
             if len(text) < 40:
                 continue
+            cls = " ".join(el.get("class") or []).lower()
+            html_snip = str(el)[:800].lower()
+            if any(x in cls for x in ("completed", "archive", "closed", "finished", "done")):
+                continue
+            if re.search(r"data-status=[\"'](?:completed|closed|archive|done)", html_snip):
+                continue
+            if re.search(r"\b(заверш[её]н|в архиве|снят с публикации)\b", text.lower()):
+                continue
             eid = _offer_id(el, text)
             if not eid or eid in seen:
                 continue

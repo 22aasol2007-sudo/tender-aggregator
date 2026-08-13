@@ -260,6 +260,82 @@ main { padding: 12px 28px 40px; }
   border-color: var(--accent); color: var(--accent);
 }
 
+.cta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.actions a.cta.call, .actions button.cta.call {
+  font-size: 1.05rem;
+  padding: 12px 14px;
+}
+.actions button.cta.copy {
+  background: #24332c;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.contact-row {
+  color: var(--accent2);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  justify-content: center;
+}
+.mute-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.mute-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.mute-chip {
+  border: 1px solid var(--line);
+  background: #1a2620;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.banner-cta {
+  color: var(--accent2);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .card {
+    grid-template-columns: 1fr;
+  }
+  .actions {
+    min-width: 0;
+  }
+  .cta-row {
+    grid-template-columns: 1fr;
+  }
+  .actions a.cta.call, .actions button.cta.call,
+  .actions button.cta.copy {
+    width: 100%;
+    font-size: 1.12rem;
+    padding: 14px 16px;
+  }
+  .card .route { font-size: 1.28rem; }
+}
+
 footer {
   padding: 8px 28px 28px;
   color: var(--muted);

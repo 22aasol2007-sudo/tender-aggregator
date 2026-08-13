@@ -365,6 +365,18 @@ class HubDB:
             args.extend([like, like, like, like, like, like])
         if sort == "score":
             sql.append("ORDER BY score DESC, scraped_at DESC LIMIT ? OFFSET ?")
+        elif sort == "ppk":
+            # Higher ₽/km first (carrier wants more pay per km); unknowns last
+            sql.append(
+                "ORDER BY (price_per_km IS NULL) ASC, price_per_km DESC, "
+                "score DESC, scraped_at DESC LIMIT ? OFFSET ?"
+            )
+        elif sort == "near":
+            sql.append(
+                "ORDER BY (CASE WHEN km_from IS NULL AND km_to IS NULL THEN 1 ELSE 0 END) ASC, "
+                "MIN(COALESCE(km_from, 1e9), COALESCE(km_to, 1e9)) ASC, "
+                "score DESC, scraped_at DESC LIMIT ? OFFSET ?"
+            )
         else:
             sql.append("ORDER BY scraped_at DESC, score DESC LIMIT ? OFFSET ?")
         args.extend([limit, offset])

@@ -73,3 +73,18 @@ def telethon_proxy() -> tuple | None:
 ENABLE_MAX = os.getenv("ENABLE_MAX", "1").strip() not in {"0", "false", "no"}
 MAX_SESSION_NAME = os.getenv("MAX_SESSION_NAME", "freight_hub_max.db").strip()
 MAX_CACHE_DIR = Path(os.getenv("MAX_CACHE_DIR", str(ROOT / "data" / "max_cache")))
+# Extra MAX channel URLs (comma-separated), including max.ru/join/... invites
+MAX_EXTRA_CHANNELS = [
+    u.strip() for u in os.getenv("MAX_EXTRA_CHANNELS", "").split(",") if u.strip()
+]
+
+# Protect write endpoints (mute/profile/scrape/maintenance/tg-login APIs)
+HUB_WRITE_TOKEN = os.getenv("HUB_WRITE_TOKEN", "").strip()
+# If 1, inject token into HTML meta for same-origin UI (still visible in page source)
+HUB_INJECT_UI_TOKEN = os.getenv("HUB_INJECT_UI_TOKEN", "1").strip() not in {"0", "false", "no"}
+
+# Optional Telegram bot alerts for hot loads (score>=80)
+ALERT_BOT_TOKEN = os.getenv("ALERT_BOT_TOKEN", "").strip()
+ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID", "").strip()
+ALERT_MIN_SCORE = int(os.getenv("ALERT_MIN_SCORE", "80") or 80)
+ZERO_ADD_STREAK_WARN = int(os.getenv("ZERO_ADD_STREAK_WARN", "3") or 3)
