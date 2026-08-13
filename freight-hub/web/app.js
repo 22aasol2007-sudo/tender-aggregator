@@ -74,7 +74,11 @@ function muteKey(item) {
 function render(items) {
   const list = $("list");
   if (!items.length) {
-    list.innerHTML = `<div class="empty">Ничего не найдено. Проверь фильтры / скор, нажми «Обновить источники». Для объёма нужен Telegram (API_ID/API_HASH + login_tg.py + VPN).</div>`;
+    const src = $("source")?.value;
+    const tip = src
+      ? `Сейчас выбран источник «${src}». Поставь «Все источники» или сними лишние фильтры.`
+      : "Проверь фильтры / скор, нажми «Обновить источники».";
+    list.innerHTML = `<div class="empty">Ничего не найдено. ${tip}</div>`;
     return;
   }
   list.innerHTML = items

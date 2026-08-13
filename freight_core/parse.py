@@ -943,6 +943,8 @@ def parse_load(text: str) -> ParsedLoad:
     shipper_weak = _first_match(SHIPPER_WEAK, norm)
     shipper = shipper_strong + shipper_weak
     driver = _first_match(DRIVER_PATTERNS, norm)
+    frm, to = _extract_route(norm)
+    tonnage = _extract_tonnage(norm)
     if shipper_strong and driver:
         kind = "mixed"
     elif shipper_strong:
@@ -953,15 +955,17 @@ def parse_load(text: str) -> ParsedLoad:
         kind = "other"
     else:
         kind = "other"
+    # Cargo ads often omit keywords: route + tonnage ⇒ treat as shipper
+    if kind == "other" and not driver and frm and to and tonnage is not None:
+        kind = "shipper"
 
-    frm, to = _extract_route(norm)
     return ParsedLoad(
         text=text,
         norm=norm,
         kind=kind,
         from_city=frm,
         to_city=to,
-        tonnage=_extract_tonnage(norm),
+        tonnage=tonnage,
         volume_m3=_extract_volume(norm),
         body=_extract_body(norm),
         temps=_extract_temps(norm),

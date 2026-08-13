@@ -333,7 +333,8 @@ class HubDB:
                 "OR temps LIKE '%+%' OR LOWER(body) LIKE '%реф%' OR LOWER(body) LIKE '%изотерм%')"
             )
         if shipper_only:
-            sql.append("AND kind IN ('shipper','mixed')")
+            # "other" = cargo-like posts without strong keywords (common in TG/MAX)
+            sql.append("AND kind IN ('shipper','mixed','other')")
         elif hide_drivers:
             sql.append("AND IFNULL(kind,'') != 'driver'")
         if muted_directions:
