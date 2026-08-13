@@ -22,7 +22,7 @@ function sourceLabel(source) {
 }
 
 function fmtPosted(item) {
-  const t = Number(item.scraped_at || item.created_at || 0);
+  const t = Number(item.created_at || item.scraped_at || 0);
   if (!t) return "";
   const d = new Date(t * 1000);
   const pad = (n) => String(n).padStart(2, "0");
@@ -126,7 +126,7 @@ function muteKey(item) {
 }
 
 function ageSec(item) {
-  const t = Number(item.scraped_at || item.created_at || 0);
+  const t = Number(item.created_at || item.scraped_at || 0);
   return t ? Math.max(0, Date.now() / 1000 - t) : 1e9;
 }
 

@@ -237,6 +237,8 @@ class HubDB:
             now,
         )
         if row:
+            # Keep created_at forever; refresh scraped_at only as "last seen".
+            # Retention uses created_at so week-old ads cannot immortalize via re-scrape.
             await self.db.execute(
                 """
                 UPDATE loads SET
@@ -300,7 +302,8 @@ class HubDB:
         args: list[Any] = [min_score]
         age = max_age_sec if max_age_sec is not None else float(_cfg.MAX_LOAD_AGE_SEC)
         if age > 0:
-            sql.append("AND scraped_at >= ?")
+            # Age from first sighting — re-scrapes must not keep week-old ads forever
+            sql.append("AND created_at >= ?")
             args.append(time.time() - age)
         if geo_corridor:
             # One end ≤ near_km of Moscow, both ends ≤ far_km
@@ -383,10 +386,10 @@ class HubDB:
                 "score DESC, scraped_at DESC LIMIT ? OFFSET ?"
             )
         elif sort in {"time", "date", "posted"}:
-            # Newest posted/ingested ads first (scraped_at ≈ when ad appeared in feed)
-            sql.append("ORDER BY scraped_at DESC, score DESC LIMIT ? OFFSET ?")
+            # First-seen time (= when we consider the ad posted into our feed)
+            sql.append("ORDER BY created_at DESC, score DESC LIMIT ? OFFSET ?")
         else:
-            sql.append("ORDER BY scraped_at DESC, score DESC LIMIT ? OFFSET ?")
+            sql.append("ORDER BY created_at DESC, score DESC LIMIT ? OFFSET ?")
         args.extend([limit, offset])
         cur = await self.db.execute(" ".join(sql), args)
         rows = await cur.fetchall()
@@ -454,7 +457,7 @@ class HubDB:
         weak = float(weak_sec if weak_sec is not None else min(3 * 86400, strong))
         junk = float(junk_sec if junk_sec is not None else min(2 * 86400, strong))
         now = time.time()
-        # Weak / failed geo
+        # Weak / failed geo — drop if not refreshed recently
         await self.db.execute(
             "DELETE FROM loads WHERE scraped_at < ? AND (score < 40 OR IFNULL(score_ok,1)=0)",
             (now - weak,),
@@ -468,7 +471,13 @@ class HubDB:
             """,
             (now - junk,),
         )
-        # Hard max age for everything
+        # Hard max age from first ingest (created_at). Re-scrape bumps scraped_at
+        # but must not keep the same external_id in the feed longer than MAX_LOAD_AGE.
+        await self.db.execute(
+            "DELETE FROM loads WHERE created_at < ?",
+            (now - strong,),
+        )
+        # Also drop ads not seen on boards for the full retention window
         await self.db.execute(
             "DELETE FROM loads WHERE scraped_at < ?",
             (now - strong,),

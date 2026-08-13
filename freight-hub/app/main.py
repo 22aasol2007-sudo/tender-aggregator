@@ -67,6 +67,12 @@ async def lifespan(_: FastAPI):
         await db.set_setting("muted_directions", "[]")
     # Clear legacy false-positive streaks (counted "0 added" even when boards returned duplicates)
     await db.set_setting("zero_add_streaks", "{}")
+    # Purge week-old (and older) loads immediately — created_at based
+    try:
+        await db.cleanup_smart()
+        log.info("startup cleanup done")
+    except Exception as exc:
+        log.warning("startup cleanup failed: %s", exc)
     worker.start()
 
     # Listeners start independently — one failure must not block the other
