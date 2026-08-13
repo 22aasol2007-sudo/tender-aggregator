@@ -193,6 +193,13 @@ class HubDB:
     async def upsert_load(self, item: dict[str, Any]) -> str:
         """Insert or update. Returns 'added'|'updated'|'skipped'."""
         now = time.time()
+        created = item.get("created_at")
+        try:
+            created_f = float(created) if created is not None else now
+        except (TypeError, ValueError):
+            created_f = now
+        if created_f > now + 3600 or created_f < now - 120 * 86400:
+            created_f = now
         cur = await self.db.execute(
             "SELECT id, body, score FROM loads WHERE source=? AND external_id=?",
             (item["source"], item["external_id"]),
@@ -265,7 +272,7 @@ class HubDB:
                 item["source"],
                 item["external_id"],
                 *vals[:-1],
-                now,
+                created_f,
                 now,
             ),
         )

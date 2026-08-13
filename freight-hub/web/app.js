@@ -263,7 +263,7 @@ function cardHtml(item) {
   const meta = [];
   meta.push(`<span class="source-tag">${esc(sourceLabel(item.source))}</span>`);
   const posted = fmtPosted(item);
-  if (posted) meta.push(`<span class="posted-at" title="Дата выкладывания">${esc(posted)}</span>`);
+  if (posted) meta.push(`<span class="posted-at" title="Дата публикации на источнике">${esc(posted)}</span>`);
   if (item.km_from != null) meta.push(`погр. ${Math.round(item.km_from)} км`);
   if (item.km_to != null) meta.push(`выгр. ${Math.round(item.km_to)} км`);
 

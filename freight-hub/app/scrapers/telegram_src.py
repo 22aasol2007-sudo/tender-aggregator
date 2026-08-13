@@ -219,12 +219,19 @@ class TelegramIngest:
                                 pass
                         username = (getattr(ent, "username", None) or u or "").lower()
                         link = f"https://t.me/{username}/{msg.id}" if username else None
+                        posted_at = None
+                        if msg_ts is not None:
+                            try:
+                                posted_at = float(msg_ts.timestamp())
+                            except Exception:
+                                posted_at = None
                         raw = RawLoad(
                             source="telegram",
                             external_id=f"{username or ent.id}:{msg.id}",
                             title=(getattr(ent, "title", None) or username or "TG"),
                             body=text,
                             url=link,
+                            posted_at=posted_at,
                             raw={"chat": username, "msg_id": msg.id, "via": "backfill"},
                         )
                         status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
@@ -258,12 +265,20 @@ class TelegramIngest:
         if len(text) < 20:
             return
         link = f"https://t.me/{username}/{event.id}" if username else None
+        posted_at = None
+        try:
+            msg_date = getattr(event.message, "date", None) or getattr(event, "date", None)
+            if msg_date is not None:
+                posted_at = float(msg_date.timestamp())
+        except Exception:
+            posted_at = None
         raw = RawLoad(
             source="telegram",
             external_id=f"{username or chat_id}:{event.id}",
             title=(getattr(chat, "title", None) or username or "TG"),
             body=text,
             url=link,
+            posted_at=posted_at,
             raw={"chat": username, "msg_id": event.id},
         )
         try:

@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup, Tag
 
 from app import config
 from app.models import RawLoad
+from app.scrapers.board_common import parse_posted_at_ru
 from app.parse import CITY_ALIASES
 
 log = logging.getLogger("scraper.perevozka24")
@@ -235,6 +236,16 @@ class Perevozka24Scraper:
                 price = re.sub(r"\s+", "", pm.group(1)) + " руб"
 
             body_type = _infer_body(text)
+            posted_at = parse_posted_at_ru(text)
+            # Prefer dedicated datetime node if present
+            for sel in (".date", ".offer-date", ".time", "time", "[datetime]"):
+                node = el.select_one(sel)
+                if not node:
+                    continue
+                candidate = parse_posted_at_ru(node.get_text(" ", strip=True))
+                if candidate:
+                    posted_at = candidate
+                    break
             # Make text look like a shipper post for scoring/kind detection
             body = (
                 f"Есть груз. {frm or '?'} → {to or '?'}. {text}. Ищу машину."
@@ -251,7 +262,8 @@ class Perevozka24Scraper:
                     body_type=body_type,
                     price=price,
                     url=f"{base_url}/poisk-gruzov?offer_id={eid}",
-                    raw={"offer_id": eid},
+                    posted_at=posted_at,
+                    raw={"offer_id": eid, "posted_at": posted_at},
                 )
             )
         return out

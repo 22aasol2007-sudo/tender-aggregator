@@ -239,6 +239,19 @@ async def _persist(
     tonnage = raw.tonnage if raw.tonnage is not None else parsed.tonnage
     if not tonnage_allowed(tonnage):
         return "skipped"
+
+    posted_at = getattr(raw, "posted_at", None)
+    try:
+        posted_at_f = float(posted_at) if posted_at is not None else None
+    except (TypeError, ValueError):
+        posted_at_f = None
+    if posted_at_f is not None:
+        age = time.time() - posted_at_f
+        if age > config.MAX_LOAD_AGE_SEC:
+            return "skipped"
+        if age < -2 * 3600:
+            posted_at_f = None
+
     fp = make_fingerprint(
         raw.source,
         from_city or "",
@@ -291,6 +304,7 @@ async def _persist(
         "price_per_km": price_per_km,
         "raw_json": raw.raw,
         "score_ok": 1 if result.ok else 0,
+        "created_at": posted_at_f,
     }
     status = await db.upsert_load(item)
     if status == "added":

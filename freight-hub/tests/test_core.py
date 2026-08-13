@@ -47,6 +47,19 @@ def test_score_hot_shipper():
     assert result.score >= 40
 
 
+def test_parse_posted_at_ru():
+    from datetime import datetime
+
+    from app.scrapers.board_common import parse_posted_at_ru
+
+    ref = datetime(2026, 8, 13, 16, 0, 0).timestamp()
+    ts = parse_posted_at_ru("31.07 11:43 №1271678 Видное", now=ref)
+    assert ts is not None
+    dt = datetime.fromtimestamp(ts)
+    assert dt.day == 31 and dt.month == 7 and dt.hour == 11 and dt.minute == 43
+    assert parse_posted_at_ru("no date here", now=ref) is None
+
+
 def test_tonnage_band():
     from app.ingest import tonnage_allowed
 

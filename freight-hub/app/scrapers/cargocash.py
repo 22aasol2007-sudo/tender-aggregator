@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 from app import config
 from app.models import RawLoad
-from app.scrapers.board_common import CFD_NWFD_PFO_REGIONS, exact_city, infer_body, parse_tonnage
+from app.scrapers.board_common import CFD_NWFD_PFO_REGIONS, exact_city, infer_body, parse_posted_at_ru, parse_tonnage
 
 log = logging.getLogger("scraper.cargocash")
 
@@ -130,6 +130,7 @@ class CargoCashScraper:
                 if pm:
                     price = re.sub(r"\s+", "", pm.group(1)) + " руб"
             body = f"Есть груз. {frm or '?'} → {to or '?'}. {text}. Ищу машину."[:2000]
+            posted_at = parse_posted_at_ru(text)
             out.append(
                 RawLoad(
                     source=self.name,
@@ -143,7 +144,8 @@ class CargoCashScraper:
                     body_type=infer_body(text),
                     price=price,
                     url=f"https://cargocash.ru/order/{eid}",
-                    raw={"order_id": eid},
+                    posted_at=posted_at,
+                    raw={"order_id": eid, "posted_at": posted_at},
                 )
             )
         return out

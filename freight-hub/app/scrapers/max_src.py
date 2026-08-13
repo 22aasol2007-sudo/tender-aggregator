@@ -218,12 +218,21 @@ class MaxIngest:
                             except Exception:
                                 pass
                         mid = getattr(msg, "id", None) or getattr(msg, "cid", None) or id(msg)
+                        posted_at = None
+                        if msg_ts is not None:
+                            try:
+                                posted_at = float(msg_ts.timestamp()) if hasattr(msg_ts, "timestamp") else float(msg_ts)
+                                if posted_at > 1e12:
+                                    posted_at /= 1000.0
+                            except Exception:
+                                posted_at = None
                         raw = RawLoad(
                             source="max",
                             external_id=f"{meta['slug']}:{mid}",
                             title=meta["title"],
                             body=text,
                             url=meta["url"],
+                            posted_at=posted_at,
                             raw={"chat": meta["slug"], "msg_id": mid, "via": "backfill"},
                         )
                         status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
@@ -255,12 +264,22 @@ class MaxIngest:
             "url": None,
         }
         mid = getattr(message, "id", None) or getattr(message, "cid", None)
+        posted_at = None
+        msg_ts = getattr(message, "time", None) or getattr(message, "timestamp", None)
+        if msg_ts is not None:
+            try:
+                posted_at = float(msg_ts.timestamp()) if hasattr(msg_ts, "timestamp") else float(msg_ts)
+                if posted_at > 1e12:
+                    posted_at /= 1000.0
+            except Exception:
+                posted_at = None
         raw = RawLoad(
             source="max",
             external_id=f"{meta['slug']}:{mid}",
             title=meta["title"],
             body=text,
             url=meta.get("url"),
+            posted_at=posted_at,
             raw={"chat": meta["slug"], "msg_id": mid},
         )
         try:

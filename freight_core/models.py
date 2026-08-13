@@ -18,4 +18,6 @@ class RawLoad:
     temps: list[str] = field(default_factory=list)
     price: str | None = None
     url: str | None = None
+    # Original board/messenger publish time (unix seconds), when known
+    posted_at: float | None = None
     raw: dict[str, Any] | None = None
