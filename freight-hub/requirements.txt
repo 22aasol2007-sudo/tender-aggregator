@@ -9,5 +9,8 @@ telethon==1.40.0
 pydantic==2.11.10
 maxapi-python>=2.4.0
 qrcode[pil]>=8.0
+python-multipart>=0.0.9
+Pillow>=10.0.0
+pytesseract>=0.3.10
 pytest>=8.0
 

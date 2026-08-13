@@ -93,14 +93,26 @@
   <section id="viewAnalyze" class="zone analyze-zone" hidden>
     <div class="zone-head">
       <h2>Обратка и ставка</h2>
-      <p class="zone-sub">Лента hub + live-probe площадок без постоянной выгрузки (ATI, Svezem, Cargomart, Monopoly)</p>
+      <p class="zone-sub">Скрин ATI или ручной ввод: лента hub + live-площадки → минимальная выгодная ставка</p>
     </div>
+
+    <div class="analyze-shot">
+      <label class="shot-drop" for="aShot">
+        <input id="aShot" type="file" accept="image/*,.png,.jpg,.jpeg,.webp" hidden />
+        <strong>Скрин объявления ATI</strong>
+        <span>Нажмите или перетащите фото — разберём маршрут и посчитаем, сколько предлагать</span>
+      </label>
+      <div id="aShotName" class="shot-name muted" hidden></div>
+      <button id="btnAnalyzeShot" class="btn" type="button">Разобрать скрин и посчитать</button>
+    </div>
+
+    <div class="ati-label" style="margin-top:14px">Или вручную</div>
     <div class="analyze-form ati-row">
       <input id="aBase" type="text" placeholder="База (Москва)" />
       <input id="aDest" type="text" placeholder="Город выгрузки" />
       <input id="aOffer" type="number" min="0" step="1000" placeholder="Предложение, ₽" />
       <label class="check tight"><input id="aLive" type="checkbox" checked /> Live-площадки</label>
-      <button id="btnAnalyze" class="btn" type="button">Рассчитать</button>
+      <button id="btnAnalyze" class="btn ghost" type="button">Рассчитать</button>
     </div>
     <div id="analyzeOut" class="analyze-out" hidden></div>
   </section>

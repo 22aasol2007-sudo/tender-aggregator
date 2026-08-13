@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, File, Form, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from app import config
 from app.auth import require_write_token
 from app.db import HubDB
 from app.rate_analyze import RateAnalyzer
+from app.screenshot_offer import extract_from_screenshot, resolve_analyze_targets, vision_configured
 from app.scrapers.max_src import MaxIngest
 from app.scrapers.telegram_src import TelegramIngest
 from app.worker import ScrapeWorker
@@ -479,6 +480,105 @@ async def analyze_ranking(
             base_city = "москва"
     rows = await db.backhaul_city_ranking(base=base_city, days=days, limit=limit)
     return {"ok": True, "base": base_city, "days": days, "ranking": rows}
+
+
+async def _profile_base() -> str:
+    try:
+        truck = await db.get_json_setting("truck_profile", {})
+        if isinstance(truck, dict):
+            return str(truck.get("base") or "москва").strip() or "москва"
+    except Exception:
+        pass
+    return "москва"
+
+
+@app.get("/api/analyze/vision-status")
+async def analyze_vision_status() -> dict[str, Any]:
+    return {"ok": True, **vision_configured()}
+
+
+@app.post("/api/analyze/screenshot")
+async def analyze_screenshot(
+    file: UploadFile = File(...),
+    base: str | None = Form(None),
+    live: bool = Form(True),
+) -> dict[str, Any]:
+    """Upload ATI screenshot → extract route/rate → backhaul profitability."""
+    raw = await file.read()
+    extracted = await extract_from_screenshot(raw, filename=file.filename)
+    if not extracted.get("ok"):
+        return {
+            "ok": False,
+            "error": extracted.get("error") or "Не удалось разобрать скрин",
+            "extracted": extracted.get("fields") or {},
+            "method": extracted.get("method"),
+            "vision_ready": vision_configured(),
+        }
+
+    fields = extracted["fields"]
+    base_city = (base or "").strip() or await _profile_base()
+    targets = resolve_analyze_targets(fields, base=base_city)
+    if not targets.get("destination"):
+        return {
+            "ok": False,
+            "error": "На скрине не найден город выгрузки/погрузки",
+            "extracted": fields,
+            "method": extracted.get("method"),
+        }
+
+    analyzer = RateAnalyzer(db)
+    analysis = await analyzer.analyze(
+        base=targets["base"],
+        destination=str(targets["destination"]),
+        offer_rub=targets.get("offer_rub"),
+        tonnage=targets.get("tonnage"),
+        body=targets.get("body"),
+        live_probe=live,
+    )
+    # Prefer km from ATI card when analyzer geo is missing
+    if analysis.get("ok") and not analysis.get("route_km") and targets.get("listed_route_km"):
+        analysis["route_km"] = targets["listed_route_km"]
+
+    advice = None
+    pr = (analysis or {}).get("pricing") or {}
+    offer = targets.get("offer_rub")
+    hurdle = pr.get("suggested_min_total_rub")
+    if hurdle is not None:
+        if offer is None:
+            advice = {
+                "action": "propose",
+                "text": f"Предлагайте клиенту не меньше {int(hurdle):,} ₽".replace(",", " "),
+                "min_rub": hurdle,
+            }
+        elif float(offer) >= float(hurdle):
+            advice = {
+                "action": "take",
+                "text": f"Ставка ATI {int(offer):,} ₽ ≥ порога {int(hurdle):,} ₽ — можно брать".replace(",", " "),
+                "min_rub": hurdle,
+                "listed_rub": offer,
+            }
+        else:
+            gap = float(hurdle) - float(offer)
+            advice = {
+                "action": "counter",
+                "text": (
+                    f"В ATI {int(offer):,} ₽, чтобы выйти в плюс нужно ≥ {int(hurdle):,} ₽ "
+                    f"(+{int(gap):,} ₽ к ставке объявления)"
+                ).replace(",", " "),
+                "min_rub": hurdle,
+                "listed_rub": offer,
+                "gap_rub": gap,
+            }
+
+    return {
+        "ok": True,
+        "method": extracted.get("method"),
+        "extracted": fields,
+        "targets": targets,
+        "advice": advice,
+        "analysis": analysis,
+        "vision_ready": vision_configured(),
+    }
 
 
 SOURCE_GROUPS: dict[str, list[str]] = {

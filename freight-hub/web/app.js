@@ -602,6 +602,81 @@ function riskClass(risk) {
   return "risk-high";
 }
 
+function renderAnalyzeResult(data, extra = {}) {
+  const bh = data.backhaul || {};
+  const pr = data.pricing || {};
+  const offerEv = pr.offer;
+  const live = data.live_external || {};
+  const sources = (live.sources || [])
+    .map((s) => {
+      const tag = s.wired ? "лента" : "внешн.";
+      const st = s.ok ? `${s.count ?? 0}` : (s.note || s.error || "нет");
+      return `<li><span class="src-tag">${esc(tag)}</span> <strong>${esc(s.name || "?")}</strong>: ${esc(String(st))}</li>`;
+    })
+    .join("");
+  const rankRows = (data.ranking || [])
+    .slice(0, 10)
+    .map((r, i) => {
+      const mark = (r.city || "") === data.destination ? " ★" : "";
+      return `<tr><td>${i + 1}</td><td>${esc(r.city)}${mark}</td><td>${r.backhaul_n}</td><td>${r.avg_ppk ?? "—"}</td></tr>`;
+    })
+    .join("");
+
+  const advice = extra.advice;
+  const adviceHtml = advice
+    ? `<div class="advice-banner ${esc(advice.action || "propose")}">${esc(advice.text || "")}</div>`
+    : "";
+
+  const ex = extra.extracted || {};
+  const extractHtml = extra.extracted
+    ? `<div class="extract-chip">
+        <span>Со скрина: <b>${esc(ex.from_city || "?")} → ${esc(ex.to_city || "?")}</b></span>
+        ${ex.price_rub != null ? `<span>ставка <b>${fmtRub(ex.price_rub)}</b></span>` : ""}
+        ${ex.tonnage != null ? `<span><b>${esc(ex.tonnage)}</b> т</span>` : ""}
+        ${ex.body ? `<span>кузов <b>${esc(ex.body)}</b></span>` : ""}
+        ${extra.method ? `<span>разбор: <b>${esc(extra.method)}</b></span>` : ""}
+      </div>`
+    : "";
+
+  $("analyzeOut").hidden = false;
+  $("analyzeOut").innerHTML = `
+    ${adviceHtml}
+    ${extractHtml}
+    <div class="analyze-grid">
+      <div class="analyze-card">
+        <div class="ati-label">Маршрут анализа</div>
+        <div class="analyze-big">${esc(data.base)} → ${esc(data.destination)}</div>
+        <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"}</div>
+      </div>
+      <div class="analyze-card">
+        <div class="ati-label">Обратка к базе</div>
+        <div class="analyze-big">${bh.count ?? 0}</div>
+        <div class="muted">лента ${bh.count_feed ?? 0} + внешние ${bh.count_external ?? 0}</div>
+        <div class="risk-pill ${riskClass(bh.risk)}">риск ${esc(bh.risk || "—")} · p≈${bh.p_find ?? "—"}</div>
+        <div class="muted">ранг ${bh.rank ?? "—"} / ${bh.peers ?? "—"} · медиана пиров ${bh.peer_median_backhaul ?? "—"}</div>
+      </div>
+      <div class="analyze-card">
+        <div class="ati-label">Мин. ставка с учётом порожняка</div>
+        <div class="analyze-big">${fmtRub(pr.suggested_min_total_rub)}</div>
+        <div class="muted">${pr.suggested_min_ppk != null ? `${pr.suggested_min_ppk} ₽/км` : ""} · рынок ${pr.market_outbound_ppk ?? "—"} ₽/км</div>
+        <div class="muted">ожид. порожний ${fmtRub(pr.expected_empty_cost_rub)} (при ${pr.empty_ppk_assumed ?? "—"} ₽/км)</div>
+        ${offerEv ? `<div class="offer-verdict ${offerEv.verdict === "выгодно" ? "ok" : "bad"}">${esc(offerEv.verdict)} · ${fmtRub(offerEv.vs_hurdle_rub)} к порогу</div>` : ""}
+      </div>
+    </div>
+    <div class="analyze-split">
+      <div>
+        <div class="ati-label">Внешние / live</div>
+        <ul class="analyze-sources">${sources || "<li>нет данных</li>"}</ul>
+      </div>
+      <div>
+        <div class="ati-label">Топ городов по обратке к «${esc(data.base)}»</div>
+        <table class="analyze-table"><thead><tr><th>#</th><th>Город</th><th>N</th><th>₽/км</th></tr></thead><tbody>${rankRows}</tbody></table>
+      </div>
+    </div>
+    <p class="analyze-notes">${(data.notes || []).map(esc).join(" · ")}</p>
+  `;
+}
+
 async function runAnalyze() {
   const dest = ($("aDest").value || "").trim();
   if (!dest) {
@@ -631,58 +706,7 @@ async function runAnalyze() {
       $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(data.error || "Ошибка")}</p>`;
       return;
     }
-    const bh = data.backhaul || {};
-    const pr = data.pricing || {};
-    const offerEv = pr.offer;
-    const live = data.live_external || {};
-    const sources = (live.sources || [])
-      .map((s) => {
-        const tag = s.wired ? "лента" : "внешн.";
-        const st = s.ok ? `${s.count ?? 0}` : (s.note || s.error || "нет");
-        return `<li><span class="src-tag">${esc(tag)}</span> <strong>${esc(s.name || "?")}</strong>: ${esc(String(st))}</li>`;
-      })
-      .join("");
-    const rankRows = (data.ranking || [])
-      .slice(0, 10)
-      .map((r, i) => {
-        const mark = (r.city || "") === data.destination ? " ★" : "";
-        return `<tr><td>${i + 1}</td><td>${esc(r.city)}${mark}</td><td>${r.backhaul_n}</td><td>${r.avg_ppk ?? "—"}</td></tr>`;
-      })
-      .join("");
-    $("analyzeOut").innerHTML = `
-      <div class="analyze-grid">
-        <div class="analyze-card">
-          <div class="ati-label">Маршрут</div>
-          <div class="analyze-big">${esc(data.base)} → ${esc(data.destination)}</div>
-          <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"}</div>
-        </div>
-        <div class="analyze-card">
-          <div class="ati-label">Обратка к базе</div>
-          <div class="analyze-big">${bh.count ?? 0}</div>
-          <div class="muted">лента ${bh.count_feed ?? 0} + внешние ${bh.count_external ?? 0}</div>
-          <div class="risk-pill ${riskClass(bh.risk)}">риск ${esc(bh.risk || "—")} · p≈${bh.p_find ?? "—"}</div>
-          <div class="muted">ранг ${bh.rank ?? "—"} / ${bh.peers ?? "—"} · медиана пиров ${bh.peer_median_backhaul ?? "—"}</div>
-        </div>
-        <div class="analyze-card">
-          <div class="ati-label">Мин. ставка с учётом порожняка</div>
-          <div class="analyze-big">${fmtRub(pr.suggested_min_total_rub)}</div>
-          <div class="muted">${pr.suggested_min_ppk != null ? `${pr.suggested_min_ppk} ₽/км` : ""} · рынок ${pr.market_outbound_ppk ?? "—"} ₽/км</div>
-          <div class="muted">ожид. порожний ${fmtRub(pr.expected_empty_cost_rub)} (при ${pr.empty_ppk_assumed ?? "—"} ₽/км)</div>
-          ${offerEv ? `<div class="offer-verdict ${offerEv.verdict === "выгодно" ? "ok" : "bad"}">${esc(offerEv.verdict)} · ${fmtRub(offerEv.vs_hurdle_rub)} к порогу</div>` : ""}
-        </div>
-      </div>
-      <div class="analyze-split">
-        <div>
-          <div class="ati-label">Внешние / live</div>
-          <ul class="analyze-sources">${sources || "<li>нет данных</li>"}</ul>
-        </div>
-        <div>
-          <div class="ati-label">Топ городов по обратке к «${esc(data.base)}»</div>
-          <table class="analyze-table"><thead><tr><th>#</th><th>Город</th><th>N</th><th>₽/км</th></tr></thead><tbody>${rankRows}</tbody></table>
-        </div>
-      </div>
-      <p class="analyze-notes">${(data.notes || []).map(esc).join(" · ")}</p>
-    `;
+    renderAnalyzeResult(data);
   } catch (e) {
     $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(e.message || e)}</p>`;
   } finally {
@@ -690,9 +714,108 @@ async function runAnalyze() {
   }
 }
 
+async function runAnalyzeScreenshot() {
+  const input = $("aShot");
+  const file = input && input.files && input.files[0];
+  if (!file) {
+    alert("Выберите скриншот объявления ATI");
+    return;
+  }
+  const base = ($("aBase").value || $("pBase").value || "москва").trim();
+  const live = $("aLive") ? $("aLive").checked : true;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("base", base);
+  fd.append("live", live ? "true" : "false");
+
+  const btn = $("btnAnalyzeShot");
+  if (btn) btn.disabled = true;
+  $("analyzeOut").hidden = false;
+  $("analyzeOut").innerHTML = `<p class="analyze-loading">Читаем скрин и считаем выгодную ставку…</p>`;
+  try {
+    const headers = {};
+    const tok = writeToken();
+    if (tok) headers["X-Hub-Token"] = tok;
+    const r = await fetch("/api/analyze/screenshot", { method: "POST", body: fd, headers });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (!data.ok) {
+      $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(data.error || "Ошибка")}</p>`;
+      return;
+    }
+    const analysis = data.analysis || {};
+    if (!analysis.ok) {
+      $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(analysis.error || "Не удалось посчитать")}</p>`;
+      return;
+    }
+    // Prefill manual fields from screenshot
+    const t = data.targets || {};
+    if (t.destination && $("aDest")) $("aDest").value = t.destination;
+    if (t.offer_rub != null && $("aOffer")) $("aOffer").value = Math.round(t.offer_rub);
+    if (t.base && $("aBase")) $("aBase").value = t.base;
+    renderAnalyzeResult(analysis, {
+      advice: data.advice,
+      extracted: data.extracted,
+      method: data.method,
+    });
+  } catch (e) {
+    $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(e.message || e)}</p>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 const btnAnalyze = $("btnAnalyze");
 if (btnAnalyze) {
   btnAnalyze.addEventListener("click", () => runAnalyze().catch(alert));
+}
+const btnAnalyzeShot = $("btnAnalyzeShot");
+if (btnAnalyzeShot) {
+  btnAnalyzeShot.addEventListener("click", () => runAnalyzeScreenshot().catch(alert));
+}
+const shotInput = $("aShot");
+const shotDrop = document.querySelector(".shot-drop");
+if (shotInput) {
+  shotInput.addEventListener("change", () => {
+    const f = shotInput.files && shotInput.files[0];
+    const name = $("aShotName");
+    if (name) {
+      name.hidden = !f;
+      name.textContent = f ? f.name : "";
+    }
+  });
+}
+if (shotDrop && shotInput) {
+  ["dragenter", "dragover"].forEach((ev) => {
+    shotDrop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      shotDrop.classList.add("drag");
+    });
+  });
+  ["dragleave", "drop"].forEach((ev) => {
+    shotDrop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      shotDrop.classList.remove("drag");
+    });
+  });
+  shotDrop.addEventListener("drop", (e) => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files[0]) {
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(files[0]);
+        shotInput.files = dt.files;
+      } catch {
+        /* some browsers block programmatic FileList */
+      }
+      shotInput.dispatchEvent(new Event("change"));
+      if (shotInput.files && shotInput.files[0]) {
+        /* ok */
+      } else {
+        alert("Выберите файл через кнопку — drag&drop в этом браузере недоступен");
+      }
+    }
+  });
 }
 ["aDest", "aOffer", "aBase"].forEach((id) => {
   const el = $(id);

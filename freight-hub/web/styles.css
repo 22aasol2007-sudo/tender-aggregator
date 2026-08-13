@@ -262,6 +262,48 @@ body {
 .analyze-form {
   margin-top: 8px;
 }
+.analyze-shot {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.shot-drop {
+  display: grid;
+  gap: 6px;
+  padding: 18px 16px;
+  border: 1px dashed rgba(126, 182, 255, 0.45);
+  border-radius: 14px;
+  background: rgba(126, 182, 255, 0.06);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.shot-drop:hover, .shot-drop.drag {
+  border-color: #7eb6ff;
+  background: rgba(126, 182, 255, 0.12);
+}
+.shot-drop strong { font-size: 1rem; }
+.shot-drop span { color: var(--muted); font-size: 0.86rem; line-height: 1.4; }
+.shot-name { font-size: 0.86rem; }
+.advice-banner {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(0,0,0,.4);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.advice-banner.take { border-color: rgba(47,191,120,.45); color: #7dffb5; }
+.advice-banner.counter { border-color: rgba(255,186,73,.4); color: #ffd27a; }
+.advice-banner.propose { border-color: rgba(126,182,255,.4); color: #b7d6ff; }
+.extract-chip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.extract-chip b { color: var(--text); font-weight: 600; }
 .analyze-out {
   margin-top: 14px;
   display: grid;

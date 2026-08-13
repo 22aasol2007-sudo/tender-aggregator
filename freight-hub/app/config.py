@@ -58,6 +58,13 @@ ENABLE_TG = ENABLE_TG and OWN_TELETHON
 ATI_API_TOKEN = os.getenv("ATI_API_TOKEN", "").strip()
 MONOPOLY_API_TOKEN = os.getenv("MONOPOLY_API_TOKEN", "").strip()
 
+# Vision / OCR for ATI screenshot → rate analysis
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.0-flash").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini").strip()
+
 # Telegram MTProto proxy (t.me/proxy?server=&port=&secret=)
 # Example secret starts with dd… for fake-TLS MTProxy.
 TG_PROXY_SERVER = os.getenv("TG_PROXY_SERVER", "").strip()
