@@ -35,10 +35,13 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
+html { overflow-x: hidden; }
 body {
   font-family: var(--font);
   color: var(--text);
   background: var(--bg0);
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
 }
 
 .bg {
@@ -87,6 +90,79 @@ body {
 .st.warn i { background: var(--warn); }
 .st.off i { background: var(--danger); }
 .ago { color: var(--muted); font-size: 0.78rem; font-family: var(--mono); margin-left: 4px; }
+
+.parse-summary {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 1000;
+  width: min(320px, calc(100vw - 24px));
+  padding: 14px 40px 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: rgba(8, 16, 12, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+.parse-summary-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.parse-summary-close:hover { color: var(--text); background: rgba(255,255,255,.06); }
+.parse-summary-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.parse-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.parse-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.28);
+  border: 1px solid var(--line);
+}
+.parse-summary-k {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.parse-summary-item strong {
+  font-size: 1.25rem;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.parse-summary-pct {
+  font-size: 0.78rem;
+  color: var(--accent2);
+  font-family: var(--mono);
+}
+.parse-summary-detail {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
 
 .banner {
   margin: 8px 28px 0;
@@ -482,8 +558,85 @@ main { padding: 12px 28px 40px; }
 }
 
 @media (max-width: 720px) {
+  body {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .top {
+    padding: 14px 14px 4px;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .brand h1 { font-size: 1.12rem; }
+  .brand p { font-size: 0.8rem; }
+  .mark { width: 40px; height: 40px; border-radius: 10px; }
+  .top-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .status-bar {
+    flex: 1;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 12px;
+    gap: 6px;
+  }
+  .st { font-size: 0.75rem; }
+  .ago { display: none; }
+  #btnScrape {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .zone { margin: 10px 12px; padding: 12px; }
+  .zone-head { gap: 8px; }
+  .zone-head h2 { font-size: 0.95rem; }
+  .presets { width: 100%; }
+  .chip { flex: 1 1 auto; min-height: 40px; }
+  .profile,
+  .filters,
+  .more-filters,
+  .ati-row,
+  .filters-actions {
+    grid-template-columns: 1fr !important;
+  }
+  .ati-row {
+    display: grid;
+    gap: 8px;
+  }
+  .ati-row input,
+  .ati-row select,
+  .profile input,
+  .profile select,
+  .filters input,
+  .filters select {
+    min-height: 44px;
+    font-size: 16px; /* prevent iOS zoom */
+  }
+  .tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .tab {
+    flex: none;
+    min-height: 44px;
+    font-size: 0.88rem;
+  }
+  .check, .check.tight {
+    white-space: normal;
+    min-height: 40px;
+  }
+  main { padding: 8px 12px 28px; }
+  .banner { margin: 8px 12px 0; font-size: 0.88rem; }
+  .parse-summary {
+    top: max(10px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
   .card {
     grid-template-columns: 1fr;
+    padding: 14px 14px 12px 16px;
   }
   .actions {
     min-width: 0;
@@ -496,8 +649,16 @@ main { padding: 12px 28px 40px; }
     width: 100%;
     font-size: 1.12rem;
     padding: 14px 16px;
+    min-height: 48px;
   }
-  .card .route { font-size: 1.28rem; }
+  .card .route { font-size: 1.2rem; }
+  .contacts { gap: 6px; }
+  .contact-row { min-height: 40px; }
+  footer { padding: 8px 14px 24px; }
+  dialog {
+    width: min(100vw - 16px, 720px);
+    max-height: calc(100dvh - 24px);
+  }
 }
 
 footer {

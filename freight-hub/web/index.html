@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="hub-write-token" content="{{HUB_WRITE_TOKEN}}" />
   <meta name="write-token-required" content="{{WRITE_TOKEN_REQUIRED}}" />
   <title>Freight Hub</title>
@@ -13,6 +13,24 @@
 </head>
 <body>
   <div class="bg"></div>
+
+  <aside id="parseSummary" class="parse-summary" hidden role="status" aria-live="polite">
+    <button type="button" id="parseSummaryClose" class="parse-summary-close" aria-label="Закрыть">×</button>
+    <div class="parse-summary-title">Сводка парсинга</div>
+    <div class="parse-summary-grid">
+      <div class="parse-summary-item">
+        <span class="parse-summary-k">Чаты</span>
+        <strong id="sumChats">—</strong>
+        <span id="sumChatsPct" class="parse-summary-pct"></span>
+      </div>
+      <div class="parse-summary-item">
+        <span class="parse-summary-k">Сайты</span>
+        <strong id="sumSites">—</strong>
+        <span id="sumSitesPct" class="parse-summary-pct"></span>
+      </div>
+    </div>
+    <p id="sumDetail" class="parse-summary-detail"></p>
+  </aside>
 
   <header class="top">
     <div class="brand">

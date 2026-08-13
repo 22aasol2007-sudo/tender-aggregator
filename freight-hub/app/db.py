@@ -489,6 +489,16 @@ class HubDB:
         runs = [dict(r) for r in await cur.fetchall()]
         return {"total": total, "by_source": by_source, "recent_runs": runs}
 
+    async def latest_scrape_ok(self) -> dict[str, bool]:
+        """Latest scrape_runs.ok per source (True/False). Missing sources omitted."""
+        cur = await self.db.execute(
+            """
+            SELECT source, ok FROM scrape_runs
+            WHERE id IN (SELECT MAX(id) FROM scrape_runs GROUP BY source)
+            """
+        )
+        return {str(r["source"]): bool(r["ok"]) for r in await cur.fetchall()}
+
     async def log_run(
         self, source: str, ok: bool, added: int, updated: int, error: str | None, started: float
     ) -> None:

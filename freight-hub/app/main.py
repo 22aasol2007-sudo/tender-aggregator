@@ -321,6 +321,67 @@ async def health() -> dict[str, Any]:
         except Exception:
             pass
 
+    # Parse coverage: chats (TG + MAX) and site scrapers
+    def _i(v: Any, default: int = 0) -> int:
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+
+    tg_ok = _i((tg_h or {}).get("resolved")) if tg_alive else 0
+    tg_total = _i((tg_h or {}).get("watched"))
+    if tg_total <= 0 and config.ENABLE_TG:
+        from app.defaults import DEFAULT_CHATS
+
+        tg_total = min(len(DEFAULT_CHATS), config.MAX_TG_CHATS)
+    tg_failed = _i((tg_h or {}).get("failed_count"))
+    if tg_alive and tg_total < tg_ok + tg_failed:
+        tg_total = tg_ok + tg_failed
+
+    mx_ok = 0
+    mx_total = 0
+    if config.ENABLE_MAX:
+        mx_ok = _i((mx_h or {}).get("resolved")) if mx_alive else 0
+        mx_failed = _i((mx_h or {}).get("failed_count"))
+        mx_watched = _i((mx_h or {}).get("watched"))
+        mx_total = max(mx_watched + mx_failed, mx_ok + mx_failed)
+        if mx_total <= 0 and mx:
+            try:
+                mx_total = len(getattr(mx, "_channels", []) or [])
+            except Exception:
+                pass
+
+    chats_ok = tg_ok + mx_ok
+    chats_total = tg_total + mx_total
+
+    enabled_sites = [
+        s.scraper.name
+        for s in worker.slots
+        if s.enabled and getattr(s.scraper, "name", None)
+    ]
+    latest_ok = await db.latest_scrape_ok()
+    sites_ok = sum(1 for name in enabled_sites if latest_ok.get(name) is True)
+    sites_total = len(enabled_sites)
+
+    coverage = {
+        "chats": {
+            "ok": chats_ok,
+            "total": chats_total,
+            "tg_ok": tg_ok,
+            "tg_total": tg_total,
+            "max_ok": mx_ok,
+            "max_total": mx_total,
+        },
+        "sites": {
+            "ok": sites_ok,
+            "total": sites_total,
+            "sources": [
+                {"name": name, "ok": bool(latest_ok.get(name))}
+                for name in enabled_sites
+            ],
+        },
+    }
+
     return {
         "ok": True,
         "tg": tg_alive,
@@ -331,6 +392,7 @@ async def health() -> dict[str, Any]:
         "total_loads": st["total"],
         "by_source": st["by_source"],
         "statuses": {"tg": tg_status, "max": max_status, "sites": sites_status},
+        "coverage": coverage,
         "updated_ago_sec": max(0, int(now - latest_ts)) if latest_ts else 0,
         "hints": hints,
         "tg_need_login": tg_need_login,

@@ -3,6 +3,7 @@ let lastHealthAt = 0;
 let lastTgDown = false;
 let lastMuted = [];
 let activeChannel = "all";
+let parseSummaryDismissed = false;
 
 const TG_SOURCES = new Set(["telegram", "tg_public"]);
 const MAX_SOURCES = new Set(["max"]);
@@ -318,6 +319,8 @@ async function refreshHealth() {
     $("updatedAgo").textContent = ago != null ? fmtAgo(ago) : "сейчас";
     lastTgDown = !!(h.tg_down || h.tg_need_login || statuses.tg === "off");
 
+    showParseSummary(h.coverage);
+
     const banner = $("banner");
     if (h.hints && h.hints.length) {
       banner.hidden = false;
@@ -338,6 +341,33 @@ async function refreshHealth() {
     $("updatedAgo").textContent = "offline";
     lastTgDown = true;
   }
+}
+
+function ratioLabel(ok, total) {
+  const o = Number(ok) || 0;
+  const t = Number(total) || 0;
+  if (t <= 0) return { text: "—", pct: "" };
+  const pct = Math.round((100 * o) / t);
+  return { text: `${o}/${t}`, pct: `${pct}%` };
+}
+
+function showParseSummary(coverage) {
+  const box = $("parseSummary");
+  if (!box || !coverage || parseSummaryDismissed) return;
+  const chats = coverage.chats || {};
+  const sites = coverage.sites || {};
+  const c = ratioLabel(chats.ok, chats.total);
+  const s = ratioLabel(sites.ok, sites.total);
+  $("sumChats").textContent = c.text;
+  $("sumChatsPct").textContent = c.pct;
+  $("sumSites").textContent = s.text;
+  $("sumSitesPct").textContent = s.pct;
+  const bits = [];
+  if (chats.tg_total) bits.push(`TG ${chats.tg_ok || 0}/${chats.tg_total}`);
+  if (chats.max_total) bits.push(`MAX ${chats.max_ok || 0}/${chats.max_total}`);
+  const detail = $("sumDetail");
+  if (detail)   detail.textContent = bits.join(" · ");
+  box.hidden = false;
 }
 
 function numOrEmpty(id) {
@@ -566,6 +596,14 @@ $("btnScrape").addEventListener("click", async () => {
 
 (async function boot() {
   writeToken();
+  const closeBtn = $("parseSummaryClose");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      parseSummaryDismissed = true;
+      const box = $("parseSummary");
+      if (box) box.hidden = true;
+    });
+  }
   await loadProfile();
   await refreshHealth();
   await loadList();
