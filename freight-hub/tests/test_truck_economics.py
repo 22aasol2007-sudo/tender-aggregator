@@ -14,15 +14,17 @@ def test_fuel_and_revenue_solve():
     assert priced["suggested_empty_safe_rub"] >= priced["suggested_min_total_rub"]
 
 
-def test_net_after_tax_and_amort():
-    # R=100000, costs=40000 → amort 5000 → taxable 55000 → net 35750
-    assert round(net_profit(revenue=100000, costs=40000)) == 35750
+def test_net_tax_from_client_rate():
+    # R=100000 → tax 35000 + amort 5000 + costs 40000 → net 20000
+    assert round(net_profit(revenue=100000, costs=40000)) == 20000
 
 
 def test_revenue_inverse():
     costs = 20000
     target = 10000
     r = revenue_for_target_net(costs=costs, target_net=target)
+    # keep share = 1 - 0.35 - 0.05 = 0.60 → R = (20000+10000)/0.60 = 50000
+    assert abs(r - 50000) < 1.0
     assert abs(net_profit(revenue=r, costs=costs) - target) < 1.0
 
 

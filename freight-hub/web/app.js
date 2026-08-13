@@ -681,7 +681,7 @@ function renderAnalyzeResult(data, extra = {}) {
         <span>ожид. затраты <b>${fmtRub(pr.expected_costs_rub)}</b></span>
         <span>порожний сценарий <b>${fmtRub(pr.costs_if_empty_rub)}</b></span>
         <span>дизель ${esc(truck.fuel_l_per_100km ?? 30)} л/100 × ${esc(truck.diesel_rub_per_l ?? 80)} ₽</span>
-        <span>налог ${Math.round((truck.tax_pct ?? 0.35) * 100)}% · амортизация ${Math.round((truck.amortization_pct ?? 0.05) * 100)}%</span>
+        <span>налог {Math.round((truck.tax_pct ?? 0.35) * 100)}% от ставки · амортизация {Math.round((truck.amortization_pct ?? 0.05) * 100)}% от ставки</span>
         <span>погрузка/выгрузка ${esc(truck.load_unload_hours ?? 2.5)} ч</span>
       </div>
     </div>

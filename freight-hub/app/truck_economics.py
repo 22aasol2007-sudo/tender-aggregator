@@ -53,24 +53,30 @@ def trip_days(hours: float) -> int:
 
 def revenue_for_target_net(*, costs: float, target_net: float, p: dict[str, float] | None = None) -> float:
     """
-    Solve R from: net = (R - costs - amort*R) * (1 - tax) = target_net
-    amort = amortization_pct * R
-    => (R*(1-amort) - costs)*(1-tax) = target
-    => R = (costs + target/(1-tax)) / (1-amort)
+    Tax is taken from the client rate (turnover), not from profit:
+
+      tax = tax_pct * R
+      amort = amortization_pct * R
+      net = R - tax - amort - costs
+          = R * (1 - tax_pct - amortization_pct) - costs
+
+    Solve for target net:
+      R = (costs + target_net) / (1 - tax_pct - amortization_pct)
     """
     p = p or truck_params()
     amort = min(0.4, max(0.0, p["amortization_pct"]))
     tax = min(0.9, max(0.0, p["tax_pct"]))
-    denom = max(0.05, 1.0 - amort)
-    after_tax = max(0.05, 1.0 - tax)
-    return (float(costs) + float(target_net) / after_tax) / denom
+    keep = max(0.05, 1.0 - tax - amort)
+    return (float(costs) + float(target_net)) / keep
 
 
 def net_profit(*, revenue: float, costs: float, p: dict[str, float] | None = None) -> float:
+    """Net after tax-on-rate, amortization-on-rate, and operating costs."""
     p = p or truck_params()
-    amort = float(revenue) * p["amortization_pct"]
-    taxable = float(revenue) - float(costs) - amort
-    return taxable * (1.0 - p["tax_pct"])
+    r = float(revenue)
+    tax = r * p["tax_pct"]
+    amort = r * p["amortization_pct"]
+    return r - tax - amort - float(costs)
 
 
 def price_outbound_leg(
@@ -80,8 +86,8 @@ def price_outbound_leg(
     p: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """
-    Minimum outbound rate so that expected net profit hits target band,
-    after empty-return risk, amortization and tax.
+    Minimum outbound rate so that expected net profit hits target band.
+    Tax 35% and amortization 5% are taken from the client rate; then operating costs.
     """
     p = p or truck_params()
     km = float(km or 0)
@@ -142,6 +148,7 @@ def price_outbound_leg(
         "suggested_max_ppk": round(r_max / km, 1),
         "amortization_pct": p["amortization_pct"],
         "tax_pct": p["tax_pct"],
+        "tax_on": "client_rate",
         "target_net_min": p["target_net_min"],
         "target_net_max": p["target_net_max"],
     }

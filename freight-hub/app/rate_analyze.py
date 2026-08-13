@@ -228,7 +228,7 @@ class RateAnalyzer:
             "feed_sources": sources_used,
             "notes": [
                 f"Машина: дизель {int(params['fuel_l_per_100km'])} л/100 км × {int(params['diesel_rub_per_l'])} ₽, водитель {int(params['driver_day_rub'])} ₽/сут.",
-                f"Погрузка+выгрузка ≈ {params['load_unload_hours']} ч, амортизация {int(params['amortization_pct']*100)}%, налог {int(params['tax_pct']*100)}%.",
+                f"Погрузка+выгрузка ≈ {params['load_unload_hours']} ч, амортизация {int(params['amortization_pct']*100)}% от ставки, налог {int(params['tax_pct']*100)}% от ставки клиенту.",
                 f"Целевая чистая прибыль {int(params['target_net_min'])}–{int(params['target_net_max'])} ₽ на рейс.",
                 f"Обратка: город выгрузки + радиус {int(radius)} км к «{base_n}» (лента 7 суток + live внешних площадок).",
                 "Порожний возврат в расчёте заложен с вероятностью (1 − p_find).",
