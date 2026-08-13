@@ -238,11 +238,15 @@ class Perevozka24Scraper:
             body_type = _infer_body(text)
             posted_at = parse_posted_at_ru(text)
             # Prefer dedicated datetime node if present
+            from app.scrapers.board_common import parse_iso_datetime
+
             for sel in (".date", ".offer-date", ".time", "time", "[datetime]"):
                 node = el.select_one(sel)
                 if not node:
                     continue
-                candidate = parse_posted_at_ru(node.get_text(" ", strip=True))
+                candidate = parse_iso_datetime(node.get("datetime")) or parse_posted_at_ru(
+                    node.get_text(" ", strip=True)
+                )
                 if candidate:
                     posted_at = candidate
                     break

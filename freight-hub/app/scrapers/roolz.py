@@ -141,6 +141,19 @@ class RoolzScraper:
             if vm:
                 volume = float(vm.group(1).replace(",", "."))
         body = f"Есть груз. {frm or '?'} → {to or '?'}. {name}. {desc}. Ищу машину."[:2000]
+        from app.scrapers.board_common import parse_iso_datetime, parse_posted_at_ru
+
+        posted_at = None
+        for key in ("created_at", "updated_at", "published_at", "createdAt", "updatedAt", "date"):
+            val = row.get(key)
+            if val in (None, ""):
+                continue
+            if isinstance(val, (int, float)):
+                posted_at = parse_iso_datetime(str(int(val)))
+            else:
+                posted_at = parse_iso_datetime(str(val)) or parse_posted_at_ru(str(val))
+            if posted_at:
+                break
         return RawLoad(
             source=self.name,
             external_id=oid,
@@ -152,5 +165,6 @@ class RoolzScraper:
             volume_m3=volume,
             body_type=infer_body(blob),
             url=f"https://roolz.net/ru/offer/{oid}",
+            posted_at=posted_at,
             raw=row,
         )

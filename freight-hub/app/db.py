@@ -192,16 +192,27 @@ class HubDB:
 
     async def upsert_load(self, item: dict[str, Any]) -> str:
         """Insert or update. Returns 'added'|'updated'|'skipped'."""
+        from app import config as _cfg
+
         now = time.time()
+        max_age = float(_cfg.MAX_LOAD_AGE_SEC)
         created = item.get("created_at")
         try:
-            created_f = float(created) if created is not None else now
+            created_f = float(created) if created is not None else None
         except (TypeError, ValueError):
+            created_f = None
+        if created_f is not None and created_f > 1e12:
+            created_f /= 1000.0
+        if created_f is None:
             created_f = now
-        if created_f > now + 3600 or created_f < now - 120 * 86400:
+        elif created_f > now + 2 * 3600:
+            # Clock skew / bad parse → scrape time
             created_f = now
+        elif created_f < now - max_age:
+            # Explicit ancient publish time — do not revive as "now"
+            return "skipped"
         cur = await self.db.execute(
-            "SELECT id, body, score FROM loads WHERE source=? AND external_id=?",
+            "SELECT id, body, score, created_at FROM loads WHERE source=? AND external_id=?",
             (item["source"], item["external_id"]),
         )
         row = await cur.fetchone()
@@ -244,18 +255,29 @@ class HubDB:
             now,
         )
         if row:
-            # Keep created_at forever; refresh scraped_at only as "last seen".
-            # Retention uses created_at so week-old ads cannot immortalize via re-scrape.
+            # Keep created_at unless we now know a better (earlier) publish time within retention.
+            prev_c = float(row["created_at"]) if row["created_at"] is not None else now
+            new_created = prev_c
+            if item.get("created_at") is not None:
+                try:
+                    cand = float(item["created_at"])
+                    if cand > 1e12:
+                        cand /= 1000.0
+                    if (now - max_age) <= cand <= now + 2 * 3600 and cand < prev_c - 60:
+                        new_created = cand
+                except (TypeError, ValueError):
+                    pass
             await self.db.execute(
                 """
                 UPDATE loads SET
                     title=?, body=?, from_city=?, to_city=?, tonnage=?, volume_m3=?,
                     body_type=?, temps=?, price=?, load_date=?, phones=?, contacts=?,
                     url=?, score=?, score_ok=?, kind=?, fingerprint=?, route_fp=?,
-                    km_from=?, km_to=?, route_km=?, price_per_km=?, raw_json=?, scraped_at=?
+                    km_from=?, km_to=?, route_km=?, price_per_km=?, raw_json=?, scraped_at=?,
+                    created_at=?
                 WHERE id=?
                 """,
-                (*vals, row["id"]),
+                (*vals, new_created, row["id"]),
             )
             await self._commit()
             return "updated"
@@ -326,9 +348,11 @@ class HubDB:
         args: list[Any] = [min_score]
         age = max_age_sec if max_age_sec is not None else float(_cfg.MAX_LOAD_AGE_SEC)
         if age > 0:
-            # Age from first sighting — re-scrapes must not keep week-old ads forever
-            sql.append("AND created_at >= ?")
-            args.append(time.time() - age)
+            # Age from publish/first-seen — never show > retention window
+            cutoff = time.time() - age
+            sql.append("AND created_at >= ? AND created_at <= ?")
+            args.append(cutoff)
+            args.append(time.time() + 2 * 3600)
         if geo_corridor:
             # One end ≤ near_km of Moscow, both ends ≤ far_km
             sql.append(
@@ -580,11 +604,15 @@ class HubDB:
             """,
             (now - junk,),
         )
-        # Hard max age from first ingest (created_at). Re-scrape bumps scraped_at
-        # but must not keep the same external_id in the feed longer than MAX_LOAD_AGE.
+        # Hard max age from publish/first-seen (created_at)
         await self.db.execute(
             "DELETE FROM loads WHERE created_at < ?",
             (now - strong,),
+        )
+        # Drop absurd future stamps
+        await self.db.execute(
+            "DELETE FROM loads WHERE created_at > ?",
+            (now + 2 * 86400,),
         )
         # Also drop ads not seen on boards for the full retention window
         await self.db.execute(

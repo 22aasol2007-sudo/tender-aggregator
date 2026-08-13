@@ -82,6 +82,19 @@ class PapaCargoScraper:
             f"Дата: {row.get('date') or '—'}. Ищу машину."
         )
         price = None
+        from app.scrapers.board_common import parse_iso_datetime, parse_posted_at_ru
+
+        posted_at = None
+        for key in ("created_at", "updated_at", "published_at", "date", "datetime"):
+            val = row.get(key)
+            if val in (None, ""):
+                continue
+            if isinstance(val, (int, float)):
+                posted_at = parse_iso_datetime(str(int(val)))
+            else:
+                posted_at = parse_iso_datetime(str(val)) or parse_posted_at_ru(str(val))
+            if posted_at:
+                break
         # payment fields vary
         return RawLoad(
             source=self.name,
@@ -95,5 +108,6 @@ class PapaCargoScraper:
             body_type=body_type,
             price=price,
             url=f"https://papacargo.com/loads/{lid}",
+            posted_at=posted_at,
             raw=row,
         )

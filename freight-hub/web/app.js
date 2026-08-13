@@ -23,11 +23,25 @@ function sourceLabel(source) {
 }
 
 function fmtPosted(item) {
-  const t = Number(item.created_at || item.scraped_at || 0);
+  let t = Number(item.created_at || item.scraped_at || 0);
   if (!t) return "";
+  if (t > 1e12) t = t / 1000; // ms → sec
   const d = new Date(t * 1000);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (Number.isNaN(d.getTime())) return "";
+  // Always show Moscow wall-clock so TG/boards match carrier expectation
+  const parts = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type) => (parts.find((p) => p.type === type) || {}).value || "";
+  const year = get("year");
+  const yShort = year && year !== String(new Date().getFullYear()) ? `.${year}` : "";
+  return `${get("day")}.${get("month")}${yShort} ${get("hour")}:${get("minute")}`;
 }
 
 function metaContent(name) {

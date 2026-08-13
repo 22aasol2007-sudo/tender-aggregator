@@ -104,6 +104,9 @@ class AvtodispetcherScraper:
                 price = re.sub(r"\s+", "", pm.group(1)) + " руб"
             url = href if href.startswith("http") else "https://www.avtodispetcher.ru" + href
             body = f"Есть груз. {frm or '?'} → {to or '?'}. {text}. Ищу машину."[:2000]
+            from app.scrapers.board_common import parse_posted_at_ru
+
+            posted_at = parse_posted_at_ru(text)
             out.append(
                 RawLoad(
                     source=self.name,
@@ -117,7 +120,8 @@ class AvtodispetcherScraper:
                     body_type=infer_body(text),
                     price=price,
                     url=url,
-                    raw={"offer_id": eid},
+                    posted_at=posted_at,
+                    raw={"offer_id": eid, "posted_at": posted_at},
                 )
             )
         uniq: dict[str, RawLoad] = {}

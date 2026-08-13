@@ -63,10 +63,15 @@ def test_parse_posted_at_ru():
     from app.scrapers.board_common import parse_posted_at_ru
 
     ref = datetime(2026, 8, 13, 16, 0, 0).timestamp()
-    ts = parse_posted_at_ru("31.07 11:43 №1271678 Видное", now=ref)
+    # Within 7 days
+    ts = parse_posted_at_ru("10.08 11:43 №1271678 Видное", now=ref)
     assert ts is not None
-    dt = datetime.fromtimestamp(ts)
-    assert dt.day == 31 and dt.month == 7 and dt.hour == 11 and dt.minute == 43
+    # Explicit ancient year must be rejected
+    assert parse_posted_at_ru("15.03.2022 11:43 груз", now=ref) is None
+    # Older than 7 days without year
+    assert parse_posted_at_ru("31.07 11:43 №1", now=ref) is None
+    # Loading date label is not publish time
+    assert parse_posted_at_ru("Погрузка 12.08 10:00 тент", now=ref) is None
     assert parse_posted_at_ru("no date here", now=ref) is None
 
 

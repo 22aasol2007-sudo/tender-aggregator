@@ -247,9 +247,14 @@ async def _persist(
     except (TypeError, ValueError):
         posted_at_f = None
     if posted_at_f is not None:
+        # Normalize ms timestamps
+        if posted_at_f > 1e12:
+            posted_at_f /= 1000.0
         age = time.time() - posted_at_f
+        # Hard rule: never ingest anything older than retention window
         if age > config.MAX_LOAD_AGE_SEC:
             return "skipped"
+        # Far-future clock skew → fall back to scrape time
         if age < -2 * 3600:
             posted_at_f = None
 

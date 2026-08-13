@@ -15,10 +15,10 @@ from app.models import RawLoad
 log = logging.getLogger("scraper.tg_public")
 
 _MSG_RE = re.compile(
-    r'data-post="(?P<chan>[^"/]+)/(?P<mid>\d+)"[^>]*>.*?'
-    r'class="tgme_widget_message_text[^"]*"[^>]*>(?P<body>.*?)</div>',
+    r'data-post="(?P<chan>[^"/]+)/(?P<mid>\d+)"(?P<chunk>.*?)(?=data-post="|\Z)',
     re.S,
 )
+_TIME_RE = re.compile(r'<time[^>]+datetime="([^"]+)"', re.I)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -57,6 +57,8 @@ class TgPublicScraper:
         return out
 
     def _parse(self, html: str, chan: str) -> list[RawLoad]:
+        from app.scrapers.board_common import parse_iso_datetime
+
         out: list[RawLoad] = []
         seen: set[str] = set()
         for m in _MSG_RE.finditer(html):
@@ -65,9 +67,21 @@ class TgPublicScraper:
             if eid in seen:
                 continue
             seen.add(eid)
-            body = _html_to_text(m.group("body"))
+            chunk = m.group("chunk") or ""
+            body_m = re.search(
+                r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+                chunk,
+                re.S,
+            )
+            if not body_m:
+                continue
+            body = _html_to_text(body_m.group(1))
             if len(body) < 25:
                 continue
+            posted_at = None
+            tm = _TIME_RE.search(chunk)
+            if tm:
+                posted_at = parse_iso_datetime(tm.group(1))
             out.append(
                 RawLoad(
                     source="tg_public",
@@ -75,7 +89,8 @@ class TgPublicScraper:
                     title=f"@{chan}",
                     body=body[:4000],
                     url=f"https://t.me/{chan}/{mid}",
-                    raw={"channel": chan, "msg_id": mid, "via": "tme_s"},
+                    posted_at=posted_at,
+                    raw={"channel": chan, "msg_id": mid, "via": "tme_s", "posted_at": posted_at},
                 )
             )
         return out

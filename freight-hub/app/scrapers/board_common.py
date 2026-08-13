@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 
 from app.parse import CITY_ALIASES
 
@@ -70,6 +71,8 @@ BODY_HINTS = (
     ("цельнометалл", "box"),
 )
 
+MSK = timezone(timedelta(hours=3))
+
 
 def exact_city(raw: str | None) -> str | None:
     if not raw:
@@ -108,10 +111,49 @@ def parse_tonnage(text: str) -> float | None:
     return None
 
 
-def parse_posted_at_ru(text: str, *, now: float | None = None) -> float | None:
-    """Parse board timestamps like '31.07 11:43' or '31.07.2026 11:43' → unix seconds."""
+def _max_age_sec() -> float:
+    try:
+        from app import config
+
+        return float(getattr(config, "MAX_LOAD_AGE_SEC", 7 * 86400))
+    except Exception:
+        return 7 * 86400
+
+
+def parse_iso_datetime(value: str | None, *, now: float | None = None) -> float | None:
+    """Parse ISO-8601 / unix ms-or-s into unix seconds. Rejects outside MAX_LOAD_AGE."""
     import time as _time
-    from datetime import datetime
+
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    ref = now if now is not None else _time.time()
+    try:
+        if re.fullmatch(r"\d{10,13}", raw):
+            ts = float(raw)
+            if ts > 1e12:
+                ts /= 1000.0
+        else:
+            cleaned = raw.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(cleaned)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=MSK)
+            ts = dt.timestamp()
+    except Exception:
+        return None
+    if ts > ref + 2 * 86400 or ts < ref - _max_age_sec():
+        return None
+    return ts
+
+
+def parse_posted_at_ru(text: str, *, now: float | None = None) -> float | None:
+    """Parse board timestamps like '31.07 11:43' or '31.07.2026 11:43' → unix seconds.
+
+    Rejects timestamps older than MAX_LOAD_AGE (default 7 days).
+    Skips dates glued to погрузка/выгрузка labels (those are load dates, not publish time).
+    Board wall-clock is treated as Europe/Moscow.
+    """
+    import time as _time
 
     raw = text or ""
     m = re.search(
@@ -119,7 +161,18 @@ def parse_posted_at_ru(text: str, *, now: float | None = None) -> float | None:
         raw,
     )
     if not m:
+        iso = re.search(
+            r"\b(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)\b",
+            raw,
+        )
+        if iso:
+            return parse_iso_datetime(iso.group(1), now=now)
         return None
+
+    prefix = raw[max(0, m.start() - 28) : m.start()].lower()
+    if re.search(r"(погрузк|выгрузк|загрузк)\w*\s*[:=]?\s*$", prefix):
+        return None
+
     day = int(m.group(1))
     month = int(m.group(2))
     year_raw = m.group(3)
@@ -133,21 +186,21 @@ def parse_posted_at_ru(text: str, *, now: float | None = None) -> float | None:
         year = int(year_raw)
         if year < 100:
             year += 2000
+        if year < ref_dt.year - 1:
+            return None
     else:
         year = ref_dt.year
-        # If date is far in the future (e.g. Dec seen in Jan), roll back a year
         try:
-            candidate = datetime(year, month, day, hour, minute)
+            candidate = datetime(year, month, day, hour, minute, tzinfo=MSK)
         except ValueError:
             return None
         if candidate.timestamp() > ref + 2 * 86400:
             year -= 1
     try:
-        dt = datetime(year, month, day, hour, minute)
+        dt = datetime(year, month, day, hour, minute, tzinfo=MSK)
     except ValueError:
         return None
     ts = dt.timestamp()
-    # Ignore absurdly old / future values
-    if ts > ref + 2 * 86400 or ts < ref - 120 * 86400:
+    if ts > ref + 2 * 86400 or ts < ref - _max_age_sec():
         return None
     return ts

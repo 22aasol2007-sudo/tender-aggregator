@@ -100,6 +100,20 @@ class VezetVsemScraper:
                     vol = float(vm.group(1).replace(",", "."))
                 except ValueError:
                     pass
+            from app.scrapers.board_common import parse_iso_datetime, parse_posted_at_ru
+
+            posted_at = None
+            for sel in ("time[datetime]", "[data-time]", "[data-created]", ".date", ".time", ".order-date"):
+                node = el.select_one(sel)
+                if not node:
+                    continue
+                posted_at = parse_iso_datetime(node.get("datetime") or node.get("data-time") or node.get("data-created"))
+                if not posted_at:
+                    posted_at = parse_posted_at_ru(node.get_text(" ", strip=True))
+                if posted_at:
+                    break
+            if not posted_at:
+                posted_at = parse_posted_at_ru(text)
             href = None
             a = el.select_one("a.x-order-link[href], a.order_info[href]")
             if a and a.get("href"):
@@ -123,7 +137,8 @@ class VezetVsemScraper:
                     volume_m3=vol,
                     body_type=infer_body(text + " " + cargo),
                     url=href or f"https://www.vezetvsem.ru/listing/all",
-                    raw={"order_id": eid, "cargo": cargo},
+                    posted_at=posted_at,
+                    raw={"order_id": eid, "cargo": cargo, "posted_at": posted_at},
                 )
             )
         return out
