@@ -88,11 +88,19 @@ function esc(s) {
 function routeText(item) {
   const a = (item.from_city || "").trim();
   const b = (item.to_city || "").trim();
-  if (a && b) return `${a} → ${b}`;
-  if (a || b) return `${a || "?"} → ${b || "?"}`;
-  const title = (item.title || "").trim();
-  if (title && !/^\?\s*→\s*\?$/.test(title)) return title;
-  return "Маршрут не указан";
+  let base = "";
+  if (a && b) base = `${a} → ${b}`;
+  else if (a || b) base = `${a || "?"} → ${b || "?"}`;
+  else {
+    const title = (item.title || "").trim();
+    if (title && !/^\?\s*→\s*\?$/.test(title)) base = title;
+    else base = "Маршрут не указан";
+  }
+  const km = Number(item.route_km);
+  if (Number.isFinite(km) && km > 0) {
+    return `${base} · ${Math.round(km)} км`;
+  }
+  return base;
 }
 
 function parseList(val) {
@@ -258,7 +266,10 @@ function cardHtml(item) {
     const ppk = Number(item.price_per_km);
     facts.push(`<span><b>${esc(ppk.toLocaleString("ru-RU", { maximumFractionDigits: 0 }))}</b> ₽/км</span>`);
   }
-  if (item.route_km != null) facts.push(`<span>${esc(Math.round(Number(item.route_km)))} км</span>`);
+  // route_km already shown in route line; keep compact fact only if route line had no cities
+  if (item.route_km != null && !(item.from_city && item.to_city)) {
+    facts.push(`<span>${esc(Math.round(Number(item.route_km)))} км</span>`);
+  }
   if (item.load_date) facts.push(`<span>${esc(item.load_date)}</span>`);
 
   const meta = [];

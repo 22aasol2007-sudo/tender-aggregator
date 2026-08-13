@@ -32,6 +32,16 @@ def test_geo_moscow_tula_reasonable():
     assert 100 < km < 300
 
 
+def test_route_km_without_price():
+    from app.ingest import calc_price_per_km
+
+    km, ppk = calc_price_per_km(None, "москва", "тула")
+    assert km is not None and 100 < km < 300
+    assert ppk is None
+    km2, ppk2 = calc_price_per_km("45000 руб", "москва", "тула")
+    assert km2 is not None and ppk2 is not None and ppk2 > 0
+
+
 def test_score_hot_shipper():
     text = "Груз реф Москва → Воронеж 20т +2. Цена 80000. Ищу машину. +79001234567"
     parsed = parse_load(text)

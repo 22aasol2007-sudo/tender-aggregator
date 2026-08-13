@@ -94,19 +94,20 @@ def calc_price_per_km(
     from_city: str | None,
     to_city: str | None,
 ) -> tuple[float | None, float | None]:
-    """Return (route_km, rub_per_km) when both price and distance are known."""
-    amount = parse_price_rub(price)
-    if amount is None:
-        return None, None
+    """Return (route_km, rub_per_km). Distance is computed even without a price."""
     try:
         from freight_core.geo import distance_km
 
         route_km = distance_km(from_city, to_city)
     except Exception:
         route_km = None
-    if route_km is None or route_km < 5:
+    if route_km is None:
+        return None, None
+    route_km = round(float(route_km), 1)
+    amount = parse_price_rub(price)
+    if amount is None or route_km < 5:
         return route_km, None
-    return round(route_km, 1), round(amount / route_km, 1)
+    return route_km, round(amount / route_km, 1)
 
 
 def is_junk_route(from_city: str | None, to_city: str | None, *, source: str = "") -> bool:

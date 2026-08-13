@@ -73,6 +73,12 @@ async def lifespan(_: FastAPI):
         log.info("startup cleanup done")
     except Exception as exc:
         log.warning("startup cleanup failed: %s", exc)
+    try:
+        n = await db.backfill_route_km()
+        if n:
+            log.info("backfilled route_km for %s loads", n)
+    except Exception as exc:
+        log.warning("route_km backfill failed: %s", exc)
     worker.start()
 
     # Listeners start independently — one failure must not block the other
@@ -533,14 +539,16 @@ async def loads(
     from app.ingest import calc_price_per_km, why_rank
 
     for row in rows:
-        # Enrich price/km for older rows that lack stored fields
-        if row.get("price") and (row.get("price_per_km") is None or row.get("route_km") is None):
+        # Fill route length from cities even when price is missing (common in TG/MAX)
+        need_km = row.get("route_km") is None and row.get("from_city") and row.get("to_city")
+        need_ppk = row.get("price") and row.get("price_per_km") is None
+        if need_km or need_ppk:
             route_km, ppk = calc_price_per_km(
                 row.get("price"), row.get("from_city"), row.get("to_city")
             )
-            if route_km is not None:
+            if route_km is not None and row.get("route_km") is None:
                 row["route_km"] = route_km
-            if ppk is not None:
+            if ppk is not None and row.get("price_per_km") is None:
                 row["price_per_km"] = ppk
         row["why"] = why_rank(
             score=int(row.get("score") or 0),

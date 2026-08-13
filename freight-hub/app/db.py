@@ -499,6 +499,42 @@ class HubDB:
         )
         return {str(r["source"]): bool(r["ok"]) for r in await cur.fetchall()}
 
+    async def backfill_route_km(self, limit: int = 2000) -> int:
+        """Fill missing route_km from from_city/to_city. Returns updated row count."""
+        from app.ingest import calc_price_per_km
+
+        cur = await self.db.execute(
+            """
+            SELECT id, from_city, to_city, price, price_per_km FROM loads
+            WHERE route_km IS NULL
+              AND from_city IS NOT NULL AND TRIM(from_city) != ''
+              AND to_city IS NOT NULL AND TRIM(to_city) != ''
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cur.fetchall()
+        updated = 0
+        for r in rows:
+            route_km, ppk = calc_price_per_km(r["price"], r["from_city"], r["to_city"])
+            if route_km is None:
+                continue
+            if r["price_per_km"] is None and ppk is not None:
+                await self.db.execute(
+                    "UPDATE loads SET route_km=?, price_per_km=? WHERE id=?",
+                    (route_km, ppk, r["id"]),
+                )
+            else:
+                await self.db.execute(
+                    "UPDATE loads SET route_km=? WHERE id=?",
+                    (route_km, r["id"]),
+                )
+            updated += 1
+        if updated:
+            await self.db.commit()
+        return updated
+
     async def log_run(
         self, source: str, ok: bool, added: int, updated: int, error: str | None, started: float
     ) -> None:
