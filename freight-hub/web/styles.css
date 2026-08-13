@@ -246,6 +246,97 @@ body {
   background: var(--sites);
   box-shadow: 0 0 20px var(--sites-glow);
 }
+.tab.tab-analyze.active {
+  color: #0b1220;
+  background: #7eb6ff;
+  box-shadow: 0 0 20px rgba(126, 182, 255, 0.28);
+}
+
+.zone-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  max-width: 52rem;
+  line-height: 1.4;
+}
+.analyze-form {
+  margin-top: 8px;
+}
+.analyze-out {
+  margin-top: 14px;
+  display: grid;
+  gap: 14px;
+}
+.analyze-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.analyze-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0,0,0,.35);
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+.analyze-big {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.analyze-card .muted, .muted { color: var(--muted); font-size: 0.86rem; }
+.risk-pill {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.risk-low { background: rgba(47,191,120,.18); color: #7dffb5; }
+.risk-mid { background: rgba(255,186,73,.16); color: #ffd27a; }
+.risk-high { background: rgba(255,90,90,.16); color: #ff9b9b; }
+.offer-verdict { font-weight: 700; margin-top: 4px; }
+.offer-verdict.ok { color: #7dffb5; }
+.offer-verdict.bad { color: #ff9b9b; }
+.analyze-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.analyze-sources {
+  margin: 8px 0 0;
+  padding: 0 0 0 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.analyze-sources .src-tag {
+  display: inline-block;
+  min-width: 3.4rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.analyze-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin-top: 8px;
+}
+.analyze-table th, .analyze-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.analyze-table th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; }
+.analyze-notes { color: var(--muted); font-size: 0.8rem; line-height: 1.45; margin: 0; }
+.analyze-loading, .analyze-err { color: var(--muted); }
+.analyze-err { color: #ff9b9b; }
 
 .ati-filters {
   display: grid;

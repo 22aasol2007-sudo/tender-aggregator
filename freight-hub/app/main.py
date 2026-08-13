@@ -15,6 +15,7 @@ import app._bootstrap  # noqa: F401
 from app import config
 from app.auth import require_write_token
 from app.db import HubDB
+from app.rate_analyze import RateAnalyzer
 from app.scrapers.max_src import MaxIngest
 from app.scrapers.telegram_src import TelegramIngest
 from app.worker import ScrapeWorker
@@ -427,6 +428,57 @@ async def stats() -> dict[str, Any]:
     st = await db.stats()
     st["tg_health"] = await db.get_tg_health()
     return st
+
+
+@app.get("/api/analyze/route")
+async def analyze_route(
+    destination: str = Query(..., min_length=2, max_length=80),
+    base: str | None = Query(None, max_length=80),
+    offer_rub: float | None = Query(None, ge=0, le=50_000_000),
+    tonnage: float | None = Query(None, ge=0, le=100),
+    body: str | None = Query(None, max_length=32),
+    live: bool = Query(True),
+) -> dict[str, Any]:
+    """Backhaul liquidity + suggested min rate for base→destination."""
+    base_city = (base or "").strip()
+    if not base_city:
+        try:
+            truck = await db.get_json_setting("truck_profile", {})
+            if isinstance(truck, dict):
+                base_city = str(truck.get("base") or "москва")
+            else:
+                base_city = "москва"
+        except Exception:
+            base_city = "москва"
+    analyzer = RateAnalyzer(db)
+    return await analyzer.analyze(
+        base=base_city,
+        destination=destination.strip(),
+        offer_rub=offer_rub,
+        tonnage=tonnage,
+        body=body,
+        live_probe=live,
+    )
+
+
+@app.get("/api/analyze/ranking")
+async def analyze_ranking(
+    base: str | None = Query(None, max_length=80),
+    days: float = Query(7, ge=1, le=30),
+    limit: int = Query(25, ge=5, le=50),
+) -> dict[str, Any]:
+    base_city = (base or "").strip()
+    if not base_city:
+        try:
+            truck = await db.get_json_setting("truck_profile", {})
+            if isinstance(truck, dict):
+                base_city = str(truck.get("base") or "москва")
+            else:
+                base_city = "москва"
+        except Exception:
+            base_city = "москва"
+    rows = await db.backhaul_city_ranking(base=base_city, days=days, limit=limit)
+    return {"ok": True, "base": base_city, "days": days, "ranking": rows}
 
 
 SOURCE_GROUPS: dict[str, list[str]] = {

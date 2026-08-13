@@ -562,12 +562,146 @@ if (swapBtn) {
     loadList().catch(alert);
   });
 }
-document.querySelectorAll(".tab").forEach((btn) => {
+document.querySelectorAll(".tab[data-channel]").forEach((btn) => {
   btn.addEventListener("click", () => {
     setChannel(btn.dataset.channel || "all");
     loadList().catch(alert);
   });
 });
+
+function setAppView(view) {
+  const feed = view !== "analyze";
+  const feedSec = $("viewFeed");
+  const analyzeSec = $("viewAnalyze");
+  const feedMain = $("feedMain");
+  if (feedSec) feedSec.hidden = !feed;
+  if (feedMain) feedMain.hidden = !feed;
+  if (analyzeSec) analyzeSec.hidden = feed;
+  document.querySelectorAll(".mode-tabs .tab").forEach((btn) => {
+    const on = (btn.dataset.view || "feed") === view;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  if (!feed && $("aBase") && !$("aBase").value && $("pBase")) {
+    $("aBase").value = $("pBase").value || "москва";
+  }
+}
+
+document.querySelectorAll(".mode-tabs .tab").forEach((btn) => {
+  btn.addEventListener("click", () => setAppView(btn.dataset.view || "feed"));
+});
+
+function fmtRub(n) {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return `${Math.round(Number(n)).toLocaleString("ru-RU")} ₽`;
+}
+
+function riskClass(risk) {
+  if (risk === "низкий") return "risk-low";
+  if (risk === "средний") return "risk-mid";
+  return "risk-high";
+}
+
+async function runAnalyze() {
+  const dest = ($("aDest").value || "").trim();
+  if (!dest) {
+    alert("Укажите город выгрузки");
+    return;
+  }
+  const base = ($("aBase").value || $("pBase").value || "москва").trim();
+  const offer = ($("aOffer").value || "").trim();
+  const live = $("aLive") ? $("aLive").checked : true;
+  const params = new URLSearchParams({
+    destination: dest,
+    base,
+    live: live ? "true" : "false",
+  });
+  if (offer) params.set("offer_rub", offer);
+  const ton = ($("pTonnage").value || "").trim();
+  const body = ($("pBody").value || "").trim();
+  if (ton) params.set("tonnage", ton);
+  if (body) params.set("body", body);
+
+  $("btnAnalyze").disabled = true;
+  $("analyzeOut").hidden = false;
+  $("analyzeOut").innerHTML = `<p class="analyze-loading">Считаем ленту и опрашиваем внешние площадки…</p>`;
+  try {
+    const data = await api(`/api/analyze/route?${params}`);
+    if (!data.ok) {
+      $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(data.error || "Ошибка")}</p>`;
+      return;
+    }
+    const bh = data.backhaul || {};
+    const pr = data.pricing || {};
+    const offerEv = pr.offer;
+    const live = data.live_external || {};
+    const sources = (live.sources || [])
+      .map((s) => {
+        const tag = s.wired ? "лента" : "внешн.";
+        const st = s.ok ? `${s.count ?? 0}` : (s.note || s.error || "нет");
+        return `<li><span class="src-tag">${esc(tag)}</span> <strong>${esc(s.name || "?")}</strong>: ${esc(String(st))}</li>`;
+      })
+      .join("");
+    const rankRows = (data.ranking || [])
+      .slice(0, 10)
+      .map((r, i) => {
+        const mark = (r.city || "") === data.destination ? " ★" : "";
+        return `<tr><td>${i + 1}</td><td>${esc(r.city)}${mark}</td><td>${r.backhaul_n}</td><td>${r.avg_ppk ?? "—"}</td></tr>`;
+      })
+      .join("");
+    $("analyzeOut").innerHTML = `
+      <div class="analyze-grid">
+        <div class="analyze-card">
+          <div class="ati-label">Маршрут</div>
+          <div class="analyze-big">${esc(data.base)} → ${esc(data.destination)}</div>
+          <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"}</div>
+        </div>
+        <div class="analyze-card">
+          <div class="ati-label">Обратка к базе</div>
+          <div class="analyze-big">${bh.count ?? 0}</div>
+          <div class="muted">лента ${bh.count_feed ?? 0} + внешние ${bh.count_external ?? 0}</div>
+          <div class="risk-pill ${riskClass(bh.risk)}">риск ${esc(bh.risk || "—")} · p≈${bh.p_find ?? "—"}</div>
+          <div class="muted">ранг ${bh.rank ?? "—"} / ${bh.peers ?? "—"} · медиана пиров ${bh.peer_median_backhaul ?? "—"}</div>
+        </div>
+        <div class="analyze-card">
+          <div class="ati-label">Мин. ставка с учётом порожняка</div>
+          <div class="analyze-big">${fmtRub(pr.suggested_min_total_rub)}</div>
+          <div class="muted">${pr.suggested_min_ppk != null ? `${pr.suggested_min_ppk} ₽/км` : ""} · рынок ${pr.market_outbound_ppk ?? "—"} ₽/км</div>
+          <div class="muted">ожид. порожний ${fmtRub(pr.expected_empty_cost_rub)} (при ${pr.empty_ppk_assumed ?? "—"} ₽/км)</div>
+          ${offerEv ? `<div class="offer-verdict ${offerEv.verdict === "выгодно" ? "ok" : "bad"}">${esc(offerEv.verdict)} · ${fmtRub(offerEv.vs_hurdle_rub)} к порогу</div>` : ""}
+        </div>
+      </div>
+      <div class="analyze-split">
+        <div>
+          <div class="ati-label">Внешние / live</div>
+          <ul class="analyze-sources">${sources || "<li>нет данных</li>"}</ul>
+        </div>
+        <div>
+          <div class="ati-label">Топ городов по обратке к «${esc(data.base)}»</div>
+          <table class="analyze-table"><thead><tr><th>#</th><th>Город</th><th>N</th><th>₽/км</th></tr></thead><tbody>${rankRows}</tbody></table>
+        </div>
+      </div>
+      <p class="analyze-notes">${(data.notes || []).map(esc).join(" · ")}</p>
+    `;
+  } catch (e) {
+    $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(e.message || e)}</p>`;
+  } finally {
+    $("btnAnalyze").disabled = false;
+  }
+}
+
+const btnAnalyze = $("btnAnalyze");
+if (btnAnalyze) {
+  btnAnalyze.addEventListener("click", () => runAnalyze().catch(alert));
+}
+["aDest", "aOffer", "aBase"].forEach((id) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runAnalyze().catch(alert);
+  });
+});
+
 const clearMutes = $("btnClearMutes");
 if (clearMutes) {
   clearMutes.addEventListener("click", async () => {

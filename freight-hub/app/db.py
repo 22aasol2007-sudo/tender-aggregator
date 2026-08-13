@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import statistics
 import time
 from pathlib import Path
 from typing import Any
@@ -625,6 +626,113 @@ class HubDB:
             (float(_cfg.TONNAGE_MIN), float(_cfg.TONNAGE_MAX)),
         )
         await self.db.commit()
+
+    async def stats_sources_in_window(self, *, days: float = 7) -> list[dict[str, Any]]:
+        cutoff = time.time() - float(days) * 86400
+        cur = await self.db.execute(
+            """
+            SELECT source, COUNT(*) AS c FROM loads
+            WHERE created_at >= ?
+            GROUP BY source ORDER BY c DESC
+            """,
+            (cutoff,),
+        )
+        return [{"source": r["source"], "count": int(r["c"])} for r in await cur.fetchall()]
+
+    async def route_stats(
+        self,
+        *,
+        from_city: str,
+        to_city: str,
+        days: float = 7,
+    ) -> dict[str, Any]:
+        from app.ingest import parse_price_rub
+        from app.parse import city_search_terms
+
+        cutoff = time.time() - float(days) * 86400
+        f_terms = city_search_terms(from_city) or [from_city.lower()]
+        t_terms = city_search_terms(to_city) or [to_city.lower()]
+        f_sql = " OR ".join(["LOWER(COALESCE(from_city,'')) LIKE ?"] * len(f_terms))
+        t_sql = " OR ".join(["LOWER(COALESCE(to_city,'')) LIKE ?"] * len(t_terms))
+        args: list[Any] = [cutoff, *[f"%{x}%" for x in f_terms], *[f"%{x}%" for x in t_terms]]
+        cur = await self.db.execute(
+            f"""
+            SELECT price, price_per_km, route_km FROM loads
+            WHERE created_at >= ?
+              AND ({f_sql})
+              AND ({t_sql})
+            """,
+            args,
+        )
+        rows = await cur.fetchall()
+        ppks: list[float] = []
+        prices: list[float] = []
+        for r in rows:
+            if r["price_per_km"] is not None:
+                try:
+                    ppks.append(float(r["price_per_km"]))
+                except (TypeError, ValueError):
+                    pass
+            amt = parse_price_rub(r["price"])
+            if amt is not None:
+                prices.append(float(amt))
+        med_ppk = float(statistics.median(ppks)) if ppks else None
+        med_price = float(statistics.median(prices)) if prices else None
+        return {
+            "count": len(rows),
+            "median_ppk": round(med_ppk, 1) if med_ppk is not None else None,
+            "median_price": round(med_price, 0) if med_price is not None else None,
+        }
+
+    async def backhaul_to_base_stats(
+        self,
+        *,
+        origin: str,
+        base: str,
+        days: float = 7,
+    ) -> dict[str, Any]:
+        """Loads from origin-area toward base (to_city near base)."""
+        return await self.route_stats(from_city=origin, to_city=base, days=days)
+
+    async def backhaul_city_ranking(
+        self,
+        *,
+        base: str = "москва",
+        days: float = 7,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        """Rank origin cities by count of loads toward base (backhaul liquidity)."""
+        from app.parse import city_search_terms
+
+        cutoff = time.time() - float(days) * 86400
+        b_terms = city_search_terms(base) or [base.lower()]
+        t_sql = " OR ".join(["LOWER(COALESCE(to_city,'')) LIKE ?"] * len(b_terms))
+        args: list[Any] = [cutoff, *[f"%{x}%" for x in b_terms]]
+        cur = await self.db.execute(
+            f"""
+            SELECT LOWER(TRIM(from_city)) AS city, COUNT(*) AS c,
+                   AVG(price_per_km) AS avg_ppk
+            FROM loads
+            WHERE created_at >= ?
+              AND from_city IS NOT NULL AND TRIM(from_city) != ''
+              AND ({t_sql})
+            GROUP BY LOWER(TRIM(from_city))
+            HAVING c >= 1
+            ORDER BY c DESC
+            LIMIT ?
+            """,
+            [*args, int(limit)],
+        )
+        out = []
+        for r in await cur.fetchall():
+            out.append(
+                {
+                    "city": r["city"],
+                    "backhaul_n": int(r["c"]),
+                    "avg_ppk": round(float(r["avg_ppk"]), 1) if r["avg_ppk"] is not None else None,
+                }
+            )
+        return out
 
 
 def make_fingerprint(*parts: str) -> str:
