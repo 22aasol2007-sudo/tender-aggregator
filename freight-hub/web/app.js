@@ -136,6 +136,11 @@ function cardHtml(item) {
   if (item.volume_m3 != null) facts.push(`<span><b>${esc(item.volume_m3)}</b> м³</span>`);
   if (item.body_type) facts.push(`<span>${esc(item.body_type)}</span>`);
   if (item.price) facts.push(`<span><b>${esc(item.price)}</b></span>`);
+  if (item.price_per_km != null) {
+    const ppk = Number(item.price_per_km);
+    facts.push(`<span><b>${esc(ppk.toLocaleString("ru-RU", { maximumFractionDigits: 0 }))}</b> ₽/км</span>`);
+  }
+  if (item.route_km != null) facts.push(`<span>${esc(Math.round(Number(item.route_km)))} км</span>`);
   if (item.load_date) facts.push(`<span>${esc(item.load_date)}</span>`);
 
   const meta = [];

@@ -38,11 +38,64 @@ ARCHIVE_RE = re.compile(
     re.I,
 )
 
+# "62000", "62 000 руб", "62тыс", "1200₽/км" (last is already per-km — skip dividing)
+_PRICE_NUM_RE = re.compile(r"(\d[\d\s]{2,12}|\d+(?:[.,]\d+)?)", re.I)
+
 
 def is_archived_text(text: str | None) -> bool:
     if not text:
         return False
     return bool(ARCHIVE_RE.search(text))
+
+
+def parse_price_rub(price: str | None) -> float | None:
+    """Parse human price string into total RUB amount (not per-km)."""
+    if not price:
+        return None
+    raw = str(price).strip().lower().replace("\xa0", " ")
+    if not raw:
+        return None
+    # Already per-km — don't treat as total haul price
+    if "/км" in raw or "за км" in raw or "руб/км" in raw or "₽/км" in raw:
+        return None
+    m = _PRICE_NUM_RE.search(raw.replace(" ", ""))
+    if not m:
+        m = _PRICE_NUM_RE.search(raw)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1).replace(" ", "").replace(",", "."))
+    except ValueError:
+        return None
+    if val <= 0:
+        return None
+    if "тыс" in raw or "т.р" in raw or re.search(r"\bтр\b", raw):
+        if val < 1000:
+            val *= 1000
+    # Ignore tiny numbers that are likely not freight rates
+    if val < 1000:
+        return None
+    return val
+
+
+def calc_price_per_km(
+    price: str | None,
+    from_city: str | None,
+    to_city: str | None,
+) -> tuple[float | None, float | None]:
+    """Return (route_km, rub_per_km) when both price and distance are known."""
+    amount = parse_price_rub(price)
+    if amount is None:
+        return None, None
+    try:
+        from freight_core.geo import distance_km
+
+        route_km = distance_km(from_city, to_city)
+    except Exception:
+        route_km = None
+    if route_km is None or route_km < 5:
+        return route_km, None
+    return round(route_km, 1), round(amount / route_km, 1)
 
 
 def is_junk_route(from_city: str | None, to_city: str | None, *, source: str = "") -> bool:
@@ -138,6 +191,8 @@ async def _persist(
 
     km_from = _km_to_base(from_city)
     km_to = _km_to_base(to_city)
+    price = raw.price or parsed.price
+    route_km, price_per_km = calc_price_per_km(price, from_city, to_city)
     title = raw.title
     if from_city or to_city:
         title = f"{from_city or '?'} → {to_city or '?'}"
@@ -152,7 +207,7 @@ async def _persist(
         "volume_m3": raw.volume_m3 if raw.volume_m3 is not None else parsed.volume_m3,
         "body_type": raw.body_type or parsed.body,
         "temps": raw.temps or parsed.temps,
-        "price": raw.price or parsed.price,
+        "price": price,
         "load_date": parsed.load_date,
         "phones": parsed.phones or [],
         "contacts": parsed.contacts or [],
@@ -163,6 +218,8 @@ async def _persist(
         "route_fp": route_fp,
         "km_from": km_from,
         "km_to": km_to,
+        "route_km": route_km,
+        "price_per_km": price_per_km,
         "raw_json": raw.raw,
         "score_ok": 1 if result.ok else 0,
     }

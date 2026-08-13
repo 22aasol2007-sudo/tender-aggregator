@@ -924,6 +924,10 @@ def _extract_price(norm: str, text: str) -> str | None:
     m = re.search(r"\b(\d{4,7})\s*(₽|руб)\b", text or "", re.I)
     if m:
         return f"{m.group(1)} {m.group(2)}"
+    # Common messenger style: "62000 нал" / "85000 безнал"
+    m = re.search(r"\b(\d{4,7})\s*(?:нал|безнал|на карту|наличными)\b", text or "", re.I)
+    if m:
+        return f"{m.group(1)} ₽"
     return None
 
 

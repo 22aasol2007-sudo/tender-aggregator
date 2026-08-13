@@ -359,9 +359,18 @@ async def loads(
         limit=limit,
         offset=offset,
     )
-    from app.ingest import why_rank
+    from app.ingest import calc_price_per_km, why_rank
 
     for row in rows:
+        # Enrich price/km for older rows that lack stored fields
+        if row.get("price") and (row.get("price_per_km") is None or row.get("route_km") is None):
+            route_km, ppk = calc_price_per_km(
+                row.get("price"), row.get("from_city"), row.get("to_city")
+            )
+            if route_km is not None:
+                row["route_km"] = route_km
+            if ppk is not None:
+                row["price_per_km"] = ppk
         row["why"] = why_rank(
             score=int(row.get("score") or 0),
             km_from=row.get("km_from"),

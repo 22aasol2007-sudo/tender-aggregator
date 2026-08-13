@@ -92,6 +92,10 @@ class HubDB:
             alters.append("ALTER TABLE loads ADD COLUMN km_from REAL")
         if "km_to" not in cols:
             alters.append("ALTER TABLE loads ADD COLUMN km_to REAL")
+        if "route_km" not in cols:
+            alters.append("ALTER TABLE loads ADD COLUMN route_km REAL")
+        if "price_per_km" not in cols:
+            alters.append("ALTER TABLE loads ADD COLUMN price_per_km REAL")
         for sql in alters:
             await self.db.execute(sql)
         await self.db.execute(
@@ -227,6 +231,8 @@ class HubDB:
             item.get("route_fp"),
             item.get("km_from"),
             item.get("km_to"),
+            item.get("route_km"),
+            item.get("price_per_km"),
             raw,
             now,
         )
@@ -237,7 +243,7 @@ class HubDB:
                     title=?, body=?, from_city=?, to_city=?, tonnage=?, volume_m3=?,
                     body_type=?, temps=?, price=?, load_date=?, phones=?, contacts=?,
                     url=?, score=?, score_ok=?, kind=?, fingerprint=?, route_fp=?,
-                    km_from=?, km_to=?, raw_json=?, scraped_at=?
+                    km_from=?, km_to=?, route_km=?, price_per_km=?, raw_json=?, scraped_at=?
                 WHERE id=?
                 """,
                 (*vals, row["id"]),
@@ -250,8 +256,8 @@ class HubDB:
                 source, external_id, title, body, from_city, to_city, tonnage,
                 volume_m3, body_type, temps, price, load_date, phones, contacts,
                 url, score, score_ok, kind, fingerprint, route_fp, km_from, km_to,
-                raw_json, created_at, scraped_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                route_km, price_per_km, raw_json, created_at, scraped_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 item["source"],
