@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8088 \
     DB_PATH=/data/hub.db \
     MAX_CACHE_DIR=/data/max_cache \
-    SESSION_NAME=freight_hub
+    SESSION_NAME=/data/freight_hub
 
 WORKDIR /app
 
@@ -24,8 +24,9 @@ COPY freight-hub /app/freight-hub
 
 WORKDIR /app/freight-hub
 
-RUN mkdir -p /data/max_cache
+RUN mkdir -p /data/max_cache \
+    && chmod +x /app/freight-hub/docker-entrypoint.sh
 
 EXPOSE 8088
 
-CMD ["python", "run.py"]
+CMD ["./docker-entrypoint.sh"]

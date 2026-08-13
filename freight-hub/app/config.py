@@ -23,7 +23,9 @@ API_ID = int(os.getenv("API_ID", "0") or 0)
 API_HASH = os.getenv("API_HASH", "").strip()
 PHONE = os.getenv("PHONE", "").strip() or None
 SESSION_NAME = os.getenv("SESSION_NAME", "freight_hub").strip()
-SESSION_PATH = ROOT / SESSION_NAME
+# Absolute SESSION_NAME (e.g. /data/freight_hub) keeps Telethon session on the volume.
+_session = Path(SESSION_NAME)
+SESSION_PATH = _session if _session.is_absolute() else (ROOT / SESSION_NAME)
 ENABLE_TG = os.getenv("ENABLE_TG", "1").strip() not in {"0", "false", "no"}
 
 SCRAPE_INTERVAL_SEC = int(os.getenv("SCRAPE_INTERVAL_SEC", "300"))

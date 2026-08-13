@@ -1,0 +1,5 @@
+{
+  "name": "freight-edge",
+  "private": true,
+  "description": "Public edge proxy to Railway freight-hub (works where Railway edge IPs time out)"
+}
