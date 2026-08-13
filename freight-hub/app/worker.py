@@ -133,16 +133,34 @@ class ScrapeWorker:
             streaks = {}
         for res in results:
             src = str(res.get("source") or "")
-            if not src or not res.get("ok"):
+            if not src:
+                continue
+            # Failed runs: count as drought (source likely blocked / broken)
+            if not res.get("ok"):
+                prev = int(streaks.get(src) or 0)
+                streaks[src] = prev + 1
+                if streaks[src] >= config.ZERO_ADD_STREAK_WARN:
+                    try:
+                        await maybe_alert_zero_streak(src, int(streaks[src]))
+                    except Exception:
+                        pass
                 continue
             added = int(res.get("added") or 0)
+            updated = int(res.get("updated") or 0)
+            total = int(res.get("total") or 0)
+            # Healthy: board returned offers (even if all duplicates → added=0)
+            if added > 0 or updated > 0 or total > 0:
+                streaks[src] = 0
+                continue
             prev = int(streaks.get(src) or 0)
-            streaks[src] = 0 if added > 0 else prev + 1
-            if added == 0 and streaks[src] >= config.ZERO_ADD_STREAK_WARN:
+            streaks[src] = prev + 1
+            if streaks[src] >= config.ZERO_ADD_STREAK_WARN:
                 try:
                     await maybe_alert_zero_streak(src, int(streaks[src]))
                 except Exception:
                     pass
+        # Drop zeroed keys to keep settings tidy
+        streaks = {k: int(v) for k, v in streaks.items() if int(v) > 0}
         await self.db.set_setting("zero_add_streaks", _json.dumps(streaks, ensure_ascii=False))
 
     def _quick_scrapers(self) -> list[Any]:

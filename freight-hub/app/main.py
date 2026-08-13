@@ -65,6 +65,8 @@ async def lifespan(_: FastAPI):
             pass
     if await db.get_setting("muted_directions") is None:
         await db.set_setting("muted_directions", "[]")
+    # Clear legacy false-positive streaks (counted "0 added" even when boards returned duplicates)
+    await db.set_setting("zero_add_streaks", "{}")
     worker.start()
 
     # Listeners start independently — one failure must not block the other
@@ -262,13 +264,18 @@ async def health() -> dict[str, Any]:
         zero_streaks = _json.loads(zero_raw) if zero_raw else {}
     except Exception:
         zero_streaks = {}
+    drought: list[str] = []
     if isinstance(zero_streaks, dict):
         for src, n in zero_streaks.items():
             try:
                 if int(n) >= config.ZERO_ADD_STREAK_WARN:
-                    hints.append(f"Источник «{src}»: 0 добавлений {n} циклов")
+                    drought.append(f"{src}×{n}")
             except (TypeError, ValueError):
                 pass
+    if drought:
+        hints.append(
+            "Источники без ответа (пусто/ошибка несколько циклов): " + ", ".join(drought)
+        )
 
     if config.ENABLE_MAX and not mx_alive:
         note = mx_h.get("note") or "off"
