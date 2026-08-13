@@ -1,4 +1,4 @@
-"""Route profitability / backhaul liquidity analysis."""
+"""Route profitability / backhaul liquidity analysis for one truck."""
 
 from __future__ import annotations
 
@@ -15,12 +15,10 @@ from bs4 import BeautifulSoup
 
 from app import config
 from app.ingest import calc_price_per_km
+from app.truck_economics import evaluate_offer, price_outbound_leg, truck_params
 
 log = logging.getLogger("rate_analyze")
 
-# Empty-run cost as share of loaded ₽/km (fuel/driver without freight)
-EMPTY_PPK_RATIO = 0.55
-# Soft floor/ceiling for suggested outbound ₽/км
 DEFAULT_LOADED_PPK = 85.0
 
 
@@ -71,14 +69,19 @@ class RateAnalyzer:
         if not dest_n:
             return {"ok": False, "error": "Укажите город выгрузки"}
 
+        params = truck_params()
+        radius = float(params["backhaul_radius_km"])
+
         route_km, _ = calc_price_per_km(None, base_n, dest_n)
         if route_km is None:
             route_km, _ = calc_price_per_km(None, dest_n, base_n)
 
-        # --- stats from our aggregated DB (all wired sources) ---
         outbound = await self.db.route_stats(from_city=base_n, to_city=dest_n, days=7)
         backhaul = await self.db.route_stats(from_city=dest_n, to_city=base_n, days=7)
         backhaul_broad = await self.db.backhaul_to_base_stats(origin=dest_n, base=base_n, days=7)
+        nearby = await self.db.backhaul_nearby_to_base(
+            origin=dest_n, base=base_n, radius_km=radius, days=7, limit=15
+        )
         ranking = await self.db.backhaul_city_ranking(base=base_n, days=7, limit=25)
 
         peer_counts = [int(r["backhaul_n"]) for r in ranking if r.get("city") != dest_n]
@@ -93,11 +96,13 @@ class RateAnalyzer:
                 dest_rank_row = row
                 break
 
-        feed_n = max(
+        feed_exact = max(
             int(backhaul_broad.get("count") or 0),
             int(backhaul.get("count") or 0),
             int(dest_rank_row.get("backhaul_n") or 0) if dest_rank_row else 0,
         )
+        feed_radius = int(nearby.get("count") or 0)
+        feed_n = max(feed_exact, feed_radius)
 
         live: dict[str, Any] = {"ok": False, "sources": [], "unwired_total": 0, "wired_live_total": 0}
         external_n = 0
@@ -109,35 +114,28 @@ class RateAnalyzer:
                 log.warning("live probe failed: %s", exc)
                 live = {"ok": False, "error": str(exc), "sources": [], "unwired_total": 0, "wired_live_total": 0}
 
-        # Feed + unwired boards (avoid double-counting already-scraped sites)
         backhaul_n = feed_n + external_n
         p_find = _p_find(backhaul_n, peer_median)
         risk = _risk_label(p_find, backhaul_n)
 
         out_ppk = outbound.get("median_ppk") or DEFAULT_LOADED_PPK
         bh_ppk = backhaul_broad.get("median_ppk") or backhaul.get("median_ppk")
-        empty_ppk = float(out_ppk) * EMPTY_PPK_RATIO
-
         km = float(route_km or 0)
-        expected_empty_cost = km * empty_ppk * (1.0 - p_find) if km > 0 else None
-        market_out_total = (float(out_ppk) * km) if km > 0 else None
-        suggested_min_total = None
-        suggested_min_ppk = None
-        if km > 0 and expected_empty_cost is not None and market_out_total is not None:
-            suggested_min_total = market_out_total + expected_empty_cost
-            suggested_min_ppk = suggested_min_total / km
+
+        econ = price_outbound_leg(km=km, p_find_backhaul=p_find, p=params) if km > 0 else {"ok": False}
+        suggested_min_total = econ.get("suggested_min_total_rub") if econ.get("ok") else None
+        suggested_mid_total = econ.get("suggested_mid_total_rub") if econ.get("ok") else None
+        suggested_max_total = econ.get("suggested_max_total_rub") if econ.get("ok") else None
+        suggested_min_ppk = econ.get("suggested_min_ppk") if econ.get("ok") else None
 
         offer_eval = None
-        if offer_rub is not None and km > 0 and expected_empty_cost is not None:
-            offer_ppk = float(offer_rub) / km
-            hurdle = suggested_min_total or 0
-            margin = float(offer_rub) - hurdle
-            offer_eval = {
-                "offer_rub": float(offer_rub),
-                "offer_ppk": round(offer_ppk, 1),
-                "vs_hurdle_rub": round(margin, 0),
-                "verdict": "выгодно" if margin >= 0 else "риск минуса",
-            }
+        if offer_rub is not None and km > 0 and econ.get("ok"):
+            offer_eval = evaluate_offer(
+                offer_rub=float(offer_rub),
+                km=km,
+                p_find_backhaul=p_find,
+                p=params,
+            )
 
         sources_used = await self.db.stats_sources_in_window(days=7)
 
@@ -148,6 +146,18 @@ class RateAnalyzer:
             "route_km": round(km, 1) if km else None,
             "tonnage": tonnage,
             "body": body,
+            "truck": {
+                "load_unload_hours": params["load_unload_hours"],
+                "driver_day_rub": params["driver_day_rub"],
+                "fuel_l_per_100km": params["fuel_l_per_100km"],
+                "diesel_rub_per_l": params["diesel_rub_per_l"],
+                "amortization_pct": params["amortization_pct"],
+                "tax_pct": params["tax_pct"],
+                "target_net_min": params["target_net_min"],
+                "target_net_max": params["target_net_max"],
+                "avg_speed_kmh": params["avg_speed_kmh"],
+                "backhaul_radius_km": radius,
+            },
             "outbound": {
                 "count": int(outbound.get("count") or 0),
                 "median_ppk": outbound.get("median_ppk"),
@@ -156,9 +166,10 @@ class RateAnalyzer:
             "backhaul": {
                 "count": backhaul_n,
                 "count_feed": feed_n,
+                "count_exact": feed_exact,
+                "count_radius": int(nearby.get("count_radius") or 0),
                 "count_external": external_n,
-                "count_exact": int(backhaul.get("count") or 0),
-                "count_broad": int(backhaul_broad.get("count") or 0),
+                "radius_km": radius,
                 "median_ppk": bh_ppk,
                 "median_price": backhaul_broad.get("median_price") or backhaul.get("median_price"),
                 "p_find": round(p_find, 2),
@@ -166,24 +177,36 @@ class RateAnalyzer:
                 "rank": dest_rank,
                 "peers": len(ranking),
                 "peer_median_backhaul": round(peer_median, 1) if peer_median is not None else None,
+                "nearby_cities": nearby.get("cities") or [],
             },
+            "economics": econ if econ.get("ok") else None,
             "pricing": {
                 "market_outbound_ppk": round(float(out_ppk), 1),
-                "empty_ppk_assumed": round(empty_ppk, 1),
-                "expected_empty_cost_rub": round(expected_empty_cost, 0) if expected_empty_cost is not None else None,
-                "suggested_min_total_rub": round(suggested_min_total, 0) if suggested_min_total is not None else None,
-                "suggested_min_ppk": round(suggested_min_ppk, 1) if suggested_min_ppk is not None else None,
+                "expected_costs_rub": econ.get("expected_costs_rub") if econ.get("ok") else None,
+                "costs_if_empty_rub": econ.get("costs_if_empty_rub") if econ.get("ok") else None,
+                "fuel_round_rub": econ.get("fuel_round_rub") if econ.get("ok") else None,
+                "driver_empty_rub": econ.get("driver_empty_rub") if econ.get("ok") else None,
+                "hours_empty_return": econ.get("hours_empty_return") if econ.get("ok") else None,
+                "days_empty_return": econ.get("days_empty_return") if econ.get("ok") else None,
+                "suggested_min_total_rub": suggested_min_total,
+                "suggested_mid_total_rub": suggested_mid_total,
+                "suggested_max_total_rub": suggested_max_total,
+                "suggested_empty_safe_rub": econ.get("suggested_empty_safe_rub") if econ.get("ok") else None,
+                "suggested_min_ppk": suggested_min_ppk,
+                "suggested_mid_ppk": econ.get("suggested_mid_ppk") if econ.get("ok") else None,
+                "target_net_min": params["target_net_min"],
+                "target_net_max": params["target_net_max"],
                 "offer": offer_eval,
             },
             "ranking": ranking[:15],
             "live_external": live,
             "feed_sources": sources_used,
             "notes": [
-                "Лента hub (7 суток): TG, MAX и подключённые сайты.",
-                "Внешние площадки без постоянной выгрузки в ленту — live-probe при расчёте (ATI/Svezem/Cargomart/Monopoly).",
-                "Подключённые сайты в live не суммируются повторно — уже в ленте.",
-                "ATI.SU / Monopoly: полный рынок только с API-токеном.",
-                f"Порожний ₽/км ≈ {int(EMPTY_PPK_RATIO * 100)}% от рыночного гружёного.",
+                f"Машина: дизель {int(params['fuel_l_per_100km'])} л/100 км × {int(params['diesel_rub_per_l'])} ₽, водитель {int(params['driver_day_rub'])} ₽/сут.",
+                f"Погрузка+выгрузка ≈ {params['load_unload_hours']} ч, амортизация {int(params['amortization_pct']*100)}%, налог {int(params['tax_pct']*100)}%.",
+                f"Целевая чистая прибыль {int(params['target_net_min'])}–{int(params['target_net_max'])} ₽ на рейс.",
+                f"Обратка: город выгрузки + радиус {int(radius)} км к «{base_n}» (лента 7 суток + live внешних площадок).",
+                "Порожний возврат в расчёте заложен с вероятностью (1 − p_find).",
             ],
             "updated_at": time.time(),
         }

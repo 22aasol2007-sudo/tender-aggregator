@@ -65,6 +65,18 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
 OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini").strip()
 
+# One-truck unit economics (defaults for the Moscow corridor machine)
+TRUCK_LOAD_UNLOAD_HOURS = float(os.getenv("TRUCK_LOAD_UNLOAD_HOURS", "2.5") or 2.5)
+TRUCK_DRIVER_DAY_RUB = float(os.getenv("TRUCK_DRIVER_DAY_RUB", "10000") or 10000)
+TRUCK_FUEL_L_PER_100KM = float(os.getenv("TRUCK_FUEL_L_PER_100KM", "30") or 30)
+TRUCK_DIESEL_RUB_PER_L = float(os.getenv("TRUCK_DIESEL_RUB_PER_L", "80") or 80)
+TRUCK_AMORTIZATION_PCT = float(os.getenv("TRUCK_AMORTIZATION_PCT", "0.05") or 0.05)
+TRUCK_TAX_PCT = float(os.getenv("TRUCK_TAX_PCT", "0.35") or 0.35)
+TRUCK_TARGET_NET_MIN = float(os.getenv("TRUCK_TARGET_NET_MIN", "10000") or 10000)
+TRUCK_TARGET_NET_MAX = float(os.getenv("TRUCK_TARGET_NET_MAX", "15000") or 15000)
+TRUCK_AVG_SPEED_KMH = float(os.getenv("TRUCK_AVG_SPEED_KMH", "55") or 55)
+BACKHAUL_RADIUS_KM = float(os.getenv("BACKHAUL_RADIUS_KM", "100") or 100)
+
 # Telegram MTProto proxy (t.me/proxy?server=&port=&secret=)
 # Example secret starts with dd… for fake-TLS MTProxy.
 TG_PROXY_SERVER = os.getenv("TG_PROXY_SERVER", "").strip()

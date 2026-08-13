@@ -605,6 +605,7 @@ function riskClass(risk) {
 function renderAnalyzeResult(data, extra = {}) {
   const bh = data.backhaul || {};
   const pr = data.pricing || {};
+  const truck = data.truck || {};
   const offerEv = pr.offer;
   const live = data.live_external || {};
   const sources = (live.sources || [])
@@ -614,8 +615,12 @@ function renderAnalyzeResult(data, extra = {}) {
       return `<li><span class="src-tag">${esc(tag)}</span> <strong>${esc(s.name || "?")}</strong>: ${esc(String(st))}</li>`;
     })
     .join("");
-  const rankRows = (data.ranking || [])
+  const nearbyRows = (bh.nearby_cities || [])
     .slice(0, 10)
+    .map((r) => `<tr><td>${esc(r.city)}</td><td>${r.backhaul_n}</td><td>${r.km_from_origin ?? 0} км</td><td>${r.avg_ppk ?? "—"}</td></tr>`)
+    .join("");
+  const rankRows = (data.ranking || [])
+    .slice(0, 8)
     .map((r, i) => {
       const mark = (r.city || "") === data.destination ? " ★" : "";
       return `<tr><td>${i + 1}</td><td>${esc(r.city)}${mark}</td><td>${r.backhaul_n}</td><td>${r.avg_ppk ?? "—"}</td></tr>`;
@@ -638,34 +643,51 @@ function renderAnalyzeResult(data, extra = {}) {
       </div>`
     : "";
 
+  const band = (pr.suggested_min_total_rub != null && pr.suggested_max_total_rub != null)
+    ? `${fmtRub(pr.suggested_min_total_rub)} – ${fmtRub(pr.suggested_max_total_rub)}`
+    : fmtRub(pr.suggested_min_total_rub);
+
   $("analyzeOut").hidden = false;
   $("analyzeOut").innerHTML = `
     ${adviceHtml}
     ${extractHtml}
     <div class="analyze-grid">
       <div class="analyze-card">
-        <div class="ati-label">Маршрут анализа</div>
+        <div class="ati-label">Маршрут</div>
         <div class="analyze-big">${esc(data.base)} → ${esc(data.destination)}</div>
-        <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"}</div>
+        <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"} · ~${pr.hours_empty_return ?? "—"} ч / ${pr.days_empty_return ?? "—"} сут (с порожняком)</div>
       </div>
       <div class="analyze-card">
-        <div class="ati-label">Обратка к базе</div>
+        <div class="ati-label">Обратка к базе (город + ${bh.radius_km ?? 100} км)</div>
         <div class="analyze-big">${bh.count ?? 0}</div>
-        <div class="muted">лента ${bh.count_feed ?? 0} + внешние ${bh.count_external ?? 0}</div>
-        <div class="risk-pill ${riskClass(bh.risk)}">риск ${esc(bh.risk || "—")} · p≈${bh.p_find ?? "—"}</div>
-        <div class="muted">ранг ${bh.rank ?? "—"} / ${bh.peers ?? "—"} · медиана пиров ${bh.peer_median_backhaul ?? "—"}</div>
+        <div class="muted">точно ${bh.count_exact ?? 0} · радиус ${bh.count_radius ?? 0} · внешние ${bh.count_external ?? 0}</div>
+        <div class="risk-pill ${riskClass(bh.risk)}">риск порожняка ${esc(bh.risk || "—")} · p≈${bh.p_find ?? "—"}</div>
       </div>
       <div class="analyze-card">
-        <div class="ati-label">Мин. ставка с учётом порожняка</div>
-        <div class="analyze-big">${fmtRub(pr.suggested_min_total_rub)}</div>
-        <div class="muted">${pr.suggested_min_ppk != null ? `${pr.suggested_min_ppk} ₽/км` : ""} · рынок ${pr.market_outbound_ppk ?? "—"} ₽/км</div>
-        <div class="muted">ожид. порожний ${fmtRub(pr.expected_empty_cost_rub)} (при ${pr.empty_ppk_assumed ?? "—"} ₽/км)</div>
-        ${offerEv ? `<div class="offer-verdict ${offerEv.verdict === "выгодно" ? "ok" : "bad"}">${esc(offerEv.verdict)} · ${fmtRub(offerEv.vs_hurdle_rub)} к порогу</div>` : ""}
+        <div class="ati-label">Ставка клиенту (чистыми ${pr.target_net_min ?? 10000}–${pr.target_net_max ?? 15000} ₽)</div>
+        <div class="analyze-big">${band}</div>
+        <div class="muted">${pr.suggested_min_ppk != null ? `от ${pr.suggested_min_ppk} ₽/км` : ""} · ориентир ${fmtRub(pr.suggested_mid_total_rub)}</div>
+        <div class="muted">без обратки (жёстко): ${fmtRub(pr.suggested_empty_safe_rub)}</div>
+        ${offerEv ? `<div class="offer-verdict ${offerEv.verdict === "выгодно" ? "ok" : (offerEv.verdict === "на грани" ? "" : "bad")}">${esc(offerEv.verdict)} · чистыми ~${fmtRub(offerEv.expected_net_rub)} · ${fmtRub(offerEv.vs_hurdle_rub)} к порогу</div>` : ""}
+      </div>
+    </div>
+    <div class="analyze-card">
+      <div class="ati-label">Калькуляция под вашу машину</div>
+      <div class="extract-chip" style="margin-top:8px">
+        <span>топливо туда-обратно <b>${fmtRub(pr.fuel_round_rub)}</b></span>
+        <span>водитель <b>${fmtRub(pr.driver_empty_rub)}</b></span>
+        <span>ожид. затраты <b>${fmtRub(pr.expected_costs_rub)}</b></span>
+        <span>порожний сценарий <b>${fmtRub(pr.costs_if_empty_rub)}</b></span>
+        <span>дизель ${esc(truck.fuel_l_per_100km ?? 30)} л/100 × ${esc(truck.diesel_rub_per_l ?? 80)} ₽</span>
+        <span>налог ${Math.round((truck.tax_pct ?? 0.35) * 100)}% · амортизация ${Math.round((truck.amortization_pct ?? 0.05) * 100)}%</span>
+        <span>погрузка/выгрузка ${esc(truck.load_unload_hours ?? 2.5)} ч</span>
       </div>
     </div>
     <div class="analyze-split">
       <div>
-        <div class="ati-label">Внешние / live</div>
+        <div class="ati-label">Обратные грузы рядом с выгрузкой</div>
+        <table class="analyze-table"><thead><tr><th>Город</th><th>N</th><th>От выгрузки</th><th>₽/км</th></tr></thead><tbody>${nearbyRows || "<tr><td colspan=4>нет данных за 7 суток</td></tr>"}</tbody></table>
+        <div class="ati-label" style="margin-top:12px">Внешние / live</div>
         <ul class="analyze-sources">${sources || "<li>нет данных</li>"}</ul>
       </div>
       <div>

@@ -734,6 +734,55 @@ class HubDB:
             )
         return out
 
+    async def backhaul_nearby_to_base(
+        self,
+        *,
+        origin: str,
+        base: str = "москва",
+        radius_km: float = 100,
+        days: float = 7,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Backhaul loads to base from origin city and cities within radius_km."""
+        from freight_core.geo import distance_km
+
+        ranking = await self.backhaul_city_ranking(base=base, days=days, limit=200)
+        origin_n = (origin or "").strip().lower().replace("ё", "е")
+        nearby: list[dict[str, Any]] = []
+        total = 0
+        exact = 0
+        for row in ranking:
+            city = str(row.get("city") or "").strip().lower()
+            if not city:
+                continue
+            n = int(row.get("backhaul_n") or 0)
+            if city == origin_n or origin_n in city or city in origin_n:
+                dist = 0.0
+            else:
+                dist = distance_km(origin_n, city)
+                if dist is None or dist > float(radius_km):
+                    continue
+            item = {
+                "city": city,
+                "backhaul_n": n,
+                "avg_ppk": row.get("avg_ppk"),
+                "km_from_origin": round(float(dist), 1),
+            }
+            nearby.append(item)
+            total += n
+            if dist == 0.0:
+                exact += n
+        nearby.sort(key=lambda x: (-int(x["backhaul_n"]), float(x["km_from_origin"])))
+        return {
+            "origin": origin_n,
+            "base": (base or "").strip().lower(),
+            "radius_km": float(radius_km),
+            "count": total,
+            "count_exact": exact,
+            "count_radius": total - exact,
+            "cities": nearby[: int(limit)],
+        }
+
 
 def make_fingerprint(*parts: str) -> str:
     blob = "|".join((p or "").lower().strip() for p in parts)

@@ -541,19 +541,35 @@ async def analyze_screenshot(
 
     advice = None
     pr = (analysis or {}).get("pricing") or {}
+    bh = (analysis or {}).get("backhaul") or {}
     offer = targets.get("offer_rub")
     hurdle = pr.get("suggested_min_total_rub")
+    mid = pr.get("suggested_mid_total_rub")
+    hi = pr.get("suggested_max_total_rub")
+    empty_safe = pr.get("suggested_empty_safe_rub")
     if hurdle is not None:
+        band = f"{int(hurdle):,}–{int(hi or mid or hurdle):,} ₽".replace(",", " ")
+        bh_note = (
+            f"Обратка к базе: {bh.get('count') or 0} "
+            f"(город + {int(bh.get('radius_km') or 100)} км), риск {bh.get('risk') or '—'}."
+        )
         if offer is None:
             advice = {
                 "action": "propose",
-                "text": f"Предлагайте клиенту не меньше {int(hurdle):,} ₽".replace(",", " "),
+                "text": f"Предлагайте клиенту {band}, чтобы чистыми выйти на 10–15 тыс. ₽. {bh_note}",
                 "min_rub": hurdle,
+                "mid_rub": mid,
+                "max_rub": hi,
             }
         elif float(offer) >= float(hurdle):
+            net = ((pr.get("offer") or {}).get("expected_net_rub"))
             advice = {
                 "action": "take",
-                "text": f"Ставка ATI {int(offer):,} ₽ ≥ порога {int(hurdle):,} ₽ — можно брать".replace(",", " "),
+                "text": (
+                    f"Ставка ATI {int(offer):,} ₽ закрывает порог {int(hurdle):,} ₽"
+                    + (f" (ожид. чистыми ~{int(net):,} ₽)" if net is not None else "")
+                    + f". {bh_note}"
+                ).replace(",", " "),
                 "min_rub": hurdle,
                 "listed_rub": offer,
             }
@@ -562,8 +578,9 @@ async def analyze_screenshot(
             advice = {
                 "action": "counter",
                 "text": (
-                    f"В ATI {int(offer):,} ₽, чтобы выйти в плюс нужно ≥ {int(hurdle):,} ₽ "
-                    f"(+{int(gap):,} ₽ к ставке объявления)"
+                    f"В ATI {int(offer):,} ₽ — мало. Нужно ≥ {int(hurdle):,} ₽ "
+                    f"(+{int(gap):,} ₽), целевой коридор {band}. "
+                    f"Без обратки безопасно от {int(empty_safe or hurdle):,} ₽. {bh_note}"
                 ).replace(",", " "),
                 "min_rub": hurdle,
                 "listed_rub": offer,
