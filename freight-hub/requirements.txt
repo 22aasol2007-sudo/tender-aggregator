@@ -1,0 +1,11 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+httpx==0.28.1
+beautifulsoup4==4.13.4
+lxml==6.0.0
+python-dotenv==1.1.1
+aiosqlite>=0.21.0,<0.23
+telethon==1.40.0
+pydantic==2.11.10
+maxapi-python>=2.4.0
+qrcode[pil]>=8.0

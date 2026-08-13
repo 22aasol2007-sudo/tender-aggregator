@@ -1,0 +1,170 @@
+"""Default watched chats and keyword packs for freight load alerts."""
+
+from __future__ import annotations
+
+# Chats for Moscow corridor: one leg ≤150 km of MSK, other ≤1500 km.
+# Dropped: local South/Urals/Siberia/SPb/UZ — too little MSK-relevant signal.
+DEFAULT_CHATS: list[dict[str, str]] = [
+    # Moscow / CFO
+    {"username": "gruzoperevozky_moskva", "title": "Грузоперевозки Москва"},
+    {"username": "gruzoperevozky_v_moskve", "title": "Грузоперевозки в Москве"},
+    {"username": "gruzov_perevozka", "title": "Москва Питер попутный"},
+    {"username": "perevezem24", "title": "ПЕРЕВОЗКИ МОСКВА РОССИЯ"},
+    {"username": "gruzdogruz", "title": "Грузоперевозки ATI ЦФО"},
+    # Federal / Russia boards (часто МСК↔регионы)
+    {"username": "tutgruz", "title": "TutGruz"},
+    {"username": "gruzoperevozki_rossiya", "title": "ГРУЗОПЕРЕВОЗКИ РОССИЯ"},
+    {"username": "gruzoperevozki_rossia", "title": "Грузоперевозки по Россия"},
+    {"username": "cargoauto", "title": "CargoAutoTrans"},
+    {"username": "vezy_tovar", "title": "Все грузоперевозки России"},
+    {"username": "gruzoperevozkivrussia", "title": "Перевозка 24"},
+    {"username": "logistika_ru", "title": "Логистика Тент.Реф.Куб"},
+    {"username": "gruzoperevozochki", "title": "ГРУЗОПЕРЕВОЗКИ"},
+    {"username": "gruzytutRF", "title": "Грузы по России на Авто"},
+    {"username": "gruzov", "title": "ГРУЗОВ"},
+    {"username": "gruz_ru", "title": "Поиск груза RU"},
+    {"username": "dalnoboichat", "title": "TRUCKERS"},
+    {"username": "logistika_gruzoperevozka", "title": "Биржа Грузоперевозки"},
+    {"username": "gruzallrussia", "title": "1001 ГРУЗ чат"},
+    {"username": "gruzoperevozku_ru", "title": "Грузоперевозки России"},
+    {"username": "truckingrefrussia", "title": "Реф Россия"},
+    {"username": "poiskgruza", "title": "Поиск груза"},
+    {"username": "search_gruz", "title": "Грузы РФ и СНГ"},
+    {"username": "gruzoperevozki_r", "title": "Грузоперевозки РФ"},
+    {"username": "svezem_allcargo", "title": "Svezem попутный"},
+    {"username": "poputno_gruz", "title": "Попутный груз"},
+    {"username": "gruz_zab", "title": "Горячие грузы"},
+    {"username": "club1001gruz", "title": "1001 ГРУЗ канал"},
+    {"username": "gruz032", "title": "ГРУЗОПЕРЕВОЗКИ ЛОГИСТИКА"},
+    {"username": "logika86", "title": "Логистика Россия СНГ"},
+    {"username": "trucking1", "title": "Грузоперевозки логистика"},
+    {"username": "logisticarsi", "title": "Грузоперевозки РФ СНГ"},
+    {"username": "gruzivozim", "title": "Грузоперевозки по РФ"},
+    {"username": "truckers_space", "title": "Trucking Дальнобой"},
+    {"username": "truckersclub", "title": "Чат дальнобойщиков"},
+    {"username": "gruzoperevozki_365", "title": "Грузоперевозки 365"},
+    {"username": "gruzoperevozki_gruzi", "title": "Межгород попутный"},
+    {"username": "cargotransportrus", "title": "Груз и Транспорт РФ"},
+    {"username": "gruzoperevozki_telegram", "title": "Грузоперевозки Telegram"},
+    {"username": "gruzoperevozkiRusi", "title": "Грузоперевозки РФ Чат"},
+    {"username": "gruzoperevozki_rossii", "title": "Грузоперевозки Россия СНГ"},
+    {"username": "gruzoperevozkia", "title": "ГрузоБот канал"},
+    {"username": "rucargoru", "title": "ГРУЗОПЕРЕВОЗКИ СНГ Европа Азия"},
+]
+
+assert len(DEFAULT_CHATS) == 43, len(DEFAULT_CHATS)
+assert len({c["username"].lower() for c in DEFAULT_CHATS}) == len(DEFAULT_CHATS)
+
+# Chats removed for MSK±150 focus (local / wrong region):
+# gruz_uz, ugperevozchik, gryzoperevozkikrasnodar, gruzoperevozky_krasnodar,
+# gruzoperevozky_rostov, gruzoperevozky_krym, Gazella_SPb, perevozki_spb_lo,
+# gruzoperevozki_v_ekaterinburge, perevozki96, gruzoperevozky_chelyabinsk,
+# gruzoperevozky_sibiri, gruzoperevozki_sibir, gruzoperevozky_novosibirsk,
+# truckingby, gruzoperevozki_po_sng1, gruzoperevozky_sng
+
+# Public channel previews (national / MSK-relevant only)
+PUBLIC_TG_CHANNELS: list[str] = [
+    "club1001gruz",
+    "gruz_zab",
+    "gruzoperevozkia",
+    "birzha_atisu",
+    "fortytons",
+    "gruzopotok",
+    "logistika_ru",
+    "svezem_allcargo",
+    "truckingrefrussia",
+    "gruz032",
+    "logistika_gruzoperevozka",
+    "poputno_gruz",
+    "gruz_ru",
+    "cargotransportrus",
+    "gruzivozim",
+    "logisticarsi",
+    "gruzoperevozki_365",
+    "gruzoperevozky_moskva",
+]
+
+# Shipper looking for a truck / load offer useful to a carrier.
+INCLUDE_KEYWORDS: list[str] = [
+    "ищу машину",
+    "нужна машина",
+    "нужен транспорт",
+    "ищу транспорт",
+    "ищу фуру",
+    "нужна фура",
+    "ищу тс",
+    "нужен тс",
+    "ищу авто",
+    "нужно авто",
+    "ищу перевозчик",
+    "нужен перевозчик",
+    "требуется машина",
+    "требуется транспорт",
+    "требуется фура",
+    "заявка на перевозку",
+    "груз на ",
+    "есть груз",
+    "груз есть",
+    "отдаю груз",
+    "срочно груз",
+    "попутный груз",
+    "догруз",
+    "обратка",
+    "обратный груз",
+    "тент",
+    "реф",
+    "рефрижератор",
+    "изотерм",
+    "еврофура",
+    "фура ",
+    " 20т",
+    "20 т",
+    "20 тонн",
+    "#груз",
+    "#ищумашину",
+    "#транспорт",
+]
+
+DRIVER_OFFER_KEYWORDS: list[str] = [
+    "ищу груз",
+    "свободен",
+    "свободна",
+    "машина свободна",
+    "тс свободно",
+    "готов взять",
+    "возьму груз",
+    "возьму попутн",
+]
+
+EXCLUDE_KEYWORDS: list[str] = [
+    "вакансия",
+    "требуется водитель",
+    "ищу водителя",
+    "работа водител",
+    "крипт",
+    "казино",
+    "букмекер",
+    "ставки на",
+    "18+",
+    "интим",
+]
+
+PRESETS: dict[str, list[str]] = {
+    "shipper": INCLUDE_KEYWORDS.copy(),
+    "reefer": [
+        "реф",
+        "рефрижератор",
+        "холодильник",
+        "температур",
+        "+2",
+        "+4",
+        "+5",
+        "0+",
+        "-18",
+        "замороз",
+        "охлажд",
+        "изотерм",
+    ],
+    "tent": ["тент", "еврофура", "штора", "борт"],
+    "my_truck": [],
+}

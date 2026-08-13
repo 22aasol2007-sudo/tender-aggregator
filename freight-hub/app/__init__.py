@@ -1,0 +1,1 @@
+# Freight Hub application package
