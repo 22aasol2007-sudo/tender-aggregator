@@ -300,10 +300,27 @@ class HubDB:
         near_km: float = 150,
         far_km: float = 1500,
         max_age_sec: float | None = None,
+        tonnage_min: float | None = None,
+        tonnage_max: float | None = None,
+        volume_min: float | None = None,
+        volume_max: float | None = None,
+        ppk_min: float | None = None,
+        price_min: float | None = None,
+        route_km_min: float | None = None,
+        route_km_max: float | None = None,
+        freshness_hours: float | None = None,
+        load_date_mode: str | None = None,
+        loading: str | None = None,
+        cargo_mode: str | None = None,
+        payment: str | None = None,
+        exact_from: bool = False,
+        exact_to: bool = False,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         from app import config as _cfg
+        from app.filters_ati import append_ati_filters
+        from app.ingest import parse_price_rub
 
         sql = ["SELECT * FROM loads WHERE score >= ?"]
         args: list[Any] = [min_score]
@@ -332,7 +349,7 @@ class HubDB:
         if body_type:
             sql.append("AND body_type = ?")
             args.append(body_type)
-        if from_city:
+        if from_city and not exact_from:
             from app.parse import city_search_terms
 
             terms = city_search_terms(from_city) or [from_city.lower()]
@@ -340,7 +357,7 @@ class HubDB:
                 "AND (" + " OR ".join(["LOWER(COALESCE(from_city,'')) LIKE ?"] * len(terms)) + ")"
             )
             args.extend([f"%{t}%" for t in terms])
-        if to_city:
+        if to_city and not exact_to:
             from app.parse import city_search_terms
 
             terms = city_search_terms(to_city) or [to_city.lower()]
@@ -370,11 +387,29 @@ class HubDB:
                 )
                 like = f"%{d}%"
                 args.extend([like, like, like])
-        # Declared weight band: keep unknown OR within [min, max]
-        sql.append(
-            "AND (tonnage IS NULL OR (tonnage >= ? AND tonnage <= ?))"
+        append_ati_filters(
+            sql,
+            args,
+            tonnage_min=tonnage_min,
+            tonnage_max=tonnage_max,
+            volume_min=volume_min,
+            volume_max=volume_max,
+            ppk_min=ppk_min,
+            price_min=None,  # applied after fetch (price is free text)
+            route_km_min=route_km_min,
+            route_km_max=route_km_max,
+            freshness_hours=freshness_hours,
+            load_date_mode=load_date_mode,
+            loading=loading,
+            cargo_mode=cargo_mode,
+            payment=payment,
+            exact_from=exact_from,
+            exact_to=exact_to,
+            from_city=from_city,
+            to_city=to_city,
+            hard_tonnage_min=float(_cfg.TONNAGE_MIN),
+            hard_tonnage_max=float(_cfg.TONNAGE_MAX),
         )
-        args.extend([float(_cfg.TONNAGE_MIN), float(_cfg.TONNAGE_MAX)])
         if q:
             like = f"%{q.lower()}%"
             sql.append(
@@ -397,12 +432,22 @@ class HubDB:
                 "MIN(COALESCE(km_from, 1e9), COALESCE(km_to, 1e9)) ASC, "
                 "score DESC, scraped_at DESC LIMIT ? OFFSET ?"
             )
+        elif sort == "route":
+            sql.append(
+                "ORDER BY (route_km IS NULL) ASC, route_km ASC, scraped_at DESC LIMIT ? OFFSET ?"
+            )
         elif sort in {"time", "date", "posted"}:
             # First-seen time (= when we consider the ad posted into our feed)
             sql.append("ORDER BY created_at DESC, score DESC LIMIT ? OFFSET ?")
         else:
             sql.append("ORDER BY created_at DESC, score DESC LIMIT ? OFFSET ?")
-        args.extend([limit, offset])
+        # Fetch extra when price_min post-filter may drop rows
+        fetch_limit = limit
+        fetch_offset = offset
+        if price_min is not None and float(price_min) > 0:
+            fetch_limit = min(500, max(limit * 3, limit + 50))
+            fetch_offset = 0
+        args.extend([fetch_limit, fetch_offset])
         cur = await self.db.execute(" ".join(sql), args)
         rows = await cur.fetchall()
         out = []
@@ -415,7 +460,13 @@ class HubDB:
                         d[key] = json.loads(val)
                     except json.JSONDecodeError:
                         pass
+            if price_min is not None and float(price_min) > 0:
+                amount = parse_price_rub(d.get("price"))
+                if amount is None or amount < float(price_min):
+                    continue
             out.append(d)
+        if price_min is not None and float(price_min) > 0:
+            out = out[offset : offset + limit]
         return out
 
     async def loads_since(self, since_id: int, limit: int = 100) -> list[dict[str, Any]]:

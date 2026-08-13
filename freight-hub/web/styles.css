@@ -171,6 +171,47 @@ body {
   box-shadow: 0 0 20px var(--sites-glow);
 }
 
+.ati-filters {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.ati-block { display: grid; gap: 8px; }
+.ati-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ati-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+.ati-row input, .ati-row select {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+.ati-row input:focus, .ati-row select:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.check.tight { font-size: 0.82rem; white-space: nowrap; }
+.filters-actions { grid-template-columns: 1.6fr 1.1fr auto auto auto auto; }
+@media (max-width: 900px) {
+  .filters-actions { grid-template-columns: 1fr 1fr; }
+}
+
 .profile, .filters, .more-filters {
   display: grid;
   gap: 10px;

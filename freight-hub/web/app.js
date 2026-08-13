@@ -340,6 +340,13 @@ async function refreshHealth() {
   }
 }
 
+function numOrEmpty(id) {
+  const el = $(id);
+  if (!el) return "";
+  const v = String(el.value || "").trim();
+  return v;
+}
+
 function currentParams() {
   const params = new URLSearchParams();
   const q = $("q").value.trim();
@@ -352,6 +359,34 @@ function currentParams() {
   if (body) params.set("body_type", body);
   if (frm) params.set("from", frm);
   if (to) params.set("to", to);
+  if ($("exactFrom") && $("exactFrom").checked) params.set("exact_from", "true");
+  if ($("exactTo") && $("exactTo").checked) params.set("exact_to", "true");
+  const tMin = numOrEmpty("tonnageMin");
+  const tMax = numOrEmpty("tonnageMax");
+  const vMin = numOrEmpty("volumeMin");
+  const vMax = numOrEmpty("volumeMax");
+  const ppk = numOrEmpty("ppkMin");
+  const price = numOrEmpty("priceMin");
+  const rMin = numOrEmpty("routeKmMin");
+  const rMax = numOrEmpty("routeKmMax");
+  if (tMin) params.set("tonnage_min", tMin);
+  if (tMax) params.set("tonnage_max", tMax);
+  if (vMin) params.set("volume_min", vMin);
+  if (vMax) params.set("volume_max", vMax);
+  if (ppk) params.set("ppk_min", ppk);
+  if (price) params.set("price_min", price);
+  if (rMin) params.set("route_km_min", rMin);
+  if (rMax) params.set("route_km_max", rMax);
+  const fresh = $("freshness") ? $("freshness").value : "";
+  if (fresh) params.set("freshness_hours", fresh);
+  const loadDate = $("loadDateMode") ? $("loadDateMode").value : "any";
+  if (loadDate && loadDate !== "any") params.set("load_date_mode", loadDate);
+  const loading = $("loading") ? $("loading").value : "any";
+  if (loading && loading !== "any") params.set("loading", loading);
+  const cargoMode = $("cargoMode") ? $("cargoMode").value : "any";
+  if (cargoMode && cargoMode !== "any") params.set("cargo_mode", cargoMode);
+  const payment = $("payment") ? $("payment").value : "any";
+  if (payment && payment !== "any") params.set("payment", payment);
   params.set("min_score", minScore);
   params.set("sort", $("sort").value || "date");
   params.set("shipper_only", $("shipperOnly").checked ? "true" : "false");
@@ -391,6 +426,16 @@ function resetFilters() {
   $("reefer").checked = false;
   $("hotOnly").checked = false;
   $("minScore").value = "40";
+  if ($("exactFrom")) $("exactFrom").checked = false;
+  if ($("exactTo")) $("exactTo").checked = false;
+  ["tonnageMin", "tonnageMax", "volumeMin", "volumeMax", "ppkMin", "priceMin", "routeKmMin", "routeKmMax"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+  if ($("freshness")) $("freshness").value = "";
+  if ($("loadDateMode")) $("loadDateMode").value = "any";
+  if ($("loading")) $("loading").value = "any";
+  if ($("cargoMode")) $("cargoMode").value = "any";
+  if ($("payment")) $("payment").value = "any";
   setChannel("all");
 }
 
@@ -446,8 +491,22 @@ $("btnSaveProfile").addEventListener("click", async () => {
 $("btnMore").addEventListener("click", () => {
   const el = $("moreFilters");
   el.hidden = !el.hidden;
-  $("btnMore").textContent = el.hidden ? "Ещё фильтры" : "Скрыть фильтры";
+  $("btnMore").textContent = el.hidden ? "Ещё параметры" : "Скрыть параметры";
 });
+const swapBtn = $("btnSwapRoute");
+if (swapBtn) {
+  swapBtn.addEventListener("click", () => {
+    const a = $("from").value;
+    $("from").value = $("to").value;
+    $("to").value = a;
+    const ea = $("exactFrom") ? $("exactFrom").checked : false;
+    if ($("exactFrom") && $("exactTo")) {
+      $("exactFrom").checked = $("exactTo").checked;
+      $("exactTo").checked = ea;
+    }
+    loadList().catch(alert);
+  });
+}
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     setChannel(btn.dataset.channel || "all");

@@ -386,7 +386,22 @@ async def loads(
     hide_drivers: bool = True,
     hot: bool = False,
     geo: bool = True,
-    sort: str = Query("date", pattern="^(time|date|posted|score|ppk|near)$"),
+    sort: str = Query("date", pattern="^(time|date|posted|score|ppk|near|route)$"),
+    tonnage_min: float | None = Query(None, ge=0, le=100),
+    tonnage_max: float | None = Query(None, ge=0, le=100),
+    volume_min: float | None = Query(None, ge=0, le=500),
+    volume_max: float | None = Query(None, ge=0, le=500),
+    ppk_min: float | None = Query(None, ge=0, le=1_000_000),
+    price_min: float | None = Query(None, ge=0, le=50_000_000),
+    route_km_min: float | None = Query(None, ge=0, le=20_000),
+    route_km_max: float | None = Query(None, ge=0, le=20_000),
+    freshness_hours: float | None = Query(None, ge=0, le=720),
+    load_date_mode: str | None = Query(None, pattern="^(any|today|tomorrow|3d|week)?$"),
+    loading: str | None = Query(None, pattern="^(any|rear|side|top)?$"),
+    cargo_mode: str | None = Query(None, pattern="^(any|ftl|ltl)?$"),
+    payment: str | None = Query(None, pattern="^(any|with_rate|cash|nds|no_nds|prepay)?$"),
+    exact_from: bool = False,
+    exact_to: bool = False,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
@@ -407,6 +422,11 @@ async def loads(
         far = 1500.0
     channel_key = (channel or "all").strip().lower() or "all"
     group_sources = SOURCE_GROUPS.get(channel_key)
+
+    def _none_if_any(val: str | None) -> str | None:
+        v = (val or "").strip().lower()
+        return None if v in {"", "any", "all"} else v
+
     rows = await db.list_loads(
         q=q,
         source=source if not group_sources else None,
@@ -424,6 +444,21 @@ async def loads(
         geo_corridor=geo,
         near_km=near,
         far_km=far,
+        tonnage_min=tonnage_min,
+        tonnage_max=tonnage_max,
+        volume_min=volume_min,
+        volume_max=volume_max,
+        ppk_min=ppk_min,
+        price_min=price_min,
+        route_km_min=route_km_min,
+        route_km_max=route_km_max,
+        freshness_hours=freshness_hours,
+        load_date_mode=_none_if_any(load_date_mode),
+        loading=_none_if_any(loading),
+        cargo_mode=_none_if_any(cargo_mode),
+        payment=_none_if_any(payment),
+        exact_from=exact_from,
+        exact_to=exact_to,
         limit=limit,
         offset=offset,
     )
@@ -464,6 +499,16 @@ async def loads(
             filter_reasons.append("только реф")
         if frm or to:
             filter_reasons.append("узкий маршрут")
+        if tonnage_min is not None or tonnage_max is not None:
+            filter_reasons.append("вес")
+        if ppk_min is not None:
+            filter_reasons.append("ставка ₽/км")
+        if freshness_hours is not None:
+            filter_reasons.append("свежесть")
+        if _none_if_any(cargo_mode):
+            filter_reasons.append("FTL/LTL")
+        if _none_if_any(loading):
+            filter_reasons.append("тип загрузки")
         if geo:
             filter_reasons.append(f"коридор {int(near)}/{int(far)} км от базы «{base_city}»")
         if not filter_reasons:
@@ -476,9 +521,11 @@ async def loads(
         rank_explain = f"Сорт: ближе к базе «{base_city}». Коридор {int(near)}/{int(far)} км."
     elif sort == "score":
         rank_explain = f"Сорт: выше скор. База «{base_city}», коридор {int(near)}/{int(far)} км."
+    elif sort == "route":
+        rank_explain = f"Сорт: короче маршрут. База «{base_city}»."
     else:
         rank_explain = (
-            f"Сорт: по дате выкладывания (свежие сверху). "
+            f"Сорт: по дате публикации. "
             f"База «{base_city}», коридор {int(near)}/{int(far)} км."
         )
     return {
@@ -491,6 +538,21 @@ async def loads(
         "base": base_city,
         "muted_directions": muted,
         "channel": channel_key,
+        "filters": {
+            "tonnage_min": tonnage_min,
+            "tonnage_max": tonnage_max,
+            "volume_min": volume_min,
+            "volume_max": volume_max,
+            "ppk_min": ppk_min,
+            "price_min": price_min,
+            "route_km_min": route_km_min,
+            "route_km_max": route_km_max,
+            "freshness_hours": freshness_hours,
+            "load_date_mode": load_date_mode or "any",
+            "loading": loading or "any",
+            "cargo_mode": cargo_mode or "any",
+            "payment": payment or "any",
+        },
     }
 
 

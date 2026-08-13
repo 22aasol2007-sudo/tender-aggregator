@@ -64,8 +64,8 @@
 
   <section class="zone">
     <div class="zone-head">
-      <h2>Сейчас искать</h2>
-      <button id="btnMore" class="linkish" type="button">Ещё фильтры</button>
+      <h2>Фильтры поиска</h2>
+      <button id="btnMore" class="linkish" type="button">Ещё параметры</button>
     </div>
     <div class="tabs" role="tablist" aria-label="Источник">
       <button type="button" class="tab active" data-channel="all" role="tab" aria-selected="true">Все</button>
@@ -73,36 +73,112 @@
       <button type="button" class="tab tab-max" data-channel="max" role="tab" aria-selected="false">MAX</button>
       <button type="button" class="tab tab-sites" data-channel="sites" role="tab" aria-selected="false">Агрегаторы</button>
     </div>
-    <div class="filters">
-      <input id="q" type="search" placeholder="Поиск: город, груз, телефон…" />
-      <input id="from" type="text" placeholder="Откуда" />
-      <input id="to" type="text" placeholder="Куда" />
-      <select id="sort">
-        <option value="date" selected>По дате выкладывания</option>
-        <option value="ppk">Дороже ₽/км</option>
-        <option value="near">Ближе к базе</option>
-        <option value="score">Сначала скор</option>
-      </select>
-      <label class="check"><input id="shipperOnly" type="checkbox" checked /> Грузоотправители</label>
-      <label class="check"><input id="hotOnly" type="checkbox" /> Горячие</label>
-      <button id="btnApply" class="btn" type="button">Показать</button>
-      <button id="btnReset" class="btn ghost" type="button">Сбросить</button>
+
+    <div class="ati-filters">
+      <div class="ati-block">
+        <div class="ati-label">Маршрут</div>
+        <div class="ati-row">
+          <input id="from" type="text" placeholder="Откуда" />
+          <label class="check tight"><input id="exactFrom" type="checkbox" /> точно</label>
+          <input id="to" type="text" placeholder="Куда" />
+          <label class="check tight"><input id="exactTo" type="checkbox" /> точно</label>
+          <button id="btnSwapRoute" class="btn ghost" type="button" title="Поменять местами">⇄</button>
+        </div>
+      </div>
+
+      <div class="ati-block">
+        <div class="ati-label">Кузов и груз</div>
+        <div class="ati-row">
+          <select id="body">
+            <option value="">Любой кузов</option>
+            <option value="reefer">Реф</option>
+            <option value="isotherm">Изотерм</option>
+            <option value="tent">Тент</option>
+            <option value="board">Борт</option>
+            <option value="box">Фургон</option>
+          </select>
+          <input id="tonnageMin" type="number" min="5" max="12" step="0.1" placeholder="Вес от, т" />
+          <input id="tonnageMax" type="number" min="5" max="12" step="0.1" placeholder="Вес до, т" />
+          <input id="volumeMin" type="number" min="0" step="1" placeholder="Объём от, м³" />
+          <input id="volumeMax" type="number" min="0" step="1" placeholder="Объём до, м³" />
+        </div>
+      </div>
+
+      <div class="ati-block">
+        <div class="ati-label">Дата и свежесть</div>
+        <div class="ati-row">
+          <select id="loadDateMode">
+            <option value="any">Дата погрузки: любая</option>
+            <option value="today">Сегодня</option>
+            <option value="tomorrow">Завтра</option>
+            <option value="3d">Ближайшие 3 дня</option>
+            <option value="week">Неделя</option>
+          </select>
+          <select id="freshness">
+            <option value="">Добавлены: когда угодно</option>
+            <option value="1">За 1 час</option>
+            <option value="3">За 3 часа</option>
+            <option value="24">За сутки</option>
+            <option value="72">За 3 дня</option>
+          </select>
+          <select id="loading">
+            <option value="any">Загрузка: любая</option>
+            <option value="rear">Задняя</option>
+            <option value="side">Боковая</option>
+            <option value="top">Верхняя</option>
+          </select>
+          <select id="cargoMode">
+            <option value="any">Перевозка: любая</option>
+            <option value="ftl">Отдельная машина</option>
+            <option value="ltl">Догруз / частичная</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ati-block">
+        <div class="ati-label">Оплата и дистанция</div>
+        <div class="ati-row">
+          <input id="ppkMin" type="number" min="0" step="1" placeholder="От ₽/км" />
+          <input id="priceMin" type="number" min="0" step="1000" placeholder="Ставка от, ₽" />
+          <input id="routeKmMin" type="number" min="0" step="10" placeholder="Км от" />
+          <input id="routeKmMax" type="number" min="0" step="10" placeholder="Км до" />
+          <select id="payment">
+            <option value="any">Оплата: любая</option>
+            <option value="with_rate">Со ставкой</option>
+            <option value="cash">Наличные</option>
+            <option value="nds">С НДС</option>
+            <option value="no_nds">Без НДС</option>
+            <option value="prepay">Предоплата</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ati-block">
+        <div class="ati-label">Вывод</div>
+        <div class="ati-row filters-actions">
+          <input id="q" type="search" placeholder="Поиск: город, груз, телефон…" />
+          <select id="sort">
+            <option value="date" selected>По дате публикации</option>
+            <option value="ppk">Дороже ₽/км</option>
+            <option value="near">Ближе к базе</option>
+            <option value="route">Короче маршрут</option>
+            <option value="score">Сначала скор</option>
+          </select>
+          <label class="check"><input id="shipperOnly" type="checkbox" checked /> Грузоотправители</label>
+          <label class="check"><input id="hotOnly" type="checkbox" /> Горячие</label>
+          <button id="btnApply" class="btn" type="button">Найти</button>
+          <button id="btnReset" class="btn ghost" type="button">Сбросить</button>
+        </div>
+      </div>
     </div>
+
     <div id="muteBar" class="mute-bar" hidden>
       <span class="mute-label">Скрытые:</span>
       <div id="muteList" class="mute-list"></div>
       <button type="button" class="linkish" id="btnClearMutes">Снять все</button>
     </div>
     <div id="moreFilters" class="more-filters" hidden>
-      <select id="body">
-        <option value="">Любой кузов</option>
-        <option value="reefer">Реф</option>
-        <option value="isotherm">Изотерм</option>
-        <option value="tent">Тент</option>
-        <option value="board">Борт</option>
-        <option value="box">Фургон</option>
-      </select>
-      <label class="check"><input id="reefer" type="checkbox" /> Только реф</label>
+      <label class="check"><input id="reefer" type="checkbox" /> Только реф/изотерм</label>
       <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="40" /></label>
     </div>
   </section>
