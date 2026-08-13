@@ -10,10 +10,12 @@
     .card { background: #1a222d; border-radius: 12px; padding: 20px; }
     img { width: 280px; height: 280px; background: #fff; border-radius: 8px; display: block; margin: 16px auto; }
     button { background: #3d8bfd; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; font-weight: 600; }
+    input[type=password] { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid #334; background: #0f1419; color: #e7ecf3; margin: 10px 0; }
     .muted { color: #9aa7b8; font-size: 0.9rem; line-height: 1.45; }
     .ok { color: #3dd68c; }
     .err { color: #ff7b72; }
     a { color: #7eb6ff; }
+    #pwdBox { display: none; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -22,30 +24,54 @@
   <div class="card">
     <button id="btn" type="button">Показать QR</button>
     <div id="box"></div>
+    <div id="pwdBox">
+      <p class="muted">Нужен пароль двухэтапной проверки (Settings → Privacy → 2FA), не код из SMS.</p>
+      <input id="pwd" type="password" autocomplete="current-password" placeholder="Пароль 2FA" />
+      <button id="btnPwd" type="button">Отправить пароль</button>
+    </div>
     <p id="st" class="muted"></p>
   </div>
   <p><a href="/">← к ленте</a></p>
   <script>
     const st = (t, cls) => { const el = document.getElementById("st"); el.className = cls || "muted"; el.textContent = t; };
+    const showPwd = () => { document.getElementById("pwdBox").style.display = "block"; document.getElementById("pwd").focus(); };
+    async function finishOk(user) {
+      st(`Готово: ${user || "ok"}. Перезапуск TG…`, "ok");
+      await fetch("/api/tg/restart", { method: "POST" });
+      setTimeout(() => location.href = "/", 2000);
+    }
+    document.getElementById("btnPwd").onclick = async () => {
+      const password = document.getElementById("pwd").value;
+      st("Проверяю пароль…");
+      const r = await fetch("/api/tg/qr/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const j = await r.json();
+      if (j.ok) return finishOk(j.user);
+      st(j.hint || j.error || "ошибка пароля", "err");
+    };
     document.getElementById("btn").onclick = async () => {
       const box = document.getElementById("box");
+      document.getElementById("pwdBox").style.display = "none";
       box.innerHTML = "";
       st("Генерирую QR…");
       const r = await fetch("/api/tg/qr", { method: "POST" });
       const j = await r.json();
       if (!j.ok) { st(j.error || "ошибка", "err"); return; }
-      if (j.status === "already") { st("Уже авторизовано. Обновите ленту.", "ok"); return; }
+      if (j.status === "already" || j.status === "done") { return finishOk(j.user); }
       box.innerHTML = `<img alt="QR" src="data:image/png;base64,${j.qr_png_base64}" />`;
       st("Отсканируйте QR в Telegram (Настройки → Устройства). Жду…");
       const w = await fetch("/api/tg/qr/wait?timeout=180", { method: "POST" });
       const done = await w.json();
-      if (done.ok) {
-        st(`Готово: ${done.user}. Перезапуск TG…`, "ok");
-        await fetch("/api/tg/restart", { method: "POST" });
-        setTimeout(() => location.href = "/", 2000);
-      } else {
-        st(done.error || "не удалось", "err");
+      if (done.ok) return finishOk(done.user);
+      if (done.status === "need_2fa") {
+        st(done.hint || "Нужен пароль 2FA", "err");
+        showPwd();
+        return;
       }
+      st(done.error || "не удалось", "err");
     };
   </script>
 </body>

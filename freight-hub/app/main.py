@@ -192,6 +192,10 @@ class MuteIn(BaseModel):
     direction: str = Field(min_length=2, max_length=80)
 
 
+class TgPasswordIn(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     import json as _json
@@ -367,6 +371,13 @@ async def tg_qr_wait(timeout: float = Query(120, ge=30, le=300)) -> dict[str, An
     from app import tg_login
 
     return await tg_login.wait_qr(timeout=timeout)
+
+
+@app.post("/api/tg/qr/password")
+async def tg_qr_password(body: TgPasswordIn) -> dict[str, Any]:
+    from app import tg_login
+
+    return await tg_login.submit_2fa(body.password)
 
 
 @app.post("/api/tg/restart")
