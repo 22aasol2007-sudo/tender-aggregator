@@ -639,6 +639,7 @@ function renderAnalyzeResult(data, extra = {}) {
         ${ex.price_rub != null ? `<span>ставка <b>${fmtRub(ex.price_rub)}</b></span>` : ""}
         ${ex.tonnage != null ? `<span><b>${esc(ex.tonnage)}</b> т</span>` : ""}
         ${ex.body ? `<span>кузов <b>${esc(ex.body)}</b></span>` : ""}
+        ${ex.board ? `<span>биржа <b>${esc(ex.board)}</b></span>` : ""}
         ${extra.method ? `<span>разбор: <b>${esc(extra.method)}</b></span>` : ""}
       </div>`
     : "";
@@ -656,7 +657,8 @@ function renderAnalyzeResult(data, extra = {}) {
         <div class="ati-label">Маршрут</div>
         <div class="analyze-big">${esc(data.from_city || data.base)} → ${esc(data.destination)}</div>
         <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"} · ~${pr.hours_empty_return ?? "—"} ч / ${pr.days_empty_return ?? "—"} сут (с порожняком)</div>
-        ${!data.route_km ? `<div class="offer-verdict bad">Нет километража — ставка не считается. Укажите города с координатами или км на скрине ATI.</div>` : ""}      </div>
+        ${!data.route_km ? `<div class="offer-verdict bad">Нет километража — ставка не считается. Укажите города с координатами или км на скрине биржи.</div>` : ""}
+      </div>
       <div class="analyze-card">
         <div class="ati-label">Обратка к базе (город + ${bh.radius_km ?? 100} км)</div>
         <div class="analyze-big">${bh.count ?? 0}</div>
@@ -740,7 +742,7 @@ async function runAnalyzeScreenshot() {
   const input = $("aShot");
   const file = input && input.files && input.files[0];
   if (!file) {
-    alert("Выберите скриншот объявления ATI");
+    alert("Выберите скриншот объявления с биржи грузов");
     return;
   }
   const base = ($("aBase").value || $("pBase").value || "москва").trim();

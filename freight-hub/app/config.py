@@ -58,7 +58,7 @@ ENABLE_TG = ENABLE_TG and OWN_TELETHON
 ATI_API_TOKEN = os.getenv("ATI_API_TOKEN", "").strip()
 MONOPOLY_API_TOKEN = os.getenv("MONOPOLY_API_TOKEN", "").strip()
 
-# Vision / OCR for ATI screenshot → rate analysis
+# Vision / OCR for freight-board screenshot → rate analysis
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-flash-latest").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()

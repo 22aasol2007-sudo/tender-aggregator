@@ -18,6 +18,24 @@ def test_fields_from_ati_like_text():
     assert f["tonnage"] == 10
     assert f["body"] == "tent"
     assert f["route_km"] == 174
+    assert f["board"] == "ati"
+
+
+def test_fields_from_perevozka24_like_text():
+    text = (
+        "Перевозка24\n"
+        "Откуда: Казань\n"
+        "Куда: Москва\n"
+        "20 т реф\n"
+        "Оплата 65 000 руб\n"
+        "812 км\n"
+    )
+    f = fields_from_text(text)
+    assert f["board"] == "perevozka24"
+    assert f["from_city"] and "казан" in f["from_city"]
+    assert f["to_city"] and "москв" in f["to_city"]
+    assert f["price_rub"] == 65000
+    assert f["body"] == "reefer"
 
 
 def test_resolve_outbound_from_base():

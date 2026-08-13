@@ -93,7 +93,7 @@ class RateAnalyzer:
             try:
                 listed = float(route_km_override)
                 if route_km is None or abs(listed - float(route_km)) / max(listed, 1) > 0.25:
-                    # if listed differs a lot, still prefer listed from ATI card
+                  # if listed differs a lot, still prefer listed km from the board card
                     if listed > 20:
                         route_km = listed
             except (TypeError, ValueError):

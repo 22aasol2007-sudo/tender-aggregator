@@ -507,7 +507,7 @@ async def analyze_screenshot(
     base: str | None = Form(None),
     live: bool = Form(True),
 ) -> dict[str, Any]:
-    """Upload ATI screenshot → extract route/rate → backhaul profitability."""
+    """Upload freight-board screenshot → extract route/rate → backhaul profitability."""
     raw = await file.read()
     extracted = await extract_from_screenshot(raw, filename=file.filename)
     if not extracted.get("ok"):
@@ -568,7 +568,7 @@ async def analyze_screenshot(
             advice = {
                 "action": "take",
                 "text": (
-                    f"Ставка ATI {int(offer):,} ₽ закрывает порог {int(hurdle):,} ₽"
+                    f"Ставка в объявлении {int(offer):,} ₽ закрывает порог {int(hurdle):,} ₽"
                     + (f" (ожид. чистыми ~{int(net):,} ₽)" if net is not None else "")
                     + f". {bh_note}"
                 ).replace(",", " "),
@@ -580,7 +580,7 @@ async def analyze_screenshot(
             advice = {
                 "action": "counter",
                 "text": (
-                    f"В ATI {int(offer):,} ₽ — мало. Нужно ≥ {int(hurdle):,} ₽ "
+                    f"В объявлении {int(offer):,} ₽ — мало. Нужно ≥ {int(hurdle):,} ₽ "
                     f"(+{int(gap):,} ₽), целевой коридор {band}. "
                     f"Без обратки безопасно от {int(empty_safe or hurdle):,} ₽. {bh_note}"
                 ).replace(",", " "),
@@ -591,7 +591,7 @@ async def analyze_screenshot(
     elif analysis.get("ok"):
         advice = {
             "action": "counter",
-            "text": "Не удалось посчитать ставку: нет километража (город без координат и км на скрине). Загрузите более чёткий скрин ATI или укажите крупный город выгрузки.",
+            "text": "Не удалось посчитать ставку: нет километража (город без координат и км на скрине). Загрузите более чёткий скрин биржи или укажите крупный город выгрузки.",
         }
 
     return {

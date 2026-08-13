@@ -1,4 +1,4 @@
-"""Extract ATI (and similar) load fields from a screenshot, then price the haul."""
+"""Extract freight-board load fields from a screenshot, then price the haul."""
 
 from __future__ import annotations
 
@@ -18,9 +18,15 @@ from app.parse import _canon_city, parse_load
 log = logging.getLogger("screenshot_offer")
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
-VISION_PROMPT = """Ты разбираешь скриншот объявления с биржи грузов ATI.SU (или похожей).
+VISION_PROMPT = """Ты разбираешь скриншот объявления о ГРУЗЕ с любой российской биржи/агрегатора
+(ATI.SU, Перевозка24, Везёт Всем, CargoCash, PapaCargo, Roolz, Автодиспетчер, Loginet,
+Cargomart, Svezem, Monopoly, Telegram/MAX и т.п.) или мобильного приложения.
+
+Игнорируй рекламу, меню, кнопки «войти», иконки. Возьми данные ИМЕННО выбранной карточки/объявления.
+
 Верни ТОЛЬКО JSON без markdown:
 {
+  "board": "ati|perevozka24|vezetvsem|cargocash|papacargo|roolz|avtodispetcher|cargomart|svezem|monopoly|telegram|max|other|null",
   "from_city": "город погрузки или null",
   "to_city": "город выгрузки или null",
   "price_rub": число ставки в рублях целиком или null,
@@ -30,8 +36,11 @@ VISION_PROMPT = """Ты разбираешь скриншот объявлени
   "route_km": километраж числом или null,
   "raw_text": "краткий текст с экрана"
 }
-Города — одним словом/названием на русском (Москва, Тула, Казань…).
-Если ставка «от 45 000» — бери 45000. Если только ₽/км — заполни price_per_km.
+Города — коротко по-русски (Москва, Тула, Санкт-Петербург, Казань…).
+Если в адресе область/район — бери населённый пункт погрузки/выгрузки.
+Ставка «от 45 000» / «45000 руб» → price_rub=45000.
+Только «120 ₽/км» → price_per_km=120.
+Реф/рефрижератор → body=reefer; тент → tent; изотерм → isotherm; борт → board; фургон → box.
 """
 
 
@@ -86,25 +95,27 @@ def _norm_body(val: Any) -> str | None:
 
 
 def fields_from_text(text: str) -> dict[str, Any]:
-    """Heuristic + freight_core parse for OCR / pasted ATI text."""
+    """Heuristic + freight_core parse for OCR / pasted board text."""
     raw = (text or "").strip()
     parsed = parse_load(raw) if raw else None
     price = None
     ppk = None
-    # ATI often shows "45 000 ₽" or "120 ₽/км"
+    # Common board formats: "45 000 ₽", "45000 руб", "120 ₽/км", "ставка: 80тр"
     for m in re.finditer(
-        r"(\d[\d\s]{2,8})\s*(?:₽|руб|р\.)(?:\s*/\s*км|\s*за\s*км)?",
+        r"(?:ставк[аие]\s*[:=]?\s*)?(\d[\d\s]{2,8})\s*(?:₽|руб\.?|р\.|тр\b|тыс)?"
+        r"(?:\s*/\s*км|\s*за\s*км)?",
         raw.lower().replace("ё", "е"),
         flags=re.I,
     ):
         chunk = m.group(0)
+        num = m.group(1)
         if "/км" in chunk or "за км" in chunk:
             try:
-                ppk = float(re.sub(r"[^\d.,]", "", m.group(1)).replace(",", "."))
+                ppk = float(re.sub(r"[^\d.,]", "", num).replace(",", "."))
             except ValueError:
                 pass
         else:
-            price = parse_price_rub(m.group(1) + " руб") or price
+            price = parse_price_rub(num + (" тыс руб" if "тыс" in chunk or "тр" in chunk else " руб")) or price
 
     tonnage = parsed.tonnage if parsed else None
     if tonnage is None:
@@ -125,15 +136,23 @@ def fields_from_text(text: str) -> dict[str, Any]:
 
     from_city = _norm_city(parsed.from_city if parsed else None)
     to_city = _norm_city(parsed.to_city if parsed else None)
-    # ATI arrow patterns — prefer over noisy parse_load hits (e.g. "ATI.SU")
+    # Route arrows used across ATI / P24 / VezetVsem / TG
     m = re.search(
-        r"([А-Яа-яЁёA-Za-z\-]{3,30})\s*(?:→|->|—|–)\s*([А-Яа-яЁёA-Za-z\-]{3,30})",
+        r"([А-Яа-яЁёA-Za-z\-]{3,30})\s*(?:→|->|—|–|➜|⇒)\s*([А-Яа-яЁёA-Za-z\-]{3,30})",
         raw,
     )
     if not m:
         m = re.search(
             r"([А-Яа-яЁё]{3,30})\s+-\s+([А-Яа-яЁё]{3,30})",
             raw,
+        )
+    if not m:
+        m = re.search(
+            r"(?:откуда|погрузк[аи]|from)\s*[:\-]?\s*([А-Яа-яЁёA-Za-z\-\s]{3,40})"
+            r".{0,40}?"
+            r"(?:куда|выгрузк[аи]|to)\s*[:\-]?\s*([А-Яа-яЁёA-Za-z\-\s]{3,40})",
+            raw,
+            flags=re.I | re.S,
         )
     if m:
         arrow_from = _norm_city(m.group(1))
@@ -145,7 +164,10 @@ def fields_from_text(text: str) -> dict[str, Any]:
     if parsed and parsed.price and price is None:
         price = parse_price_rub(parsed.price)
 
+    board = _detect_board(raw)
+
     return {
+        "board": board,
         "from_city": from_city,
         "to_city": to_city,
         "price_rub": float(price) if price is not None else None,
@@ -157,8 +179,31 @@ def fields_from_text(text: str) -> dict[str, Any]:
     }
 
 
+def _detect_board(text: str) -> str | None:
+    low = (text or "").lower().replace("ё", "е")
+    rules = [
+        ("ati", ("ati.su", "ati su", "loads.ati", "ати")),
+        ("perevozka24", ("perevozka24", "перевозка 24", "перевозка24")),
+        ("vezetvsem", ("vezetvsem", "везет всем", "везёт всем")),
+        ("cargocash", ("cargocash", "каргокэш", "карго кеш")),
+        ("papacargo", ("papacargo", "папакарго", "папа карго")),
+        ("roolz", ("roolz", "рулз")),
+        ("avtodispetcher", ("avtodispetcher", "автодиспетчер")),
+        ("cargomart", ("cargomart", "каргомарт")),
+        ("svezem", ("svezem", "свезем")),
+        ("monopoly", ("monopoly", "монополи")),
+        ("telegram", ("telegram", "t.me", "телеграм")),
+        ("max", ("max.ru", "макс мессенджер")),
+    ]
+    for name, keys in rules:
+        if any(k in low for k in keys):
+            return name
+    return None
+
+
 def merge_fields(*parts: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
+        "board": None,
         "from_city": None,
         "to_city": None,
         "price_rub": None,
@@ -182,6 +227,8 @@ def merge_fields(*parts: dict[str, Any]) -> dict[str, Any]:
     out["from_city"] = _norm_city(out.get("from_city"))
     out["to_city"] = _norm_city(out.get("to_city"))
     out["body"] = _norm_body(out.get("body"))
+    if not out.get("board"):
+        out["board"] = _detect_board(out.get("raw_text") or "\n".join(texts))
     out["raw_text"] = "\n".join(texts)[:2000]
     return out
 
@@ -256,6 +303,7 @@ async def vision_gemini(image_bytes: bytes, mime: str) -> dict[str, Any]:
         return {}
     parsed = _parse_json_loose(text)
     return {
+        "board": parsed.get("board") or _detect_board(str(parsed.get("raw_text") or text)),
         "from_city": _norm_city(parsed.get("from_city")),
         "to_city": _norm_city(parsed.get("to_city")),
         "price_rub": _num(parsed.get("price_rub")),
@@ -301,6 +349,7 @@ async def vision_openai(image_bytes: bytes, mime: str) -> dict[str, Any]:
         return {}
     parsed = _parse_json_loose(text if isinstance(text, str) else str(text))
     return {
+        "board": parsed.get("board") or _detect_board(str(parsed.get("raw_text") or text)),
         "from_city": _norm_city(parsed.get("from_city")),
         "to_city": _norm_city(parsed.get("to_city")),
         "price_rub": _num(parsed.get("price_rub")),
@@ -386,7 +435,7 @@ async def extract_from_screenshot(
             + (
                 ""
                 if cfg["gemini"] or cfg["openai"]
-                else " или задайте GEMINI_API_KEY для точного разбора ATI"
+                else " или задайте GEMINI_API_KEY для точного разбора скринов бирж"
             )
             + "."
         )
@@ -406,10 +455,10 @@ def resolve_analyze_targets(
     base: str,
 ) -> dict[str, Any]:
     """
-    Decide destination for backhaul math and listed offer from ATI card.
+    Decide destination for backhaul math and listed offer from the ad card.
 
     Carrier base is usually Москва. Destination = far end of the trip
-    (city that is not the base). Listed ATI rate becomes offer_rub.
+    (city that is not the base). Listed board rate becomes offer_rub.
     """
     base_n = (base or "москва").strip().lower().replace("ё", "е") or "москва"
     frm = (fields.get("from_city") or "").strip().lower().replace("ё", "е")
@@ -441,6 +490,7 @@ def resolve_analyze_targets(
             offer = None
 
     return {
+        "board": fields.get("board"),
         "base": base_n,
         "destination": destination,
         "direction": direction,
