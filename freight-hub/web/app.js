@@ -149,7 +149,12 @@ async function refreshHealth() {
     const banner = $("banner");
     if (h.hints && h.hints.length) {
       banner.hidden = false;
-      banner.textContent = h.hints.join(" ");
+      const text = h.hints.join(" ");
+      if (text.includes("/tg-login")) {
+        banner.innerHTML = `${esc(text)} — <a href="/tg-login" style="color:inherit;font-weight:700">открыть вход</a>`;
+      } else {
+        banner.textContent = text;
+      }
     } else {
       banner.hidden = true;
       banner.textContent = "";

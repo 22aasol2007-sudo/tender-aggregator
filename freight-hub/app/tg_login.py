@@ -100,28 +100,27 @@ async def wait_qr(timeout: float = 120.0) -> dict[str, Any]:
         qr = _state.get("qr")
         if not client or not qr:
             return {"ok": False, "status": _state.get("status") or "idle", "error": "no_active_qr"}
-        try:
-            await asyncio.wait_for(qr.wait(), timeout=timeout)
+        # Copy refs then release lock so reconnect/health can run while waiting
+        _state["status"] = "waiting"
+    try:
+        await asyncio.wait_for(qr.wait(), timeout=timeout)
+        async with _lock:
             _save_string(client)
             me = await client.get_me()
-            await client.disconnect()
-            _state.update(
-                {
-                    "client": None,
-                    "qr": None,
-                    "url": None,
-                    "status": "done",
-                    "error": None,
-                }
-            )
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            _state.update({"client": None, "qr": None, "url": None, "status": "done", "error": None})
             return {
                 "ok": True,
                 "status": "done",
                 "user": me.username or me.first_name,
                 "hint": "Сессия сохранена. Telegram перезапустится автоматически.",
             }
-        except Exception as exc:
-            _state["error"] = str(exc)
+    except Exception as exc:
+        async with _lock:
+            _state["error"] = str(exc) or repr(exc)
             _state["status"] = "error"
             try:
                 await client.disconnect()
@@ -129,7 +128,7 @@ async def wait_qr(timeout: float = 120.0) -> dict[str, Any]:
                 pass
             _state["client"] = None
             _state["qr"] = None
-            return {"ok": False, "status": "error", "error": str(exc)}
+            return {"ok": False, "status": "error", "error": str(exc) or repr(exc)}
 
 
 async def _cancel_unlocked() -> None:
