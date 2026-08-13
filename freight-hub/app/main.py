@@ -263,7 +263,13 @@ async def health() -> dict[str, Any]:
                 tg_need_login = True
                 hints.append("Telegram отключён. Проверьте сессию: /tg-login")
     elif tg_h.get("failed_count"):
-        hints.append(f"Telegram: не резолвится чатов: {tg_h.get('failed_count')}")
+        fails = tg_h.get("failed_resolve") or []
+        if isinstance(fails, list) and fails:
+            names = ", ".join(f"@{u}" for u in fails[:5])
+            more = f" (+{len(fails)-5})" if len(fails) > 5 else ""
+            hints.append(f"Telegram: не резолвится: {names}{more}")
+        else:
+            hints.append(f"Telegram: не резолвится чатов: {tg_h.get('failed_count')}")
 
     zero_raw = await db.get_setting("zero_add_streaks")
     try:
