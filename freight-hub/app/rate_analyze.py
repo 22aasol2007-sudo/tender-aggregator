@@ -15,11 +15,14 @@ from bs4 import BeautifulSoup
 
 from app import config
 from app.ingest import calc_price_per_km
-from app.truck_economics import evaluate_offer, price_outbound_leg, truck_params
+from app.truck_economics import build_verdict, evaluate_offer, price_outbound_leg, truck_params
+from freight_core.geo import nearest_hub
 
 log = logging.getLogger("rate_analyze")
 
 DEFAULT_LOADED_PPK = 85.0
+_PROBE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_PROBE_TTL_SEC = 480  # 8 minutes
 
 
 def _median(vals: list[float]) -> float | None:
@@ -65,46 +68,84 @@ class RateAnalyzer:
         live_probe: bool = True,
         route_km_override: float | None = None,
         from_city: str | None = None,
+        params_override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         base_n = _norm(base or "москва") or "москва"
         dest_n = _norm(destination or "")
         if not dest_n:
             return {"ok": False, "error": "Укажите город выгрузки"}
 
-        params = truck_params()
+        params = truck_params(params_override)
         radius = float(params["backhaul_radius_km"])
         load_from = _norm(from_city) if from_city else None
+        dest_hub = nearest_hub(dest_n)
 
+        # Manual / listed km always wins over geo
         route_km = None
-        # Prefer actual loading city from the ad when present
-        if load_from:
-            route_km, _ = calc_price_per_km(None, load_from, dest_n)
-        if route_km is None:
-            route_km, _ = calc_price_per_km(None, base_n, dest_n)
-        if route_km is None:
-            route_km, _ = calc_price_per_km(None, dest_n, base_n)
-        if route_km is None and route_km_override:
+        km_source = None
+        listed_km = None
+        if route_km_override is not None:
             try:
-                route_km = float(route_km_override)
+                listed_km = float(route_km_override)
             except (TypeError, ValueError):
-                route_km = None
-        elif route_km_override:
-            # Trust ATI km if close or if geo missing precision for villages
-            try:
-                listed = float(route_km_override)
-                if route_km is None or abs(listed - float(route_km)) / max(listed, 1) > 0.25:
-                  # if listed differs a lot, still prefer listed km from the board card
-                    if listed > 20:
-                        route_km = listed
-            except (TypeError, ValueError):
-                pass
+                listed_km = None
+        if listed_km is not None and listed_km > 20:
+            route_km = listed_km
+            km_source = "manual"
+        else:
+            if load_from:
+                route_km, _ = calc_price_per_km(None, load_from, dest_n)
+            if route_km is None:
+                route_km, _ = calc_price_per_km(None, base_n, dest_n)
+            if route_km is None:
+                route_km, _ = calc_price_per_km(None, dest_n, base_n)
+            if route_km is None and dest_hub and dest_hub != dest_n:
+                route_km, _ = calc_price_per_km(None, load_from or base_n, dest_hub)
+            if route_km is not None:
+                km_source = "geo"
 
         outbound = await self.db.route_stats(from_city=base_n, to_city=dest_n, days=7)
+        if int(outbound.get("count") or 0) == 0 and dest_hub and dest_hub != dest_n:
+            outbound_hub = await self.db.route_stats(from_city=base_n, to_city=dest_hub, days=7)
+            if int(outbound_hub.get("count") or 0) > int(outbound.get("count") or 0):
+                outbound = outbound_hub
+
         backhaul = await self.db.route_stats(from_city=dest_n, to_city=base_n, days=7)
         backhaul_broad = await self.db.backhaul_to_base_stats(origin=dest_n, base=base_n, days=7)
         nearby = await self.db.backhaul_nearby_to_base(
             origin=dest_n, base=base_n, radius_km=radius, days=7, limit=15
         )
+        if dest_hub and dest_hub != dest_n:
+            nearby_hub = await self.db.backhaul_nearby_to_base(
+                origin=dest_hub, base=base_n, radius_km=radius, days=7, limit=15
+            )
+            hub_broad = await self.db.backhaul_to_base_stats(origin=dest_hub, base=base_n, days=7)
+            if int(hub_broad.get("count") or 0) > int(backhaul_broad.get("count") or 0):
+                backhaul_broad = hub_broad
+            # merge nearby city lists by max N
+            by_city: dict[str, dict[str, Any]] = {}
+            for row in (nearby.get("cities") or []) + (nearby_hub.get("cities") or []):
+                c = _norm(str(row.get("city") or ""))
+                if not c:
+                    continue
+                prev = by_city.get(c)
+                if not prev or int(row.get("backhaul_n") or 0) > int(prev.get("backhaul_n") or 0):
+                    by_city[c] = row
+            merged_cities = sorted(
+                by_city.values(),
+                key=lambda r: int(r.get("backhaul_n") or 0),
+                reverse=True,
+            )[:15]
+            nearby = {
+                **nearby,
+                "cities": merged_cities,
+                "count": max(int(nearby.get("count") or 0), int(nearby_hub.get("count") or 0)),
+                "count_radius": max(
+                    int(nearby.get("count_radius") or 0),
+                    int(nearby_hub.get("count_radius") or 0),
+                ),
+            }
+
         ranking = await self.db.backhaul_city_ranking(base=base_n, days=7, limit=25)
 
         peer_counts = [int(r["backhaul_n"]) for r in ranking if r.get("city") != dest_n]
@@ -114,7 +155,7 @@ class RateAnalyzer:
         dest_rank_row = None
         for i, row in enumerate(ranking, start=1):
             city = _norm(str(row.get("city") or ""))
-            if city == dest_n or dest_n in city or city in dest_n:
+            if city == dest_n or dest_n in city or city in dest_n or (dest_hub and city == dest_hub):
                 dest_rank = i
                 dest_rank_row = row
                 break
@@ -131,7 +172,7 @@ class RateAnalyzer:
         external_n = 0
         if live_probe:
             try:
-                live = await probe_external_backhaul(dest_n, base_n)
+                live = await probe_external_backhaul(dest_hub or dest_n, base_n)
                 external_n = int(live.get("unwired_total") or 0)
             except Exception as exc:
                 log.warning("live probe failed: %s", exc)
@@ -160,17 +201,56 @@ class RateAnalyzer:
                 p=params,
             )
 
+        verdict = build_verdict(
+            offer_rub=float(offer_rub) if offer_rub is not None else None,
+            suggested_min=float(suggested_min_total) if suggested_min_total is not None else None,
+            empty_safe=float(econ["suggested_empty_safe_rub"]) if econ.get("ok") else None,
+            p_find=p_find,
+            p=params,
+        )
+
+        market_median_total = outbound.get("median_price")
+        if market_median_total is None and out_ppk and km > 0:
+            market_median_total = float(out_ppk) * km
+        market = None
+        if suggested_min_total is not None and market_median_total:
+            delta = float(suggested_min_total) - float(market_median_total)
+            market = {
+                "median_total_rub": round(float(market_median_total), 0),
+                "median_ppk": round(float(out_ppk), 1) if out_ppk else None,
+                "your_min_rub": round(float(suggested_min_total), 0),
+                "delta_rub": round(delta, 0),
+                "vs": (
+                    "above_market"
+                    if delta > float(market_median_total) * 0.08
+                    else ("below_market" if delta < -float(market_median_total) * 0.08 else "near")
+                ),
+            }
+
+        waterfall = None
+        if offer_eval and offer_eval.get("waterfall"):
+            waterfall = offer_eval["waterfall"]
+        elif econ.get("ok"):
+            waterfall = econ.get("waterfall")
+
         sources_used = await self.db.stats_sources_in_window(days=7)
         route_label_from = load_from or base_n
+        top5 = (nearby.get("cities") or [])[:5]
 
         return {
             "ok": True,
             "base": base_n,
             "destination": dest_n,
+            "destination_hub": dest_hub,
             "from_city": route_label_from,
             "route_km": round(km, 1) if km else None,
+            "km_source": km_source,
             "tonnage": tonnage,
             "body": body,
+            "verdict": verdict,
+            "waterfall": waterfall,
+            "scenarios": econ.get("scenarios") if econ.get("ok") else None,
+            "market": market,
             "truck": {
                 "load_unload_hours": params["load_unload_hours"],
                 "driver_day_rub": params["driver_day_rub"],
@@ -202,7 +282,7 @@ class RateAnalyzer:
                 "rank": dest_rank,
                 "peers": len(ranking),
                 "peer_median_backhaul": round(peer_median, 1) if peer_median is not None else None,
-                "nearby_cities": nearby.get("cities") or [],
+                "nearby_cities": top5,
             },
             "economics": econ if econ.get("ok") else None,
             "pricing": {
@@ -223,25 +303,43 @@ class RateAnalyzer:
                 "target_net_max": params["target_net_max"],
                 "offer": offer_eval,
             },
-            "ranking": ranking[:15],
+            "ranking": ranking[:10],
             "live_external": live,
             "feed_sources": sources_used,
             "notes": [
                 f"Машина: дизель {int(params['fuel_l_per_100km'])} л/100 км × {int(params['diesel_rub_per_l'])} ₽, водитель {int(params['driver_day_rub'])} ₽/сут.",
-                f"Погрузка+выгрузка ≈ {params['load_unload_hours']} ч, амортизация {int(params['amortization_pct']*100)}% от ставки, налог {int(params['tax_pct']*100)}% от ставки клиенту.",
-                f"Целевая чистая прибыль {int(params['target_net_min'])}–{int(params['target_net_max'])} ₽ на рейс.",
-                f"Обратка: город выгрузки + радиус {int(radius)} км к «{base_n}» (лента 7 суток + live внешних площадок).",
-                "Порожний возврат в расчёте заложен с вероятностью (1 − p_find).",
+                f"Налог {int(params['tax_pct']*100)}% и амортизация {int(params['amortization_pct']*100)}% от ставки клиенту.",
+                f"Цель чистыми {int(params['target_net_min'])}–{int(params['target_net_max'])} ₽.",
+                (
+                    f"Выгрузка «{dest_n}» → хаб «{dest_hub}»."
+                    if dest_hub and dest_hub != dest_n
+                    else f"Обратка: выгрузка + {int(radius)} км к «{base_n}»."
+                ),
             ] + (
                 []
                 if km > 0
-                else ["Не удалось определить километраж — ставка не посчитана. Проверьте города или км на скрине."]
+                else ["Нет километража — ставка не посчитана."]
             ),
             "updated_at": time.time(),
         }
 
 
 async def probe_external_backhaul(origin: str, base: str) -> dict[str, Any]:
+    """Cached live probe (≈8 min) — fewer timeouts / empty bursts."""
+    key = f"{_norm(origin)}|{_norm(base)}"
+    now = time.time()
+    hit = _PROBE_CACHE.get(key)
+    if hit and now - hit[0] < _PROBE_TTL_SEC:
+        cached = dict(hit[1])
+        cached["cached"] = True
+        cached["cache_age_sec"] = int(now - hit[0])
+        return cached
+    result = await _probe_external_backhaul_uncached(origin, base)
+    _PROBE_CACHE[key] = (now, {k: v for k, v in result.items() if k not in ("cached", "cache_age_sec")})
+    return {**result, "cached": False}
+
+
+async def _probe_external_backhaul_uncached(origin: str, base: str) -> dict[str, Any]:
     """Probe boards — unwired platforms count toward risk; wired shown for transparency."""
     headers = {
         "User-Agent": config.USER_AGENT,

@@ -15,8 +15,8 @@ def _f(name: str, default: float) -> float:
         return float(default)
 
 
-def truck_params() -> dict[str, float]:
-    return {
+def truck_params(overrides: dict[str, Any] | None = None) -> dict[str, float]:
+    p = {
         "load_unload_hours": _f("TRUCK_LOAD_UNLOAD_HOURS", 2.5),
         "driver_day_rub": _f("TRUCK_DRIVER_DAY_RUB", 10000),
         "fuel_l_per_100km": _f("TRUCK_FUEL_L_PER_100KM", 30),
@@ -28,6 +28,14 @@ def truck_params() -> dict[str, float]:
         "avg_speed_kmh": _f("TRUCK_AVG_SPEED_KMH", 55),
         "backhaul_radius_km": _f("BACKHAUL_RADIUS_KM", 100),
     }
+    if overrides:
+        for k, v in overrides.items():
+            if k in p and v is not None and v != "":
+                try:
+                    p[k] = float(v)
+                except (TypeError, ValueError):
+                    pass
+    return p
 
 
 def fuel_rub_for_km(km: float, p: dict[str, float] | None = None) -> float:
@@ -36,7 +44,6 @@ def fuel_rub_for_km(km: float, p: dict[str, float] | None = None) -> float:
 
 
 def trip_hours(*, km_one_way: float, with_backhaul: bool, p: dict[str, float] | None = None) -> float:
-    """Drive round-trip + handling. Backhaul adds another load/unload cycle."""
     p = p or truck_params()
     speed = max(30.0, p["avg_speed_kmh"])
     drive = 2.0 * float(km_one_way) / speed
@@ -45,24 +52,13 @@ def trip_hours(*, km_one_way: float, with_backhaul: bool, p: dict[str, float] | 
 
 
 def trip_days(hours: float) -> int:
-    """Calendar-ish days for driver pay (ceil of 24h blocks, min 1)."""
     if hours <= 0:
         return 1
     return max(1, int(math.ceil(hours / 24.0)))
 
 
 def revenue_for_target_net(*, costs: float, target_net: float, p: dict[str, float] | None = None) -> float:
-    """
-    Tax is taken from the client rate (turnover), not from profit:
-
-      tax = tax_pct * R
-      amort = amortization_pct * R
-      net = R - tax - amort - costs
-          = R * (1 - tax_pct - amortization_pct) - costs
-
-    Solve for target net:
-      R = (costs + target_net) / (1 - tax_pct - amortization_pct)
-    """
+    """R = (costs + target) / (1 - tax - amort); tax & amort from client rate."""
     p = p or truck_params()
     amort = min(0.4, max(0.0, p["amortization_pct"]))
     tax = min(0.9, max(0.0, p["tax_pct"]))
@@ -71,12 +67,38 @@ def revenue_for_target_net(*, costs: float, target_net: float, p: dict[str, floa
 
 
 def net_profit(*, revenue: float, costs: float, p: dict[str, float] | None = None) -> float:
-    """Net after tax-on-rate, amortization-on-rate, and operating costs."""
     p = p or truck_params()
     r = float(revenue)
+    return r - r * p["tax_pct"] - r * p["amortization_pct"] - float(costs)
+
+
+def waterfall(
+    *,
+    rate_rub: float,
+    fuel_rub: float,
+    driver_rub: float,
+    empty_risk_rub: float,
+    p: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Ставка → налог → амортизация → топливо → водитель → риск порожняка → чистыми."""
+    p = p or truck_params()
+    r = float(rate_rub)
     tax = r * p["tax_pct"]
     amort = r * p["amortization_pct"]
-    return r - tax - amort - float(costs)
+    fuel = float(fuel_rub)
+    driver = float(driver_rub)
+    risk = max(0.0, float(empty_risk_rub))
+    net = r - tax - amort - fuel - driver - risk
+    steps = [
+        {"key": "rate", "label": "Ставка клиенту", "rub": round(r, 0), "sign": ""},
+        {"key": "tax", "label": f"Налог {int(p['tax_pct'] * 100)}% от ставки", "rub": round(-tax, 0), "sign": "−"},
+        {"key": "amort", "label": f"Амортизация {int(p['amortization_pct'] * 100)}%", "rub": round(-amort, 0), "sign": "−"},
+        {"key": "fuel", "label": "Топливо", "rub": round(-fuel, 0), "sign": "−"},
+        {"key": "driver", "label": "Водитель", "rub": round(-driver, 0), "sign": "−"},
+        {"key": "empty_risk", "label": "Риск порожняка", "rub": round(-risk, 0), "sign": "−"},
+        {"key": "net", "label": "Чистыми", "rub": round(net, 0), "sign": "="},
+    ]
+    return {"rate_rub": round(r, 0), "net_rub": round(net, 0), "steps": steps}
 
 
 def price_outbound_leg(
@@ -85,10 +107,6 @@ def price_outbound_leg(
     p_find_backhaul: float,
     p: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """
-    Minimum outbound rate so that expected net profit hits target band.
-    Tax 35% and amortization 5% are taken from the client rate; then operating costs.
-    """
     p = p or truck_params()
     km = float(km or 0)
     if km <= 0:
@@ -102,15 +120,16 @@ def price_outbound_leg(
     hours_bh = trip_hours(km_one_way=km, with_backhaul=True, p=p)
     days_empty = trip_days(hours_empty)
     days_bh = trip_days(hours_bh)
-
     driver_empty = days_empty * p["driver_day_rub"]
     driver_bh = days_bh * p["driver_day_rub"]
 
-    # If backhaul found: return fuel/driver attributed to other load → outbound bears outbound fuel + half driver days of round
-    # Conservative EV: outbound must cover full empty-return costs with probability (1-p)
     costs_if_empty = fuel_round + driver_empty
-    costs_if_bh = fuel_one + driver_empty * 0.55  # outbound share when return is paid by backhaul
+    costs_if_bh = fuel_one + driver_empty * 0.55
     expected_costs = (1.0 - pf) * costs_if_empty + pf * costs_if_bh
+
+    fuel_exp = (1.0 - pf) * fuel_round + pf * fuel_one
+    driver_exp = (1.0 - pf) * driver_empty + pf * (driver_empty * 0.55)
+    empty_risk = max(0.0, expected_costs - costs_if_bh)
 
     r_min = revenue_for_target_net(costs=expected_costs, target_net=p["target_net_min"], p=p)
     r_mid = revenue_for_target_net(
@@ -119,9 +138,13 @@ def price_outbound_leg(
         p=p,
     )
     r_max = revenue_for_target_net(costs=expected_costs, target_net=p["target_net_max"], p=p)
-
-    # Worst-case quote (assume empty return for sure)
     r_empty_min = revenue_for_target_net(costs=costs_if_empty, target_net=p["target_net_min"], p=p)
+    r_bh_min = revenue_for_target_net(costs=costs_if_bh, target_net=p["target_net_min"], p=p)
+    r_bh_mid = revenue_for_target_net(
+        costs=costs_if_bh,
+        target_net=(p["target_net_min"] + p["target_net_max"]) / 2.0,
+        p=p,
+    )
 
     return {
         "ok": True,
@@ -134,8 +157,11 @@ def price_outbound_leg(
         "days_with_backhaul": days_bh,
         "fuel_one_way_rub": round(fuel_one, 0),
         "fuel_round_rub": round(fuel_round, 0),
+        "fuel_expected_rub": round(fuel_exp, 0),
         "driver_empty_rub": round(driver_empty, 0),
         "driver_backhaul_rub": round(driver_bh, 0),
+        "driver_expected_rub": round(driver_exp, 0),
+        "empty_risk_rub": round(empty_risk, 0),
         "costs_if_empty_rub": round(costs_if_empty, 0),
         "costs_if_backhaul_rub": round(costs_if_bh, 0),
         "expected_costs_rub": round(expected_costs, 0),
@@ -143,14 +169,101 @@ def price_outbound_leg(
         "suggested_mid_total_rub": round(r_mid, 0),
         "suggested_max_total_rub": round(r_max, 0),
         "suggested_empty_safe_rub": round(r_empty_min, 0),
+        "suggested_backhaul_min_rub": round(r_bh_min, 0),
+        "suggested_backhaul_mid_rub": round(r_bh_mid, 0),
         "suggested_min_ppk": round(r_min / km, 1),
         "suggested_mid_ppk": round(r_mid / km, 1),
         "suggested_max_ppk": round(r_max / km, 1),
+        "waterfall": waterfall(
+            rate_rub=r_mid,
+            fuel_rub=fuel_exp,
+            driver_rub=driver_exp,
+            empty_risk_rub=empty_risk,
+            p=p,
+        ),
+        "scenarios": {
+            "with_backhaul": {
+                "label": "С обраткой",
+                "costs_rub": round(costs_if_bh, 0),
+                "suggest_min_rub": round(r_bh_min, 0),
+                "suggest_mid_rub": round(r_bh_mid, 0),
+                "ppk": round(r_bh_min / km, 1),
+                "hours": round(hours_bh, 1),
+                "days": days_bh,
+            },
+            "empty_return": {
+                "label": "Без обратки",
+                "costs_rub": round(costs_if_empty, 0),
+                "suggest_min_rub": round(r_empty_min, 0),
+                "suggest_mid_rub": round(
+                    revenue_for_target_net(
+                        costs=costs_if_empty,
+                        target_net=(p["target_net_min"] + p["target_net_max"]) / 2.0,
+                        p=p,
+                    ),
+                    0,
+                ),
+                "ppk": round(r_empty_min / km, 1),
+                "hours": round(hours_empty, 1),
+                "days": days_empty,
+            },
+        },
         "amortization_pct": p["amortization_pct"],
         "tax_pct": p["tax_pct"],
         "tax_on": "client_rate",
         "target_net_min": p["target_net_min"],
         "target_net_max": p["target_net_max"],
+    }
+
+
+def build_verdict(
+    *,
+    offer_rub: float | None,
+    suggested_min: float | None,
+    empty_safe: float | None,
+    p_find: float,
+    p: dict[str, float],
+) -> dict[str, Any]:
+    propose = float(suggested_min or 0)
+    if propose <= 0:
+        return {
+            "action": "unknown",
+            "label": "нет данных",
+            "tone": "muted",
+            "propose_rub": None,
+            "text": "Недостаточно данных для ставки",
+        }
+    if offer_rub is None:
+        return {
+            "action": "propose",
+            "label": "предлагать от",
+            "tone": "propose",
+            "propose_rub": round(propose, 0),
+            "text": f"Предлагайте от {int(propose):,} ₽".replace(",", " "),
+        }
+    offer = float(offer_rub)
+    if offer >= propose:
+        return {
+            "action": "take",
+            "label": "брать",
+            "tone": "take",
+            "propose_rub": round(propose, 0),
+            "text": f"Можно брать · порог {int(propose):,} ₽".replace(",", " "),
+        }
+    if empty_safe and offer < float(empty_safe) * 0.85 and p_find < 0.25:
+        return {
+            "action": "skip",
+            "label": "мимо",
+            "tone": "skip",
+            "propose_rub": round(propose, 0),
+            "text": f"Слабая обратка и ставка низкая · нужно от {int(propose):,} ₽".replace(",", " "),
+        }
+    return {
+        "action": "raise",
+        "label": "поднять",
+        "tone": "raise",
+        "propose_rub": round(propose, 0),
+        "text": f"Поднять до {int(propose):,} ₽ (+{int(propose - offer):,} ₽)".replace(",", " "),
     }
 
 
@@ -179,4 +292,11 @@ def evaluate_offer(
             else ("на грани" if net >= p["target_net_min"] * 0.7 else "риск минуса")
         ),
         "in_target_band": p["target_net_min"] <= net <= p["target_net_max"],
+        "waterfall": waterfall(
+            rate_rub=float(offer_rub),
+            fuel_rub=float(priced["fuel_expected_rub"]),
+            driver_rub=float(priced["driver_expected_rub"]),
+            empty_risk_rub=float(priced["empty_risk_rub"]),
+            p=p,
+        ),
     }

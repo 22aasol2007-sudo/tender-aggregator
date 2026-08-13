@@ -203,6 +203,54 @@ class TruckProfile(BaseModel):
     radius_far: float | None = None
     backhaul: bool = False
     temp: str | None = None
+    # Unit economics (override env defaults)
+    diesel_rub_per_l: float | None = None
+    fuel_l_per_100km: float | None = None
+    driver_day_rub: float | None = None
+    tax_pct: float | None = None  # 0.35 or 35
+    amortization_pct: float | None = None
+    target_net_min: float | None = None
+    target_net_max: float | None = None
+    load_unload_hours: float | None = None
+    backhaul_radius_km: float | None = None
+
+
+def _econ_overrides_from_profile(profile: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(profile, dict):
+        return {}
+    keys = (
+        "diesel_rub_per_l",
+        "fuel_l_per_100km",
+        "driver_day_rub",
+        "tax_pct",
+        "amortization_pct",
+        "target_net_min",
+        "target_net_max",
+        "load_unload_hours",
+        "backhaul_radius_km",
+        "avg_speed_kmh",
+    )
+    out: dict[str, Any] = {}
+    for k in keys:
+        v = profile.get(k)
+        if v is None or v == "":
+            continue
+        try:
+            out[k] = float(v)
+        except (TypeError, ValueError):
+            continue
+    for pct_key in ("tax_pct", "amortization_pct"):
+        if pct_key in out and out[pct_key] > 1.0:
+            out[pct_key] = out[pct_key] / 100.0
+    return out
+
+
+async def _truck_profile_dict() -> dict[str, Any]:
+    try:
+        truck = await db.get_json_setting("truck_profile", {})
+        return truck if isinstance(truck, dict) else {}
+    except Exception:
+        return {}
 
 
 class MuteIn(BaseModel):
@@ -443,16 +491,8 @@ async def analyze_route(
     live: bool = Query(True),
 ) -> dict[str, Any]:
     """Backhaul liquidity + suggested min rate for base→destination."""
-    base_city = (base or "").strip()
-    if not base_city:
-        try:
-            truck = await db.get_json_setting("truck_profile", {})
-            if isinstance(truck, dict):
-                base_city = str(truck.get("base") or "москва")
-            else:
-                base_city = "москва"
-        except Exception:
-            base_city = "москва"
+    truck = await _truck_profile_dict()
+    base_city = (base or "").strip() or str(truck.get("base") or "москва")
     analyzer = RateAnalyzer(db)
     return await analyzer.analyze(
         base=base_city,
@@ -463,6 +503,7 @@ async def analyze_route(
         live_probe=live,
         route_km_override=route_km,
         from_city=(from_city or "").strip() or None,
+        params_override=_econ_overrides_from_profile(truck),
     )
 
 
@@ -530,6 +571,7 @@ async def analyze_screenshot(
             "method": extracted.get("method"),
         }
 
+    truck = await _truck_profile_dict()
     analyzer = RateAnalyzer(db)
     analysis = await analyzer.analyze(
         base=targets["base"],
@@ -540,58 +582,15 @@ async def analyze_screenshot(
         live_probe=live,
         route_km_override=targets.get("listed_route_km"),
         from_city=targets.get("from_city") or fields.get("from_city"),
+        params_override=_econ_overrides_from_profile(truck),
     )
-    advice = None
-    pr = (analysis or {}).get("pricing") or {}
-    bh = (analysis or {}).get("backhaul") or {}
-    offer = targets.get("offer_rub")
-    hurdle = pr.get("suggested_min_total_rub")
-    mid = pr.get("suggested_mid_total_rub")
-    hi = pr.get("suggested_max_total_rub")
-    empty_safe = pr.get("suggested_empty_safe_rub")
-    if hurdle is not None:
-        band = f"{int(hurdle):,}–{int(hi or mid or hurdle):,} ₽".replace(",", " ")
-        bh_note = (
-            f"Обратка к базе: {bh.get('count') or 0} "
-            f"(город + {int(bh.get('radius_km') or 100)} км), риск {bh.get('risk') or '—'}."
-        )
-        if offer is None:
-            advice = {
-                "action": "propose",
-                "text": f"Предлагайте клиенту {band}, чтобы чистыми выйти на 10–15 тыс. ₽. {bh_note}",
-                "min_rub": hurdle,
-                "mid_rub": mid,
-                "max_rub": hi,
-            }
-        elif float(offer) >= float(hurdle):
-            net = ((pr.get("offer") or {}).get("expected_net_rub"))
-            advice = {
-                "action": "take",
-                "text": (
-                    f"Ставка в объявлении {int(offer):,} ₽ закрывает порог {int(hurdle):,} ₽"
-                    + (f" (ожид. чистыми ~{int(net):,} ₽)" if net is not None else "")
-                    + f". {bh_note}"
-                ).replace(",", " "),
-                "min_rub": hurdle,
-                "listed_rub": offer,
-            }
-        else:
-            gap = float(hurdle) - float(offer)
-            advice = {
-                "action": "counter",
-                "text": (
-                    f"В объявлении {int(offer):,} ₽ — мало. Нужно ≥ {int(hurdle):,} ₽ "
-                    f"(+{int(gap):,} ₽), целевой коридор {band}. "
-                    f"Без обратки безопасно от {int(empty_safe or hurdle):,} ₽. {bh_note}"
-                ).replace(",", " "),
-                "min_rub": hurdle,
-                "listed_rub": offer,
-                "gap_rub": gap,
-            }
-    elif analysis.get("ok"):
+    advice = (analysis or {}).get("verdict")
+    if not advice and analysis.get("ok") and not analysis.get("route_km"):
         advice = {
-            "action": "counter",
-            "text": "Не удалось посчитать ставку: нет километража (город без координат и км на скрине). Загрузите более чёткий скрин биржи или укажите крупный город выгрузки.",
+            "action": "skip",
+            "label": "мимо",
+            "tone": "skip",
+            "text": "Нет километража — поправьте OCR (км) и пересчитайте.",
         }
 
     return {
@@ -820,9 +819,17 @@ async def set_profile(profile: TruckProfile) -> dict[str, Any]:
     prev = await db.get_json_setting("truck_profile", {})
     if not isinstance(prev, dict):
         prev = {}
-    data = {k: v for k, v in profile.model_dump().items() if v not in (None, "", False)}
-    if profile.backhaul:
-        data["backhaul"] = True
+    data = dict(prev)
+    for k, v in profile.model_dump().items():
+        if k == "backhaul":
+            data["backhaul"] = bool(v)
+            continue
+        if v is None or v == "":
+            continue
+        if k in ("tax_pct", "amortization_pct") and isinstance(v, (int, float)) and float(v) > 1:
+            data[k] = float(v) / 100.0
+        else:
+            data[k] = v
     await db.set_json_setting("truck_profile", data)
     old_base = str(prev.get("base") or "москва").strip().lower() or "москва"
     new_base = str(data.get("base") or old_base).strip().lower() or "москва"

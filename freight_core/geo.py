@@ -412,6 +412,60 @@ def distance_km(city_a: str | None, city_b: str | None) -> float | None:
     return haversine_km(pa, pb)
 
 
+# Major hubs for village → hub normalization (backhaul / route fallback)
+MAJOR_HUBS: tuple[str, ...] = (
+    "москва",
+    "санкт-петербург",
+    "казань",
+    "нижний новгород",
+    "воронеж",
+    "тула",
+    "рязань",
+    "ярославль",
+    "тверь",
+    "калуга",
+    "владимир",
+    "смоленск",
+    "брянск",
+    "курск",
+    "белгород",
+    "липецк",
+    "тамбов",
+    "пенза",
+    "самара",
+    "уфа",
+    "пермь",
+    "саратов",
+    "волгоград",
+    "ростов-на-дону",
+    "краснодар",
+    "екатеринбург",
+)
+
+
+def nearest_hub(city: str | None, *, max_km: float = 120.0) -> str | None:
+    """Map a village/suburb to the nearest major hub within max_km."""
+    pt = city_point(city)
+    if not pt:
+        return None
+    n = (city or "").lower().replace("ё", "е").strip()
+    if n in MAJOR_HUBS:
+        return n
+    best_name: str | None = None
+    best_d = 1e9
+    for h in MAJOR_HUBS:
+        hp = city_point(h)
+        if not hp:
+            continue
+        d = haversine_km(pt, hp)
+        if d < best_d:
+            best_d = d
+            best_name = h
+    if best_name is not None and best_d <= float(max_km):
+        return best_name
+    return None
+
+
 def geo_filter(
     *,
     base: str | None,

@@ -38,3 +38,36 @@ def test_offer_verdict():
     )
     assert low["verdict"] == "риск минуса"
     assert high["verdict"] == "выгодно"
+
+
+def test_waterfall_and_scenarios():
+    priced = price_outbound_leg(km=200, p_find_backhaul=0.4)
+    assert priced["ok"]
+    assert "waterfall" in priced
+    keys = [s["key"] for s in priced["waterfall"]["steps"]]
+    assert keys == ["rate", "tax", "amort", "fuel", "driver", "empty_risk", "net"]
+    assert "with_backhaul" in priced["scenarios"]
+    assert "empty_return" in priced["scenarios"]
+    assert priced["scenarios"]["empty_return"]["suggest_min_rub"] >= priced["scenarios"]["with_backhaul"]["suggest_min_rub"]
+
+
+def test_build_verdict_actions():
+    from app.truck_economics import build_verdict, truck_params
+
+    p = truck_params()
+    v = build_verdict(offer_rub=None, suggested_min=50000, empty_safe=70000, p_find=0.5, p=p)
+    assert v["action"] == "propose"
+    assert v["propose_rub"] == 50000
+    take = build_verdict(offer_rub=60000, suggested_min=50000, empty_safe=70000, p_find=0.5, p=p)
+    assert take["action"] == "take"
+    raise_ = build_verdict(offer_rub=40000, suggested_min=50000, empty_safe=70000, p_find=0.5, p=p)
+    assert raise_["action"] == "raise"
+
+
+def test_params_override():
+    from app.truck_economics import truck_params
+
+    p = truck_params({"diesel_rub_per_l": 90, "tax_pct": 0.3})
+    assert p["diesel_rub_per_l"] == 90
+    assert p["tax_pct"] == 0.3
+
