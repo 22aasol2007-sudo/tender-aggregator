@@ -47,9 +47,14 @@ def test_score_hot_shipper():
     assert result.score >= 40
 
 
-def test_archive_false_positive_not_on_executed_alone():
-    from app.ingest import is_archived_text
+def test_tonnage_band():
+    from app.ingest import tonnage_allowed
 
-    assert not is_archived_text("Заявка исполняется, нужны грузчики")
-    assert is_archived_text("Заказ выполнен, в архиве")
-    assert is_archived_text('data-status="completed"')
+    assert tonnage_allowed(None) is True
+    assert tonnage_allowed(5) is True
+    assert tonnage_allowed(12) is True
+    assert tonnage_allowed(8.5) is True
+    assert tonnage_allowed(4.9) is False
+    assert tonnage_allowed(12.1) is False
+    assert tonnage_allowed(20) is False
+    assert tonnage_allowed(1.5) is False

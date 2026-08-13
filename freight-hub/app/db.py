@@ -363,6 +363,11 @@ class HubDB:
                 )
                 like = f"%{d}%"
                 args.extend([like, like, like])
+        # Declared weight band: keep unknown OR within [min, max]
+        sql.append(
+            "AND (tonnage IS NULL OR (tonnage >= ? AND tonnage <= ?))"
+        )
+        args.extend([float(_cfg.TONNAGE_MIN), float(_cfg.TONNAGE_MAX)])
         if q:
             like = f"%{q.lower()}%"
             sql.append(
@@ -481,6 +486,11 @@ class HubDB:
         await self.db.execute(
             "DELETE FROM loads WHERE scraped_at < ?",
             (now - strong,),
+        )
+        # Out-of-band declared tonnage
+        await self.db.execute(
+            "DELETE FROM loads WHERE tonnage IS NOT NULL AND (tonnage < ? OR tonnage > ?)",
+            (float(_cfg.TONNAGE_MIN), float(_cfg.TONNAGE_MAX)),
         )
         await self.db.commit()
 

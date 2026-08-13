@@ -118,6 +118,17 @@ def is_junk_route(from_city: str | None, to_city: str | None, *, source: str = "
     return False
 
 
+def tonnage_allowed(tonnage: float | None) -> bool:
+    """True if tonnage unknown or within [TONNAGE_MIN, TONNAGE_MAX]."""
+    if tonnage is None:
+        return True
+    try:
+        t = float(tonnage)
+    except (TypeError, ValueError):
+        return True
+    return config.TONNAGE_MIN <= t <= config.TONNAGE_MAX
+
+
 def _km_to_base(city: str | None, base: str = "москва") -> float | None:
     try:
         from freight_core.geo import distance_km
@@ -226,6 +237,8 @@ async def _persist(
         score = max(score, 45)
 
     tonnage = raw.tonnage if raw.tonnage is not None else parsed.tonnage
+    if not tonnage_allowed(tonnage):
+        return "skipped"
     fp = make_fingerprint(
         raw.source,
         from_city or "",
