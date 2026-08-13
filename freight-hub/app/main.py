@@ -342,10 +342,28 @@ async def stats() -> dict[str, Any]:
     return st
 
 
+SOURCE_GROUPS: dict[str, list[str]] = {
+    "telegram": ["telegram", "tg_public"],
+    "max": ["max"],
+    "sites": [
+        "perevozka24",
+        "cargocash",
+        "vezetvsem",
+        "papacargo",
+        "avtodispetcher",
+        "ati",
+        "monopoly",
+        "roolz",
+        "ingruz",
+    ],
+}
+
+
 @app.get("/api/loads")
 async def loads(
     q: str | None = None,
     source: str | None = None,
+    channel: str | None = Query(None, pattern="^(all|telegram|max|sites)$"),
     body: str | None = Query(None, alias="body_type"),
     frm: str | None = Query(None, alias="from"),
     to: str | None = None,
@@ -355,7 +373,7 @@ async def loads(
     hide_drivers: bool = True,
     hot: bool = False,
     geo: bool = True,
-    sort: str = Query("time", pattern="^(time|score|ppk|near)$"),
+    sort: str = Query("date", pattern="^(time|date|posted|score|ppk|near)$"),
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
@@ -374,9 +392,12 @@ async def loads(
         far = float(profile.get("radius_far") or profile.get("far_radius") or 1500)
     except (TypeError, ValueError):
         far = 1500.0
+    channel_key = (channel or "all").strip().lower() or "all"
+    group_sources = SOURCE_GROUPS.get(channel_key)
     rows = await db.list_loads(
         q=q,
-        source=source,
+        source=source if not group_sources else None,
+        sources=group_sources,
         body_type=body,
         from_city=frm,
         to_city=to,
@@ -414,8 +435,11 @@ async def loads(
             scraped_at=row.get("scraped_at"),
         )
     filter_reasons: list[str] = []
+    channel_labels = {"telegram": "Telegram", "max": "MAX", "sites": "Агрегаторы", "all": "Все"}
     if not rows:
-        if source:
+        if channel_key in channel_labels and channel_key != "all":
+            filter_reasons.append(f"вкладка «{channel_labels[channel_key]}»")
+        elif source:
             filter_reasons.append(f"источник «{source}»")
         if shipper_only:
             filter_reasons.append("без водителей")
@@ -440,7 +464,10 @@ async def loads(
     elif sort == "score":
         rank_explain = f"Сорт: выше скор. База «{base_city}», коридор {int(near)}/{int(far)} км."
     else:
-        rank_explain = f"Сорт: новые. База «{base_city}», коридор {int(near)}/{int(far)} км."
+        rank_explain = (
+            f"Сорт: по дате выкладывания (свежие сверху). "
+            f"База «{base_city}», коридор {int(near)}/{int(far)} км."
+        )
     return {
         "items": rows,
         "count": len(rows),
@@ -450,6 +477,7 @@ async def loads(
         "far_km": far,
         "base": base_city,
         "muted_directions": muted,
+        "channel": channel_key,
     }
 
 

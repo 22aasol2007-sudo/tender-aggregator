@@ -275,6 +275,7 @@ class HubDB:
         *,
         q: str | None = None,
         source: str | None = None,
+        sources: list[str] | None = None,
         body_type: str | None = None,
         from_city: str | None = None,
         to_city: str | None = None,
@@ -311,7 +312,11 @@ class HubDB:
         if hot_only:
             sql.append("AND scraped_at >= ? AND score_ok = 1 AND score >= 70")
             args.append(time.time() - hot_max_age_sec)
-        if source:
+        if sources:
+            placeholders = ",".join("?" for _ in sources)
+            sql.append(f"AND source IN ({placeholders})")
+            args.extend(list(sources))
+        elif source:
             sql.append("AND source = ?")
             args.append(source)
         if body_type:
@@ -377,6 +382,9 @@ class HubDB:
                 "MIN(COALESCE(km_from, 1e9), COALESCE(km_to, 1e9)) ASC, "
                 "score DESC, scraped_at DESC LIMIT ? OFFSET ?"
             )
+        elif sort in {"time", "date", "posted"}:
+            # Newest posted/ingested ads first (scraped_at ≈ when ad appeared in feed)
+            sql.append("ORDER BY scraped_at DESC, score DESC LIMIT ? OFFSET ?")
         else:
             sql.append("ORDER BY scraped_at DESC, score DESC LIMIT ? OFFSET ?")
         args.extend([limit, offset])

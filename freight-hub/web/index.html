@@ -67,25 +67,20 @@
       <h2>Сейчас искать</h2>
       <button id="btnMore" class="linkish" type="button">Ещё фильтры</button>
     </div>
+    <div class="tabs" role="tablist" aria-label="Источник">
+      <button type="button" class="tab active" data-channel="all" role="tab" aria-selected="true">Все</button>
+      <button type="button" class="tab tab-tg" data-channel="telegram" role="tab" aria-selected="false">Telegram</button>
+      <button type="button" class="tab tab-max" data-channel="max" role="tab" aria-selected="false">MAX</button>
+      <button type="button" class="tab tab-sites" data-channel="sites" role="tab" aria-selected="false">Агрегаторы</button>
+    </div>
     <div class="filters">
       <input id="q" type="search" placeholder="Поиск: город, груз, телефон…" />
-      <select id="source">
-        <option value="">Все источники</option>
-        <option value="telegram">Telegram</option>
-        <option value="max">MAX</option>
-        <option value="tg_public">TG public</option>
-        <option value="papacargo">PapaCargo</option>
-        <option value="perevozka24">Перевозка24</option>
-        <option value="cargocash">CargoCash</option>
-        <option value="vezetvsem">Везёт Всем</option>
-        <option value="avtodispetcher">Автодиспетчер</option>
-      </select>
       <input id="from" type="text" placeholder="Откуда" />
       <input id="to" type="text" placeholder="Куда" />
       <select id="sort">
+        <option value="date" selected>По дате выкладывания</option>
         <option value="ppk">Дороже ₽/км</option>
         <option value="near">Ближе к базе</option>
-        <option value="time">Сначала новые</option>
         <option value="score">Сначала скор</option>
       </select>
       <label class="check"><input id="shipperOnly" type="checkbox" checked /> Грузоотправители</label>

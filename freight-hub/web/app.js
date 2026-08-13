@@ -2,6 +2,32 @@ const $ = (id) => document.getElementById(id);
 let lastHealthAt = 0;
 let lastTgDown = false;
 let lastMuted = [];
+let activeChannel = "all";
+
+const TG_SOURCES = new Set(["telegram", "tg_public"]);
+const MAX_SOURCES = new Set(["max"]);
+
+function sourceFamily(source) {
+  const s = String(source || "").toLowerCase();
+  if (TG_SOURCES.has(s)) return "tg";
+  if (MAX_SOURCES.has(s)) return "max";
+  return "sites";
+}
+
+function sourceLabel(source) {
+  const s = String(source || "").toLowerCase();
+  if (s === "telegram" || s === "tg_public") return "Telegram";
+  if (s === "max") return "MAX";
+  return source || "сайт";
+}
+
+function fmtPosted(item) {
+  const t = Number(item.scraped_at || item.created_at || 0);
+  if (!t) return "";
+  const d = new Date(t * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function metaContent(name) {
   const el = document.querySelector(`meta[name="${name}"]`);
@@ -235,7 +261,9 @@ function cardHtml(item) {
   if (item.load_date) facts.push(`<span>${esc(item.load_date)}</span>`);
 
   const meta = [];
-  meta.push(`<span class="source-tag ${esc(item.source || "")}">${esc(item.source || "")}</span>`);
+  meta.push(`<span class="source-tag">${esc(sourceLabel(item.source))}</span>`);
+  const posted = fmtPosted(item);
+  if (posted) meta.push(`<span class="posted-at" title="Дата выкладывания">${esc(posted)}</span>`);
   if (item.km_from != null) meta.push(`погр. ${Math.round(item.km_from)} км`);
   if (item.km_to != null) meta.push(`выгр. ${Math.round(item.km_to)} км`);
 
@@ -244,6 +272,7 @@ function cardHtml(item) {
     : "";
   const mk = muteKey(item);
   const score = Math.max(0, Math.min(100, Number(item.score || 0)));
+  const family = sourceFamily(item.source);
 
   const primary = contacts[0];
   const callBtn = primary && primary.kind === "phone"
@@ -260,7 +289,7 @@ function cardHtml(item) {
     `<a class="contact-row" href="${esc(c.href)}" ${c.kind !== "phone" ? 'target="_blank" rel="noopener"' : ""}>${esc(c.label)}</a>`
   ).join("");
 
-  return `<article class="card${fresh ? " fresh" : ""}">
+  return `<article class="card src-${family}${fresh ? " fresh" : ""}">
     <div class="card-main">
       <div class="route">${esc(routeText(item))}</div>
       <div class="facts">${facts.join("") || "<span>детали в тексте</span>"}</div>
@@ -314,18 +343,17 @@ async function refreshHealth() {
 function currentParams() {
   const params = new URLSearchParams();
   const q = $("q").value.trim();
-  const source = $("source").value;
   const body = $("body").value;
   const frm = $("from").value.trim();
   const to = $("to").value.trim();
   const minScore = $("minScore").value || "40";
   if (q) params.set("q", q);
-  if (source) params.set("source", source);
+  if (activeChannel && activeChannel !== "all") params.set("channel", activeChannel);
   if (body) params.set("body_type", body);
   if (frm) params.set("from", frm);
   if (to) params.set("to", to);
   params.set("min_score", minScore);
-  params.set("sort", $("sort").value || "ppk");
+  params.set("sort", $("sort").value || "date");
   params.set("shipper_only", $("shipperOnly").checked ? "true" : "false");
   if ($("reefer").checked) params.set("reefer", "true");
   if ($("hotOnly").checked) params.set("hot", "true");
@@ -344,17 +372,26 @@ async function loadList() {
   render(data.items || [], data);
 }
 
+function setChannel(channel) {
+  activeChannel = channel || "all";
+  document.querySelectorAll(".tab").forEach((btn) => {
+    const on = btn.dataset.channel === activeChannel;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
 function resetFilters() {
   $("q").value = "";
-  $("source").value = "";
   $("from").value = "";
   $("to").value = "";
   $("body").value = "";
-  $("sort").value = "ppk";
+  $("sort").value = "date";
   $("shipperOnly").checked = true;
   $("reefer").checked = false;
   $("hotOnly").checked = false;
   $("minScore").value = "40";
+  setChannel("all");
 }
 
 async function loadProfile() {
@@ -410,6 +447,12 @@ $("btnMore").addEventListener("click", () => {
   const el = $("moreFilters");
   el.hidden = !el.hidden;
   $("btnMore").textContent = el.hidden ? "Ещё фильтры" : "Скрыть фильтры";
+});
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    setChannel(btn.dataset.channel || "all");
+    loadList().catch(alert);
+  });
 });
 const clearMutes = $("btnClearMutes");
 if (clearMutes) {
