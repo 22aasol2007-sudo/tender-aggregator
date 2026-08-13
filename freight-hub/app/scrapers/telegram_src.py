@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from telethon import TelegramClient, events
@@ -69,11 +70,45 @@ class TelegramIngest:
                 self._last_error = str(exc)
                 log.warning("TG supervise: %s — retry in %.0fs", exc, backoff)
                 await self._save_health(ok=False, note=f"reconnect: {exc}")
+                err = str(exc).lower()
+                if "need_qr_login" in err or "session_revoked" in err or "two different ip" in err:
+                    # Dead session — do not hammer Telegram
+                    backoff = max(backoff, 600.0)
             await self._safe_disconnect()
             if self._stopped:
                 break
             await asyncio.sleep(backoff)
             backoff = min(backoff * 1.7, float(config.LISTENER_RETRY_SEC * 5))
+
+    @staticmethod
+    def _purge_dead_session() -> None:
+        for p in (
+            Path(str(config.SESSION_PATH) + ".session"),
+            Path(str(config.SESSION_PATH)),
+            config.TG_SESSION_FILE,
+        ):
+            try:
+                if p.exists() and p.is_file():
+                    p.unlink()
+                    log.warning("purged dead TG session file %s", p)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _session_arg():
+        """Cloud-safe session: TG_SESSION env → file string → classic .session path."""
+        from telethon.sessions import StringSession
+
+        if config.TG_SESSION:
+            return StringSession(config.TG_SESSION)
+        try:
+            if config.TG_SESSION_FILE.exists():
+                raw = config.TG_SESSION_FILE.read_text(encoding="utf-8").strip()
+                if raw:
+                    return StringSession(raw)
+        except Exception:
+            pass
+        return str(config.SESSION_PATH)
 
     async def _connect_once(self) -> None:
         if not config.API_ID or not config.API_HASH:
@@ -81,7 +116,7 @@ class TelegramIngest:
             raise RuntimeError("missing_api_creds")
         proxy = config.telethon_proxy()
         kwargs: dict = {
-            "session": str(config.SESSION_PATH),
+            "session": self._session_arg(),
             "api_id": config.API_ID,
             "api_hash": config.API_HASH,
         }
@@ -96,10 +131,21 @@ class TelegramIngest:
                 config.TG_PROXY_PORT,
             )
         self.client = TelegramClient(**kwargs)
-        if config.PHONE:
-            await self.client.start(phone=config.PHONE)
-        else:
-            await self.client.start()
+        try:
+            await self.client.connect()
+        except Exception as exc:
+            msg = str(exc)
+            if "two different IP" in msg or "AuthKeyDuplicated" in type(exc).__name__:
+                self._purge_dead_session()
+                await self._save_health(ok=False, note="need_qr_login")
+                raise RuntimeError(
+                    "session_revoked: open /tg-login and scan QR (do not run local hub with same session)"
+                ) from exc
+            raise
+        if not await self.client.is_user_authorized():
+            await self._save_health(ok=False, note="need_qr_login")
+            raise RuntimeError("need_qr_login: open /tg-login and scan QR in Telegram")
+        await self.client.start()
         me = await self.client.get_me()
         log.info("TG logged in as %s", me.username or me.first_name)
         self._resolved = 0

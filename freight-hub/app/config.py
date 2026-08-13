@@ -26,6 +26,9 @@ SESSION_NAME = os.getenv("SESSION_NAME", "freight_hub").strip()
 # Absolute SESSION_NAME (e.g. /data/freight_hub) keeps Telethon session on the volume.
 _session = Path(SESSION_NAME)
 SESSION_PATH = _session if _session.is_absolute() else (ROOT / SESSION_NAME)
+# Prefer StringSession for cloud (avoids dual-IP AuthKeyDuplicatedError with local .session).
+TG_SESSION = os.getenv("TG_SESSION", "").strip()
+TG_SESSION_FILE = Path(os.getenv("TG_SESSION_FILE", str(DB_PATH.parent / "tg_string.session")))
 ENABLE_TG = os.getenv("ENABLE_TG", "1").strip() not in {"0", "false", "no"}
 
 SCRAPE_INTERVAL_SEC = int(os.getenv("SCRAPE_INTERVAL_SEC", "300"))

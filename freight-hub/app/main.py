@@ -210,8 +210,12 @@ async def health() -> dict[str, Any]:
     if not tg_alive:
         if not config.API_ID or not config.API_HASH:
             hints.append("Нет API_ID/API_HASH — основной объём заявок идёт из Telegram.")
-        elif not (tg_h or {}).get("ok"):
-            hints.append("Telegram не подключён / reconnect… (VPN?)")
+        else:
+            note = str((tg_h or {}).get("note") or "")
+            if "need_qr_login" in note or "two different IP" in note or "session_revoked" in note:
+                hints.append("Telegram: сессия сброшена (два IP). Войдите заново: /tg-login")
+            elif not (tg_h or {}).get("ok"):
+                hints.append("Telegram не подключён / reconnect… (VPN?)")
     elif tg_h.get("failed_count"):
         hints.append(f"Не резолвится чатов: {tg_h.get('failed_count')} (см. tg_health).")
     mx_alive = bool(mx and getattr(mx, "ok", False) and mx_h.get("ok"))
@@ -349,6 +353,43 @@ async def scrape_now(quick: bool = True) -> dict[str, Any]:
 @app.get("/api/scrape/status")
 async def scrape_status() -> dict[str, Any]:
     return worker.manual_status()
+
+
+@app.post("/api/tg/qr")
+async def tg_qr_start() -> dict[str, Any]:
+    from app import tg_login
+
+    return await tg_login.start_qr()
+
+
+@app.post("/api/tg/qr/wait")
+async def tg_qr_wait(timeout: float = Query(120, ge=30, le=300)) -> dict[str, Any]:
+    from app import tg_login
+
+    return await tg_login.wait_qr(timeout=timeout)
+
+
+@app.post("/api/tg/restart")
+async def tg_restart() -> dict[str, Any]:
+    global tg
+    if tg:
+        try:
+            await tg.stop()
+        except Exception:
+            pass
+        tg = None
+    if not (config.ENABLE_TG and config.API_ID and config.API_HASH):
+        return {"ok": False, "error": "tg_disabled"}
+    from app.scrapers.telegram_src import TelegramIngest
+
+    tg = TelegramIngest(db)
+    await tg.start()
+    return {"ok": True}
+
+
+@app.get("/tg-login")
+async def tg_login_page() -> FileResponse:
+    return FileResponse(WEB / "tg-login.html")
 
 
 @app.get("/")
