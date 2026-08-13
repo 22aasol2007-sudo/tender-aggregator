@@ -280,11 +280,28 @@ class HubDB:
         sort: str = "time",
         hot_only: bool = False,
         hot_max_age_sec: float = 1800,
+        geo_corridor: bool = True,
+        near_km: float = 150,
+        far_km: float = 1500,
+        max_age_sec: float | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        from app import config as _cfg
+
         sql = ["SELECT * FROM loads WHERE score >= ?"]
         args: list[Any] = [min_score]
+        age = max_age_sec if max_age_sec is not None else float(_cfg.MAX_LOAD_AGE_SEC)
+        if age > 0:
+            sql.append("AND scraped_at >= ?")
+            args.append(time.time() - age)
+        if geo_corridor:
+            # One end ≤ near_km of Moscow, both ends ≤ far_km
+            sql.append(
+                "AND km_from IS NOT NULL AND km_to IS NOT NULL "
+                "AND MIN(km_from, km_to) <= ? AND MAX(km_from, km_to) <= ?"
+            )
+            args.extend([near_km, far_km])
         if hot_only:
             sql.append("AND scraped_at >= ? AND score_ok = 1 AND score >= 70")
             args.append(time.time() - hot_max_age_sec)
@@ -391,21 +408,29 @@ class HubDB:
         )
         await self.db.commit()
 
-    async def cleanup(self, older_than_sec: float = 14 * 86400) -> None:
-        await self.cleanup_smart(strong_sec=older_than_sec)
+    async def cleanup(self, older_than_sec: float | None = None) -> None:
+        from app import config as _cfg
+
+        sec = float(older_than_sec if older_than_sec is not None else _cfg.MAX_LOAD_AGE_SEC)
+        await self.cleanup_smart(strong_sec=sec)
 
     async def cleanup_smart(
         self,
         *,
-        strong_sec: float = 14 * 86400,
-        weak_sec: float = 3 * 86400,
-        junk_sec: float = 2 * 86400,
+        strong_sec: float | None = None,
+        weak_sec: float | None = None,
+        junk_sec: float | None = None,
     ) -> None:
+        from app import config as _cfg
+
+        strong = float(strong_sec if strong_sec is not None else _cfg.MAX_LOAD_AGE_SEC)
+        weak = float(weak_sec if weak_sec is not None else min(3 * 86400, strong))
+        junk = float(junk_sec if junk_sec is not None else min(2 * 86400, strong))
         now = time.time()
         # Weak / failed geo
         await self.db.execute(
             "DELETE FROM loads WHERE scraped_at < ? AND (score < 40 OR IFNULL(score_ok,1)=0)",
-            (now - weak_sec,),
+            (now - weak,),
         )
         # Same-city junk
         await self.db.execute(
@@ -414,12 +439,12 @@ class HubDB:
               AND from_city IS NOT NULL AND to_city IS NOT NULL
               AND LOWER(from_city)=LOWER(to_city)
             """,
-            (now - junk_sec,),
+            (now - junk,),
         )
-        # Everything else
+        # Hard max age for everything
         await self.db.execute(
             "DELETE FROM loads WHERE scraped_at < ?",
-            (now - strong_sec,),
+            (now - strong,),
         )
         await self.db.commit()
 

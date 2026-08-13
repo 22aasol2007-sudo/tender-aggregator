@@ -1,0 +1,406 @@
+{
+  "slugs": [
+    {
+      "slug": "vk_dalnoboy",
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ в мессенджере MAX",
+      "h1": "ДАЛЬНОБОЙЩИКИ",
+      "desc": "Купить рекламу: https://telega.in/c/vk_dalnoboy",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "channel_dalnoboy",
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики России в мессенджере MAX",
+      "h1": "Дальнобойщики России",
+      "desc": "Делимся фото-видео материалами с трасс и дорог нашей страны. Помогаем словом и делом при поломках, ДТП и других неприятностях в пути.",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "trucks112",
+      "url": "https://max.ru/trucks112",
+      "status": 200,
+      "title": "112 дальнобойщиков в мессенджере MAX",
+      "h1": "112 дальнобойщиков",
+      "desc": "Дальнобойщики и водители грузовиков здесь. Самые зрелищные аварии с участием фур без жести, юмор, ИИ генерации в грузовой логистике и др.  🚛🚔🦺 Автор дальнобойщик-музыкант, сочиняющий песТни про то, что вокруг нас 🎶 на всех муз площадках под именем Trucks112 \n\n#дальнобой #фура #грузоперевозки",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "peregruz_dalnoboy",
+      "url": "https://max.ru/peregruz_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики в мессенджере MAX",
+      "h1": "Дальнобойщики",
+      "desc": "Канал для настоящих мужчин.\nГруппа посвящается дальнобойщикам.\nДальнобой - это шоферская гвардия. Только водители междугородних автобусов могут сравниться с шоферами магистральных автопоездов в мастерстве вождения. Это серьезные мужики, серьезные тонно-километры, серьезные машины.\nОсновной канал в ВК PEREGRUZ",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "channel_m4road",
+      "url": "https://max.ru/channel_m4road",
+      "status": 200,
+      "title": "ТРАССА М-4 ДОН в мессенджере MAX",
+      "h1": "ТРАССА М-4 ДОН",
+      "desc": "Канал в МАКС, посвященный трассе М-4 Дон и другим южным трассам России.\n\nТрасса М-4 Дон, трасса Таврида, трасса Кавказ, Каспий, Джубга - Сочи, дороги Крыма и Краснодарского края, Абхазии...\n\nНовости и информация. Живое общение водителей.\n\nАктуальная информация о дорожной обстановке на М-4 и юге России: новости трассы, ДТП, пробки, объезды, погода, маршруты\n\nОбратная связь: https://clck.ru/3UULp6",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "m4road",
+      "url": "https://max.ru/m4road",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m4_don",
+      "url": "https://max.ru/m4_don",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m4don",
+      "url": "https://max.ru/m4don",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m5ural",
+      "url": "https://max.ru/m5ural",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m5_ural",
+      "url": "https://max.ru/m5_ural",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m8_kholmogory",
+      "url": "https://max.ru/m8_kholmogory",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m11_neva",
+      "url": "https://max.ru/m11_neva",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m11neva",
+      "url": "https://max.ru/m11neva",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m12_vostok",
+      "url": "https://max.ru/m12_vostok",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "m7_volga",
+      "url": "https://max.ru/m7_volga",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m7",
+      "url": "https://max.ru/trassa_m7",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m4",
+      "url": "https://max.ru/trassa_m4",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m5",
+      "url": "https://max.ru/trassa_m5",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m8",
+      "url": "https://max.ru/trassa_m8",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m11",
+      "url": "https://max.ru/trassa_m11",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "trassa_m12",
+      "url": "https://max.ru/trassa_m12",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "dalnoboy_rf",
+      "url": "https://max.ru/dalnoboy_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "dalnoboyrussia",
+      "url": "https://max.ru/dalnoboyrussia",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "dalnoboyshiki_rf",
+      "url": "https://max.ru/dalnoboyshiki_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "gruzoperevozki_rf",
+      "url": "https://max.ru/gruzoperevozki_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "gruz_birza",
+      "url": "https://max.ru/gruz_birza",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "birza_gruzov",
+      "url": "https://max.ru/birza_gruzov",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "logistika_rf",
+      "url": "https://max.ru/logistika_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "kabinet_logista",
+      "url": "https://max.ru/kabinet_logista",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "id9728055308_biz",
+      "url": "https://max.ru/id9728055308_biz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    },
+    {
+      "slug": "id5408018839_biz",
+      "url": "https://max.ru/id5408018839_biz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "h1": "",
+      "desc": "",
+      "real": false,
+      "has_at": false
+    }
+  ],
+  "extras": [
+    {
+      "url": "https://m4-road.ru/max-m4-chat/",
+      "status": 200,
+      "title": "Канал и чат трассы М-4 Дон в мессенджере МАКС (MAX)",
+      "links": [
+        "https://max.ru/channel_m4road"
+      ]
+    },
+    {
+      "url": "https://max.ru/channel_m4road",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "links": []
+    },
+    {
+      "url": "https://max.ru/trucks112",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "links": []
+    },
+    {
+      "url": "https://max.ru/peregruz_dalnoboy",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "links": []
+    },
+    {
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "links": []
+    },
+    {
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "links": []
+    }
+  ],
+  "real": [
+    {
+      "slug": "vk_dalnoboy",
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ в мессенджере MAX",
+      "h1": "ДАЛЬНОБОЙЩИКИ",
+      "desc": "Купить рекламу: https://telega.in/c/vk_dalnoboy",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "channel_dalnoboy",
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики России в мессенджере MAX",
+      "h1": "Дальнобойщики России",
+      "desc": "Делимся фото-видео материалами с трасс и дорог нашей страны. Помогаем словом и делом при поломках, ДТП и других неприятностях в пути.",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "trucks112",
+      "url": "https://max.ru/trucks112",
+      "status": 200,
+      "title": "112 дальнобойщиков в мессенджере MAX",
+      "h1": "112 дальнобойщиков",
+      "desc": "Дальнобойщики и водители грузовиков здесь. Самые зрелищные аварии с участием фур без жести, юмор, ИИ генерации в грузовой логистике и др.  🚛🚔🦺 Автор дальнобойщик-музыкант, сочиняющий песТни про то, что вокруг нас 🎶 на всех муз площадках под именем Trucks112 \n\n#дальнобой #фура #грузоперевозки",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "peregruz_dalnoboy",
+      "url": "https://max.ru/peregruz_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики в мессенджере MAX",
+      "h1": "Дальнобойщики",
+      "desc": "Канал для настоящих мужчин.\nГруппа посвящается дальнобойщикам.\nДальнобой - это шоферская гвардия. Только водители междугородних автобусов могут сравниться с шоферами магистральных автопоездов в мастерстве вождения. Это серьезные мужики, серьезные тонно-километры, серьезные машины.\nОсновной канал в ВК PEREGRUZ",
+      "real": true,
+      "has_at": true
+    },
+    {
+      "slug": "channel_m4road",
+      "url": "https://max.ru/channel_m4road",
+      "status": 200,
+      "title": "ТРАССА М-4 ДОН в мессенджере MAX",
+      "h1": "ТРАССА М-4 ДОН",
+      "desc": "Канал в МАКС, посвященный трассе М-4 Дон и другим южным трассам России.\n\nТрасса М-4 Дон, трасса Таврида, трасса Кавказ, Каспий, Джубга - Сочи, дороги Крыма и Краснодарского края, Абхазии...\n\nНовости и информация. Живое общение водителей.\n\nАктуальная информация о дорожной обстановке на М-4 и юге России: новости трассы, ДТП, пробки, объезды, погода, маршруты\n\nОбратная связь: https://clck.ru/3UULp6",
+      "real": true,
+      "has_at": true
+    }
+  ]
+}

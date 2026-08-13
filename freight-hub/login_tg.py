@@ -34,7 +34,19 @@ async def main() -> None:
         print("Сначала заполни API_ID и API_HASH в .env (https://my.telegram.org)")
         return
     phone = config.PHONE or _ask_phone
-    client = TelegramClient(str(config.SESSION_PATH), config.API_ID, config.API_HASH)
+    proxy = config.telethon_proxy()
+    kwargs: dict = {
+        "session": str(config.SESSION_PATH),
+        "api_id": config.API_ID,
+        "api_hash": config.API_HASH,
+    }
+    if proxy:
+        from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate
+
+        kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
+        kwargs["proxy"] = proxy
+        print(f"MTProxy: {config.TG_PROXY_SERVER}:{config.TG_PROXY_PORT}")
+    client = TelegramClient(**kwargs)
     await client.start(phone=phone, code_callback=_ask_code, password=_ask_password)
     me = await client.get_me()
     print(f"OK: вошли как {me.username or me.first_name}. Сессия: {config.SESSION_PATH}.session")

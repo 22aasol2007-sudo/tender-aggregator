@@ -14,9 +14,19 @@ function esc(s) {
 }
 
 function routeText(item) {
-  const a = item.from_city || "?";
-  const b = item.to_city || "?";
-  return `${a} → ${b}`;
+  const a = (item.from_city || "").trim();
+  const b = (item.to_city || "").trim();
+  if (a && b) return `${a} → ${b}`;
+  if (a || b) return `${a || "?"} → ${b || "?"}`;
+  const title = (item.title || "").trim();
+  if (title && !/^\?\s*→\s*\?$/.test(title) && !title.includes(" → ?") && !title.startsWith("? →")) {
+    return title;
+  }
+  const line = String(item.body || "")
+    .split(/\n/)
+    .map((s) => s.trim())
+    .find((s) => s.length > 4 && !/^https?:/i.test(s));
+  return line ? line.slice(0, 90) : "Маршрут не указан";
 }
 
 function parseList(val) {
@@ -204,20 +214,40 @@ $("btnSaveProfile").addEventListener("click", async () => {
 
 $("btnScrape").addEventListener("click", async () => {
   $("btnScrape").disabled = true;
-  $("btnScrape").textContent = "Собираю…";
+  $("btnScrape").textContent = "Запуск…";
   try {
-    const res = await api("/api/scrape", { method: "POST" });
-    const summary = (res.results || [])
-      .map((r) => (r.ok ? `${r.source}+${r.added}/${r.total || 0}` : `${r.source}:err`))
-      .join(" · ");
-    $("meta").textContent = `Сбор: ${summary || "—"}`;
-    await refreshHealth();
-    await loadList();
-  } catch (e) {
-    alert(String(e));
-  } finally {
+    const start = await api("/api/scrape?quick=true", { method: "POST" });
     $("btnScrape").disabled = false;
     $("btnScrape").textContent = "Обновить источники";
+    if (start.busy) {
+      $("meta").textContent = "Сбор уже идёт в фоне…";
+      return;
+    }
+    $("meta").textContent = "Быстрый сбор в фоне…";
+    const deadline = Date.now() + 90000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const last = await api("/api/scrape/status");
+      await loadList().catch(() => {});
+      if (!last.running) {
+        const summary = (last.results || [])
+          .map((r) => (r.ok ? `${r.source}+${r.added}/${r.total || 0}` : `${r.source}:err`))
+          .join(" · ");
+        const sec =
+          last.finished_at && last.started_at
+            ? Math.max(1, Math.round(last.finished_at - last.started_at))
+            : "?";
+        $("meta").textContent = `Сбор (${sec}с): ${summary || "—"}`;
+        await refreshHealth();
+        await loadList();
+        return;
+      }
+    }
+    $("meta").textContent = "Сбор ещё идёт в фоне…";
+  } catch (e) {
+    $("btnScrape").disabled = false;
+    $("btnScrape").textContent = "Обновить источники";
+    alert(String(e));
   }
 });
 

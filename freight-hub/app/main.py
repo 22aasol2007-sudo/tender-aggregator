@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -162,6 +163,15 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Freight Hub", version="0.3.0", lifespan=lifespan)
 
+if config.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 class ScrapeOut(BaseModel):
     results: list[dict[str, Any]]
@@ -255,6 +265,7 @@ async def loads(
     shipper_only: bool = True,
     hide_drivers: bool = True,
     hot: bool = False,
+    geo: bool = True,
     sort: str = Query("time", pattern="^(time|score)$"),
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -262,6 +273,17 @@ async def loads(
     muted = await db.get_json_setting("muted_directions", [])
     if not isinstance(muted, list):
         muted = []
+    profile = await db.get_json_setting("truck_profile", {})
+    if not isinstance(profile, dict):
+        profile = {}
+    try:
+        near = float(profile.get("radius") or 150)
+    except (TypeError, ValueError):
+        near = 150.0
+    try:
+        far = float(profile.get("radius_far") or profile.get("far_radius") or 1500)
+    except (TypeError, ValueError):
+        far = 1500.0
     rows = await db.list_loads(
         q=q,
         source=source,
@@ -275,6 +297,9 @@ async def loads(
         muted_directions=[str(x) for x in muted],
         sort=sort,
         hot_only=hot,
+        geo_corridor=geo,
+        near_km=near,
+        far_km=far,
         limit=limit,
         offset=offset,
     )
@@ -316,9 +341,14 @@ async def clear_mutes() -> dict[str, Any]:
 
 
 @app.post("/api/scrape")
-async def scrape_now() -> ScrapeOut:
-    results = await worker.run_once()
-    return ScrapeOut(results=results)
+async def scrape_now(quick: bool = True) -> dict[str, Any]:
+    """Start a scrape and return immediately (does not wait for boards)."""
+    return worker.start_manual(quick=quick)
+
+
+@app.get("/api/scrape/status")
+async def scrape_status() -> dict[str, Any]:
+    return worker.manual_status()
 
 
 @app.get("/")

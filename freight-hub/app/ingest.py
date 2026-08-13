@@ -27,6 +27,9 @@ HARD_GEO_SKIP = {
     "not_backhaul",
     "backhaul_no_to",
     "backhaul_unknown_geo",
+    "no_route",
+    "geo_unknown",
+    "incomplete_route",
 }
 
 

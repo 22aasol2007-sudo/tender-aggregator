@@ -79,11 +79,23 @@ class TelegramIngest:
         if not config.API_ID or not config.API_HASH:
             await self._save_health(ok=False, note="missing_api_creds")
             raise RuntimeError("missing_api_creds")
-        self.client = TelegramClient(
-            str(config.SESSION_PATH),
-            config.API_ID,
-            config.API_HASH,
-        )
+        proxy = config.telethon_proxy()
+        kwargs: dict = {
+            "session": str(config.SESSION_PATH),
+            "api_id": config.API_ID,
+            "api_hash": config.API_HASH,
+        }
+        if proxy:
+            from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate
+
+            kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
+            kwargs["proxy"] = proxy
+            log.info(
+                "TG using MTProxy %s:%s",
+                config.TG_PROXY_SERVER,
+                config.TG_PROXY_PORT,
+            )
+        self.client = TelegramClient(**kwargs)
         if config.PHONE:
             await self.client.start(phone=config.PHONE)
         else:
@@ -151,6 +163,14 @@ class TelegramIngest:
                         text = (msg.message or "").strip()
                         if len(text) < 20:
                             continue
+                        msg_ts = getattr(msg, "date", None)
+                        if msg_ts is not None:
+                            try:
+                                age = time.time() - float(msg_ts.timestamp())
+                                if age > config.MAX_LOAD_AGE_SEC:
+                                    continue
+                            except Exception:
+                                pass
                         username = (getattr(ent, "username", None) or u or "").lower()
                         link = f"https://t.me/{username}/{msg.id}" if username else None
                         raw = RawLoad(

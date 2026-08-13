@@ -1,0 +1,37 @@
+{
+  "collected_at": "2026-08-13",
+  "note": "Public MAX freight load-board chats are scarce; these are verified open links from catalogs/news.",
+  "priority_join": [
+    {
+      "name": "Чат трассы М7 Волга",
+      "url": "https://max.ru/join/NVuAyL9vDyEdCPQLOi5iyJbzCOdQd7jcw87ey-RXW6k",
+      "kind": "highway_chat",
+      "useful_for_loads": false
+    },
+    {
+      "name": "М12 восток чат",
+      "url": "https://max.ru/join/lxgrR9gQgUjqmulzGPEiVRbtv97p-NiPMdmMCF4l2aI",
+      "kind": "highway_chat",
+      "useful_for_loads": false
+    }
+  ],
+  "priority_public": [
+    {"name": "М7 и М12 Дорожная обстановка", "url": "https://max.ru/channel_M7_M12"},
+    {"name": "Трасса М-4 Дон", "url": "https://max.ru/channel_m4road"},
+    {"name": "Трасса М8 Холмогоры", "url": "https://max.ru/trackm8"},
+    {"name": "M5 Ural Team", "url": "https://max.ru/m5_ural_team"},
+    {"name": "Дальнобойщики России", "url": "https://max.ru/channel_dalnoboy"},
+    {"name": "ДАЛЬНОБОЙЩИКИ", "url": "https://max.ru/vk_dalnoboy"},
+    {"name": "112 дальнобойщиков", "url": "https://max.ru/trucks112"},
+    {"name": "ДАЛЬНОБОЙЩИКИ | В РЕЙСЕ", "url": "https://max.ru/dalnoboyvreise"},
+    {"name": "Дальнобойщики", "url": "https://max.ru/peregruz_dalnoboy"}
+  ],
+  "secondary_business": [
+    {"name": "Грузоперевозки", "url": "https://max.ru/id51400839443_biz"},
+    {"name": "ТК Грузовоз", "url": "https://max.ru/id4632271387_biz"},
+    {"name": "Негабаритика", "url": "https://max.ru/negabaritika"},
+    {"name": "ТБС", "url": "https://max.ru/id7708458947_biz"},
+    {"name": "ТЛК КОМФОРТ", "url": "https://max.ru/id9728055308_biz"},
+    {"name": "Коруна", "url": "https://max.ru/id5408018839_biz"}
+  ]
+}

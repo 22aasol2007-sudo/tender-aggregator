@@ -241,11 +241,23 @@ CITY_COORDS: dict[str, tuple[float, float]] = {
     "данилов": (58.1860, 40.1780),
     "любим": (58.3620, 40.6970),
     "ташкент": (41.2995, 69.2401),
+    "тошкент": (41.2995, 69.2401),
     "караганда": (49.8047, 73.1094),
     "ургенч": (41.5500, 60.6333),
+    "урганч": (41.5500, 60.6333),
+    "хорезм": (41.5500, 60.6333),
     "алматы": (43.2389, 76.9456),
     "бишкек": (42.8746, 74.5698),
     "самарканд": (39.6542, 66.9597),
+    "бухара": (39.7747, 64.4286),
+    "навои": (40.1039, 65.3686),
+    "нукус": (42.4531, 59.6103),
+    "джизак": (40.1158, 67.8422),
+    "чирчик": (41.4689, 69.5822),
+    "ангрен": (41.0167, 70.1436),
+    "мерсин": (36.8121, 34.6415),
+    "худжанд": (40.2826, 69.6220),
+    "поти": (42.1460, 41.6720),
     "астана": (51.1694, 71.4491),
     "шымкент": (42.3417, 69.5901),
     "нальчик": (43.4856, 43.6070),
@@ -396,7 +408,7 @@ def geo_filter(
     far_r = far_radius_km if far_radius_km is not None else max(float(radius_km), 1500.0)
 
     if not from_city and not to_city:
-        return True, "no_route", matched
+        return False, "no_route", matched
 
     def _dist(city: str | None) -> float | None:
         if not city:
@@ -429,17 +441,17 @@ def geo_filter(
             return False, "no_near_leg", matched
         return False, "far_leg_too_far", matched
 
-    # Only one end geocoded: must not exceed far radius (already checked).
-    # Soft-pass only when that end is near base; otherwise we can't prove corridor.
+    # Only one end geocoded: accept only if it is near the base.
+    # Far single-end or unknown second city → reject (cannot prove corridor).
     known = d_from if d_from is not None else d_to
     if known is not None:
         label = "погрузка" if d_from is not None else "выгрузка"
         if known <= radius_km:
-            matched.append(f"{label} {known:.0f}км≤{radius_km:g} (вторая точка без координат)")
-            return True, "geo_partial_near", matched
+            # Still reject: need both ends for corridor (user wants strict near+far).
+            return False, "incomplete_route", matched
         return False, "no_near_leg", matched
 
-    return True, "geo_unknown", matched
+    return False, "geo_unknown", matched
 
 
 def parse_profile_geo(profile: dict[str, Any]) -> tuple[float | None, float | None, bool]:

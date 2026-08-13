@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Биржа грузоперевозок "Cargomart"</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" data-react-helmet="true" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="57x57" href="/apple-touch-icon-57x57.png" />
+    <link rel="apple-touch-icon" sizes="60x60" href="/apple-touch-icon-60x60.png" />
+    <link rel="apple-touch-icon" sizes="72x72" href="/apple-touch-icon-72x72.png" />
+    <link rel="apple-touch-icon" sizes="76x76" href="/apple-touch-icon-76x76.png" />
+    <link rel="apple-touch-icon" sizes="114x114" href="/apple-touch-icon-114x114.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="/apple-touch-icon-144x144.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="/apple-touch-icon-144x144.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#ff5e74" />
+    <meta name="theme-color" content="#0058ac" />
+
+    <meta property="og:title" content="Биржа грузоперевозок Cargomart" />
+    <meta property="og:image" content="/content/img/social-banner.png" />
+    <meta property="og:image:secure_url" content="/content/img/social-banner.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="968" />
+    <meta property="og:image:height" content="504" />
+
+    <script>
+      var GLOBAL_ENV = {"fcmConfig":{"apiKey":"AIzaSyA114obaA1Ot_CyNrFy4TQWEwRgFwn7pgI","authDomain":"xenon-point-160410.firebaseapp.com","databaseURL":"https://xenon-point-160410.firebaseio.com","projectId":"xenon-point-160410","storageBucket":"xenon-point-160410.appspot.com","messagingSenderId":"18792838413","appId":"1:18792838413:web:49fce438b67e4df8f5ac44","measurementId":"G-8X2QN08NM5"},"yandexApiKey":"c3df6e6b-260b-4f89-a497-2e57f9c950da","sentryDSN":"https://a88d34b33bac4d96895a84c907a059b3@sentry.log.magdv.com/2","globals":true};
+      var GLOBAL_VERSION = "20260806035326";
+    </script>
+
+    
+    <style>
+      body{
+        margin: 0;
+      }
+      .cm_init_screen {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f0f3f7;
+        color: #fff;
+      }
+
+      .cm_init_screen svg {
+        width: 40vw;
+        height: 40vh;
+      }
+
+      .cm_init_screen .cm_init_loader {
+        display: inline-block;
+        width: 64px;
+        height: 64px;
+      }
+      .cm_init_screen .cm_init_loader:after {
+        content: ' ';
+        display: block;
+        width: 46px;
+        height: 46px;
+        margin: 1px;
+        border-radius: 50%;
+        border: 5px solid;
+        border-color: #fff transparent #fff transparent;
+        animation: lds-dual-ring 1.2s linear infinite;
+      }
+      @keyframes lds-dual-ring {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .cm_init_screen .cm_init_wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    </style>
+
+    <script type="module" crossorigin src="/assets/rolldown-runtime-QTnfLwEv.js"></script>
+    <script type="module" crossorigin src="/assets/common-Dz0XBhZn.js"></script>
+    <script type="module" crossorigin src="/assets/shared-CxkUmDyk.js"></script>
+    <script type="module" crossorigin src="/assets/selectors-Bt1hTzMs.js"></script>
+    <script type="module" crossorigin src="/assets/auth-DAWc_fgZ.js"></script>
+    <script type="module" crossorigin src="/assets/filterSetting-DVsLT_2I.js"></script>
+    <script type="module" crossorigin src="/assets/model-BxIi6f84.js"></script>
+    <script type="module" crossorigin src="/assets/localSetting-G0AFkPju.js"></script>
+    <script type="module" crossorigin src="/assets/storage-point-entities-B34exxEu.js"></script>
+    <script type="module" crossorigin src="/assets/multiLogin-dOYpkho5.js"></script>
+    <script type="module" crossorigin src="/assets/userSelf-DVDW0w9s.js"></script>
+    <script type="module" crossorigin src="/assets/onboarding-Bssy_tL9.js"></script>
+    <script type="module" crossorigin src="/assets/pushNotification-D-xedqPg.js"></script>
+    <script type="module" crossorigin src="/assets/getVatDescription-BAIGxMxq.js"></script>
+    <script type="module" crossorigin src="/assets/CompanyContact-CHv2UrCV.js"></script>
+    <script type="module" crossorigin src="/assets/company-B2HQmZYt.js"></script>
+    <script type="module" crossorigin src="/assets/configuration-dDqE2Qtk.js"></script>
+    <script type="module" crossorigin src="/assets/PriceFormatter-NSye7WKU.js"></script>
+    <script type="module" crossorigin src="/assets/dictionary-DvOfrq25.js"></script>
+    <script type="module" crossorigin src="/assets/contact-CXACLSiA.js"></script>
+    <script type="module" crossorigin src="/assets/contract-CY_gdcy0.js"></script>
+    <script type="module" crossorigin src="/assets/helpers-C27P8mT7.js"></script>
+    <script type="module" crossorigin src="/assets/types-CoDqnDNL.js"></script>
+    <script type="module" crossorigin src="/assets/constants-DLgenD4T.js"></script>
+    <script type="module" crossorigin src="/assets/helpers-BgE-qK4F.js"></script>
+    <script type="module" crossorigin src="/assets/order-DCzUyTYO.js"></script>
+    <script type="module" crossorigin src="/assets/Search-RD19-YjG.js"></script>
+    <script type="module" crossorigin src="/assets/useTruckVehiclesClipboardText-c-iXivJQ.js"></script>
+    <script type="module" crossorigin src="/assets/truck-BGgASAAr.js"></script>
+    <script type="module" crossorigin src="/assets/OrderSummaryTruck-BZ41sceU.js"></script>
+    <script type="module" crossorigin src="/assets/PriceRequestDraftPage-CVb3KuoU.js"></script>
+    <script type="module" crossorigin src="/assets/contractValidation-C5jOEMGu.js"></script>
+    <script type="module" crossorigin src="/assets/ClaimMarker-v_bgnWX3.js"></script>
+    <script type="module" crossorigin src="/assets/ecn-BpsT3CEj.js"></script>
+    <script type="module" crossorigin src="/assets/expeditorProposal-C9YqvScl.js"></script>
+    <script type="module" crossorigin src="/assets/userCertificate-xbB2__8v.js"></script>
+    <script type="module" crossorigin src="/assets/BankingDetailStatusIcon-GgSxrK3d.js"></script>
+    <script type="module" crossorigin src="/assets/CandidateCounter-DfZwjLmh.js"></script>
+    <script type="module" crossorigin src="/assets/logout-7Bz-6jZT.js"></script>
+    <script type="module" crossorigin src="/assets/NotFoundPage-DmlgCH1P.js"></script>
+    <script type="module" crossorigin src="/assets/PermissionWrapper-C7rczDPu.js"></script>
+    <script type="module" crossorigin src="/assets/app-DLU48gxX.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/style-DSd-8h1Y.css">
+  </head>
+
+  <body>
+    <script>
+      if (window.navigator.userAgent.includes('Chrome/49')) {
+        var div = document.createElement('div');
+        div.id = 'outdated-alert';
+        div.innerHTML = `
+        <div style="font-size: 14px; line-height: 20px;width: 100%;padding: 10px;background-color: #fff9d9; text-align: center;z-index: 10000;position: relative;">
+          <b style='color: rgba(0, 0, 0, 0.87)'>Ваш браузер устарел…</b>
+          <span style='color: rgba(0, 0, 0, 0.54)'>Сайт работает в ограниченном режиме.</span>
+          <div
+            onclick="document.querySelector('#outdated-alert').remove();"
+            style="position: absolute; right: 10px; top: 8px; font-size: 24px; cursor: pointer"
+          >
+            &times;
+          </div>
+        </div>`;
+        document.body.prepend(div);
+      }
+      const unregisterServiceWorkers = async () => {
+        if ('serviceWorker' in navigator) {
+          try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+
+            for (const registration of registrations) {
+              await registration.unregister();
+              console.log('Service Worker успешно удалён');
+            }
+
+            // Очистка кэша
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+          } catch (error) {
+            console.error('Ошибка при удалении Service Worker:', error);
+          }
+        }
+      };
+
+      unregisterServiceWorkers();
+    </script>
+    <div id="root">
+      <div class="cm_init_screen">
+        <div class="cm_init_wrapper">
+          
+<svg width="183" height="40" viewBox="0 0 183 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g id="logo">
+    <g id="Combined Shape">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M178.237 27.1338V23.5854L177.819 21.4447H169.01L167.244 12.4026L162.194 12.0615L162.282 27.9175L162.293 27.9185V28.2877L162.284 28.286L162.293 29.857L158.53 32.0151L158.434 7.27368C158.432 6.74262 158.219 6.23418 157.841 5.86047L156.605 4.63583L159.266 2L160.713 3.43301C161.661 4.37201 162.194 5.65091 162.194 6.98516V8.32553L175.48 9.22289C177.741 9.37556 179.616 11.0291 180.051 13.2526L182 23.2279V30.8612H174.638C173.923 32.6975 172.124 34 170.017 34C167.283 34 165.066 31.8044 165.066 29.0956C165.066 26.3872 167.283 24.1912 170.017 24.1912C172.048 24.1912 173.793 25.4017 174.557 27.1338H178.237ZM177.205 18.3058L176.464 14.5139C176.29 13.6244 175.54 12.963 174.636 12.902L170.514 12.6235L171.625 18.3058H177.205ZM171.8 29.0956C171.8 30.0706 171.002 30.8612 170.017 30.8612C169.033 30.8612 168.235 30.0706 168.235 29.0956C168.235 28.1206 169.033 27.33 170.017 27.33C171.002 27.33 171.8 28.1206 171.8 29.0956Z"
+        fill="currentColor"
+      />
+      <path
+        d="M7.0341 12.961C4.64014 12.961 3.98994 14.1856 3.98994 16.0963V24.5221C3.98994 26.4314 4.64014 27.657 7.0341 27.657C9.335 27.657 10.0102 26.5021 10.064 24.6974H14.0665V24.7146C14.0665 29.1594 11.9526 30.9869 7.0341 30.9869C2.19748 30.9869 0 29.1594 0 24.7146V15.9034C0 11.4599 2.19748 9.6319 7.0341 9.6319C11.9526 9.6319 14.0665 11.4599 14.0665 15.9034V15.9219H10.064C10.0102 14.1163 9.335 12.961 7.0341 12.961Z"
+        fill="currentColor"
+      />
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M75.9774 9.6319C71.1407 9.6319 68.9407 11.4603 68.9407 15.9038V24.715C68.9407 29.1598 71.242 30.9873 76.1618 30.9873C80.9988 30.9873 83.1946 29.1598 83.1946 24.715V15.9038C83.1946 11.4603 80.8959 9.6319 75.9774 9.6319ZM79.2064 24.5225C79.2064 26.4319 78.554 27.657 76.1618 27.657C73.785 27.657 72.9349 26.4319 72.9349 24.5225L72.9328 16.0967C72.9328 14.1861 73.5834 12.961 75.9774 12.961C78.3537 12.961 79.2025 14.1861 79.2025 16.0967L79.2064 24.5225Z"
+        fill="currentColor"
+      />
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M15.0808 30.8612L21.3078 9.76108H25.315L31.4542 30.8612H27.3031L26.1626 27.1355H20.4026L19.2336 30.8612H15.0808ZM23.2675 15.6041L21.3966 23.427H25.1384L23.2675 15.6041Z"
+        fill="currentColor"
+      />
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M47.6427 17.1913V16.0937C47.6427 11.6261 45.1083 9.76108 39.6913 9.76108H34.0395V30.8612H38.0596V23.437H39.5439L44.0014 30.8612H48.6893L43.7709 22.835C46.4785 22.0099 47.6427 20.3124 47.6427 17.1913ZM43.4184 16.9963C43.4184 18.9969 42.6049 19.9572 39.6913 19.9572H38.0298V13.2426H39.7473C42.8669 13.2426 43.4184 14.2834 43.4184 16.2845V16.9963Z"
+        fill="currentColor"
+      />
+      <path
+        d="M90.7501 9.76108L95.6397 19.1097L100.562 9.76108H104.704V30.8612H100.606V17.156L96.1399 25.6038H95.1739L90.5932 17.156V30.8612H86.6067V9.76108H90.7501Z"
+        fill="currentColor"
+      />
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M113.087 9.76108L106.858 30.8612H111.009L112.181 27.1355H117.94L119.083 30.8612H123.231L117.094 9.76108H113.087ZM112.927 23.7793L115.046 15.6041L116.992 23.7793H112.927Z"
+        fill="currentColor"
+      />
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M139.404 16.0937V17.1913C139.404 20.3124 138.226 22.0099 135.482 22.835L140.467 30.8612H135.718L131.21 23.437H129.703V30.8612H125.817V9.76108H131.358C136.84 9.76108 139.404 11.6261 139.404 16.0937ZM131.358 19.9572C134.304 19.9572 135.131 18.9969 135.131 16.9963V16.2845C135.131 14.2834 134.571 13.2426 131.413 13.2426H129.672V19.9572H131.358Z"
+        fill="currentColor"
+      />
+      <path
+        d="M145.735 13.1448H140.898V9.76108H154.686V13.1448H149.876V30.8612H145.735V13.1448Z"
+        fill="currentColor"
+      />
+      <path
+        d="M57.9903 12.961C60.2912 12.961 61.1495 14.1167 61.2038 15.9219H65.2075V15.9034C65.2075 11.4599 62.9088 9.6319 57.9903 9.6319C53.1537 9.6319 50.9558 11.4599 50.9558 15.9034V24.7146C50.9558 29.1594 53.2549 30.9869 58.1747 30.9869C63.0096 30.9869 65.2075 29.1594 65.2075 24.7146V18.7979H58.3691V22.2071H61.2172V24.5225C61.2172 26.4314 60.567 27.657 58.1747 27.657C55.798 27.657 54.9479 26.4314 54.9479 24.5225L54.9457 16.0963C54.9457 14.1861 55.5963 12.961 57.9903 12.961Z"
+        fill="currentColor"
+      />
+    </g>
+  </g>
+</svg>
+
+          <div class="cm_init_loader"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Yandex.Metrika counter -->
+    <script type="text/javascript">
+      (function (m, e, t, r, i, k, a) {
+        m[i] =
+          m[i] ||
+          function () {
+            (m[i].a = m[i].a || []).push(arguments);
+          };
+        m[i].l = 1 * new Date();
+        for (var j = 0; j < document.scripts.length; j++) {
+          if (document.scripts[j].src === r) {
+            return;
+          }
+        }
+        ((k = e.createElement(t)),
+          (a = e.getElementsByTagName(t)[0]),
+          (k.async = 1),
+          (k.src = r),
+          a.parentNode.insertBefore(k, a));
+      })(window, document, 'script', 'https://mc.yandex.ru/metrika/tag.js', 'ym');
+
+      ym(39253580, 'init', {
+        clickmap: true,
+        trackLinks: true,
+        accurateTrackBounce: true,
+        webvisor: true,
+      });
+    </script>
+    <noscript
+      ><div><img src="https://mc.yandex.ru/watch/39253580" style="position: absolute; left: -9999px" alt="" /></div
+    ></noscript>
+    <!-- /Yandex.Metrika counter -->
+  </body>
+</html>

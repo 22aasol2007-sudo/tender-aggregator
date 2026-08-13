@@ -1,0 +1,867 @@
+{
+  "users": [
+    {
+      "slug": "vk_dalnoboy",
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "channel_dalnoboy",
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики России в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboy",
+      "url": "https://max.ru/dalnoboy",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboyshiki",
+      "url": "https://max.ru/dalnoboyshiki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboyshiki_rossii",
+      "url": "https://max.ru/dalnoboyshiki_rossii",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli",
+      "url": "https://max.ru/voditeli",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli_rf",
+      "url": "https://max.ru/voditeli_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli_rossii",
+      "url": "https://max.ru/voditeli_rossii",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz",
+      "url": "https://max.ru/gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzi",
+      "url": "https://max.ru/gruzi",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzovik",
+      "url": "https://max.ru/gruzovik",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzoperevozki",
+      "url": "https://max.ru/gruzoperevozki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_ru",
+      "url": "https://max.ru/gruz_ru",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_msk",
+      "url": "https://max.ru/gruz_msk",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_mo",
+      "url": "https://max.ru/gruz_mo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "moscow_gruz",
+      "url": "https://max.ru/moscow_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "msk_gruz",
+      "url": "https://max.ru/msk_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cfo_gruz",
+      "url": "https://max.ru/cfo_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "szfo",
+      "url": "https://max.ru/szfo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "pfo_gruz",
+      "url": "https://max.ru/pfo_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "birza_gruz",
+      "url": "https://max.ru/birza_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzbirza",
+      "url": "https://max.ru/gruzbirza",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "birzagruzov",
+      "url": "https://max.ru/birzagruzov",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "perevoz",
+      "url": "https://max.ru/perevoz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "perevozki",
+      "url": "https://max.ru/perevozki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "logistika",
+      "url": "https://max.ru/logistika",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "logist",
+      "url": "https://max.ru/logist",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "ati",
+      "url": "https://max.ru/ati",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cargos",
+      "url": "https://max.ru/cargos",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cargo",
+      "url": "https://max.ru/cargo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "trucks",
+      "url": "https://max.ru/trucks",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "fura",
+      "url": "https://max.ru/fura",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "trassa_m7",
+      "url": "https://max.ru/trassa_m7",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "m7_volga",
+      "url": "https://max.ru/m7_volga",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "m12_vostok",
+      "url": "https://max.ru/m12_vostok",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dispečer",
+      "url": "https://max.ru/dispečer",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dispatcher",
+      "url": "https://max.ru/dispatcher",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "loadboard",
+      "url": "https://max.ru/loadboard",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "loads",
+      "url": "https://max.ru/loads",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "kabinet_logista",
+      "url": "https://max.ru/kabinet_logista",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "kabinetlogista",
+      "url": "https://max.ru/kabinetlogista",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "tlk_comfort",
+      "url": "https://max.ru/tlk_comfort",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "Rabota_Novocherkasskc",
+      "url": "https://max.ru/Rabota_Novocherkasskc",
+      "status": 200,
+      "title": "Работа Новочеркасск в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    }
+  ],
+  "real_users": [
+    {
+      "slug": "vk_dalnoboy",
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "channel_dalnoboy",
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики России в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboy",
+      "url": "https://max.ru/dalnoboy",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboyshiki",
+      "url": "https://max.ru/dalnoboyshiki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dalnoboyshiki_rossii",
+      "url": "https://max.ru/dalnoboyshiki_rossii",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli",
+      "url": "https://max.ru/voditeli",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli_rf",
+      "url": "https://max.ru/voditeli_rf",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "voditeli_rossii",
+      "url": "https://max.ru/voditeli_rossii",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz",
+      "url": "https://max.ru/gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzi",
+      "url": "https://max.ru/gruzi",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzovik",
+      "url": "https://max.ru/gruzovik",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzoperevozki",
+      "url": "https://max.ru/gruzoperevozki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_ru",
+      "url": "https://max.ru/gruz_ru",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_msk",
+      "url": "https://max.ru/gruz_msk",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruz_mo",
+      "url": "https://max.ru/gruz_mo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "moscow_gruz",
+      "url": "https://max.ru/moscow_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "msk_gruz",
+      "url": "https://max.ru/msk_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cfo_gruz",
+      "url": "https://max.ru/cfo_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "szfo",
+      "url": "https://max.ru/szfo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "pfo_gruz",
+      "url": "https://max.ru/pfo_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "birza_gruz",
+      "url": "https://max.ru/birza_gruz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "gruzbirza",
+      "url": "https://max.ru/gruzbirza",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "birzagruzov",
+      "url": "https://max.ru/birzagruzov",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "perevoz",
+      "url": "https://max.ru/perevoz",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "perevozki",
+      "url": "https://max.ru/perevozki",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "logistika",
+      "url": "https://max.ru/logistika",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "logist",
+      "url": "https://max.ru/logist",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "ati",
+      "url": "https://max.ru/ati",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cargos",
+      "url": "https://max.ru/cargos",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "cargo",
+      "url": "https://max.ru/cargo",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "trucks",
+      "url": "https://max.ru/trucks",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "fura",
+      "url": "https://max.ru/fura",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "trassa_m7",
+      "url": "https://max.ru/trassa_m7",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "m7_volga",
+      "url": "https://max.ru/m7_volga",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "m12_vostok",
+      "url": "https://max.ru/m12_vostok",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dispečer",
+      "url": "https://max.ru/dispečer",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "dispatcher",
+      "url": "https://max.ru/dispatcher",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "loadboard",
+      "url": "https://max.ru/loadboard",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "loads",
+      "url": "https://max.ru/loads",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "kabinet_logista",
+      "url": "https://max.ru/kabinet_logista",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "kabinetlogista",
+      "url": "https://max.ru/kabinetlogista",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "tlk_comfort",
+      "url": "https://max.ru/tlk_comfort",
+      "status": 200,
+      "title": "MAX – быстрое и легкое приложение для общения и решения повседневных задач",
+      "has_channel_cta": true,
+      "has_at": false,
+      "landing_only": false,
+      "likely_real": true
+    },
+    {
+      "slug": "Rabota_Novocherkasskc",
+      "url": "https://max.ru/Rabota_Novocherkasskc",
+      "status": 200,
+      "title": "Работа Новочеркасск в мессенджере MAX",
+      "has_channel_cta": true,
+      "has_at": true,
+      "landing_only": false,
+      "likely_real": true
+    }
+  ],
+  "catalog_links": []
+}

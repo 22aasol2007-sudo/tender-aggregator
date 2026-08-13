@@ -194,6 +194,17 @@ class MaxIngest:
                         text = (getattr(msg, "text", None) or "").strip()
                         if len(text) < 20:
                             continue
+                        msg_ts = getattr(msg, "time", None) or getattr(msg, "timestamp", None)
+                        if msg_ts is not None:
+                            try:
+                                ts = float(msg_ts.timestamp()) if hasattr(msg_ts, "timestamp") else float(msg_ts)
+                                # MAX sometimes uses ms
+                                if ts > 1e12:
+                                    ts /= 1000.0
+                                if time.time() - ts > config.MAX_LOAD_AGE_SEC:
+                                    continue
+                            except Exception:
+                                pass
                         mid = getattr(msg, "id", None) or getattr(msg, "cid", None) or id(msg)
                         raw = RawLoad(
                             source="max",

@@ -1,0 +1,396 @@
+{
+  "publics": [
+    {
+      "slug": "vk_dalnoboy",
+      "url": "https://max.ru/vk_dalnoboy",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ в мессенджере MAX",
+      "h1": "ДАЛЬНОБОЙЩИКИ",
+      "at": "@vk_dalnoboy",
+      "desc": "",
+      "real": true
+    },
+    {
+      "slug": "channel_dalnoboy",
+      "url": "https://max.ru/channel_dalnoboy",
+      "status": 200,
+      "title": "Дальнобойщики России в мессенджере MAX",
+      "h1": "Дальнобойщики России",
+      "at": "@channel_dalnoboy",
+      "desc": "",
+      "real": true
+    },
+    {
+      "slug": "id9728055308_biz",
+      "url": "https://max.ru/id9728055308_biz",
+      "status": 200,
+      "title": "ТЛК КОМФОРТ - ЛОГИСТИКА в мессенджере MAX",
+      "h1": "ТЛК КОМФОРТ - ЛОГИСТИКА",
+      "at": "@id9728055308_biz",
+      "desc": "",
+      "real": true
+    },
+    {
+      "slug": "id5408018839_biz",
+      "url": "https://max.ru/id5408018839_biz",
+      "status": 200,
+      "title": "Коруна | Караван идет в мессенджере MAX",
+      "h1": "Коруна | Караван идет",
+      "at": "@id5408018839_biz",
+      "desc": "",
+      "real": true
+    },
+    {
+      "slug": "Rabota_Novocherkasskc",
+      "url": "https://max.ru/Rabota_Novocherkasskc",
+      "status": 200,
+      "title": "Работа Новочеркасск в мессенджере MAX",
+      "h1": "Работа Новочеркасск",
+      "at": "@id616111918632_bot",
+      "desc": "",
+      "real": true
+    }
+  ],
+  "pages": [
+    {
+      "page": "https://maxhubs.ru/channels/society/gruzoperevozki/",
+      "status": 200,
+      "title": "Грузоперевозки",
+      "desc": "Канал предназначен для рассылки актуальных грузов по РФ.",
+      "links": [
+        "https://max.ru/id51400839443_biz"
+      ],
+      "bytes": 167022
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/tk-gruzovoz/",
+      "status": 200,
+      "title": "ТК Грузовоз",
+      "desc": "Транспортная компания. Перевозка грузов по России.",
+      "links": [
+        "https://max.ru/id4632271387_biz"
+      ],
+      "bytes": 167504
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/perevozka-negabaritnyh-gruzov-negabaritika/",
+      "status": 200,
+      "title": "Перевозка негабаритных грузов | Негабаритика",
+      "desc": "Транспортная компания 🕕 Работаем с 2003 года; 🚛 Перевозим негабаритный и тяжеловесный груз; ⚙️ Более 2200 единиц техники",
+      "links": [
+        "https://max.ru/negabaritika"
+      ],
+      "bytes": 168187
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/gruzovichkof-rossiya/",
+      "status": 200,
+      "title": "«Грузовичкоф» Россия",
+      "desc": "🚛 Те самые зелёные газели в твоём городе 🏆 Бренд года 🏷 Промокод для подписчиков HELLO500 на 500₽ 💚 Знаем, как переехать надёжно и быстро Оформить…",
+      "links": [
+        "https://max.ru/gruzovichkof"
+      ],
+      "bytes": 167417
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/gruzotaksi-konstantin-i-tovarishhi-ryazan/",
+      "status": 200,
+      "title": "\"Грузотакси КонстантинЪ и Товарищи\" Рязань.",
+      "desc": "\"Константин и Товарищи\": Грузоперевозки в Рязани с 1992 года! Официальный канал вашего надёжного партнёра по грузоперевозкам! Профессианалы в сфере…",
+      "links": [
+        "https://max.ru/id623001207108_biz"
+      ],
+      "bytes": 168866
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/gruzoperevozki-gruzotaksi-ryazan/",
+      "status": 200,
+      "title": "Грузоперевозки Грузотакси Рязань",
+      "desc": "https://gruzotaksi62.ru/ Грузоперевозки, грузотакси Газель по г.Рязань,Рязанской области,РФ.Наличный и безналичный расчет. Быстро,надежно,качественно…",
+      "links": [
+        "https://max.ru/id623011234245_biz"
+      ],
+      "bytes": 167530
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/112-dalnobojshhikov/",
+      "status": 200,
+      "title": "112 дальнобойщиков",
+      "desc": "Дальнобойщики и водители грузовиков здесь. Самые зрелищные аварии с участием фур без жести 🚛🚔🦺 #дальнобой #фура #грузоперевозки",
+      "links": [
+        "https://max.ru/trucks112"
+      ],
+      "bytes": 166931
+    },
+    {
+      "page": "https://maxhubs.ru/channels/travel/dalnobojshhiki-v-rejse/",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ | В РЕЙСЕ",
+      "desc": "",
+      "links": [
+        "https://max.ru/dalnoboyvreise",
+        "https://max.ru/u"
+      ],
+      "bytes": 168111
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/dalnoboj/",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙ",
+      "desc": "Канал для настоящих мужчин. Группа посвящается дальнобойщикам. Дальнобой - это шоферская гвардия. Только водители междугородних автобусов могут…",
+      "links": [
+        "https://max.ru/peregruz_dalnoboy"
+      ],
+      "bytes": 168311
+    },
+    {
+      "page": "https://maxhubs.ru/channels/travel/dalnobojshhiki/",
+      "status": 200,
+      "title": "ДАЛЬНОБОЙЩИКИ",
+      "desc": "У нас вы можете всегда попросить помощи у товарищей, задав в группу вопрос или же поделиться чем-нибудь интересным, что произошло с вами в пути!",
+      "links": [
+        "https://max.ru/vk_dalnoboy"
+      ],
+      "bytes": 169538
+    },
+    {
+      "page": "https://maxhubs.ru/channels/business/tbs-mezhdunarodnye-gruzoperevozki-tamozhennyj-broker/",
+      "status": 200,
+      "title": "ТБС: Международные грузоперевозки. Таможенный брокер.",
+      "desc": "Логистическая компания ТБС - услуги по железнодорожным, автомобильным, авиа и морским перевозкам грузов. Таможенное оформление товаров. Более 5 лет…",
+      "links": [
+        "https://max.ru/id7708458947_biz"
+      ],
+      "bytes": 168157
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/aukczion-gruzoperevozok-specztehnik-i-uslug-sahalin/",
+      "status": 200,
+      "title": "Аукцион грузоперевозок, спецтехник и услуг ( Сахалин )",
+      "desc": "",
+      "links": [
+        "https://max.ru/id650127628901_biz"
+      ],
+      "bytes": 170198
+    },
+    {
+      "page": "https://maxhubs.ru/channels/business/import-i-logistika/",
+      "status": 200,
+      "title": "Импорт и Логистика",
+      "desc": "Импорт и логистика без воды: практика, кейсы и советы для надёжных и выгодных поставок в Россию. Экспорт. Импорт. Логистика. Импортозамещение…",
+      "links": [
+        "https://max.ru/proimporrt"
+      ],
+      "bytes": 167480
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/shabashka-kirov-rabota-haltura-gruzoperevozki/",
+      "status": 200,
+      "title": "Шабашка Киров Работа Халтура Грузоперевозки",
+      "desc": "Шабашка Киров - это сообщество, которое позволяет быстро находить надежных исполнителей для выполнения любой работы.",
+      "links": [
+        "https://max.ru/shabashka_kirov43"
+      ],
+      "bytes": 164270
+    },
+    {
+      "page": "https://maxhubs.ru/channels/society/haltura-spb-shabashka-piter-rabota-gruzoperevozki/",
+      "status": 200,
+      "title": "Халтура СПБ Шабашка Питер Работа Грузоперевозки",
+      "desc": "",
+      "links": [
+        "https://max.ru/shabashkspb"
+      ],
+      "bytes": 164351
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/chat-trassy-m7-volga/",
+      "status": 200,
+      "title": "Чат трассы М7 Волга",
+      "desc": "Чат водителей и путешественников по трассе М-7 «Волга». Здесь можно: • узнать о пробках, ДТП и ремонте дорог; • получить информацию о погоде и…",
+      "links": [
+        "https://max.ru/join/NVuAyL9vDyEdCPQLOi5iyJbzCOdQd7jcw87ey-RXW6k"
+      ],
+      "bytes": 157031
+    },
+    {
+      "page": "https://maxhubs.ru/chats/m12-vostok-chat/",
+      "status": 200,
+      "title": "М12 восток чат",
+      "desc": "В данной группе узнаете первыми о новостях с трассы м12",
+      "links": [
+        "https://max.ru/join/lxgrR9gQgUjqmulzGPEiVRbtv97p-NiPMdmMCF4l2aI"
+      ],
+      "bytes": 156533
+    },
+    {
+      "page": "https://maxhubs.ru/chats/city/vladivostok/gruzoperevozki-vladivostok-p-trudovoe-primorskij-kraj/",
+      "status": 200,
+      "title": "Грузоперевозки  Владивосток п.Трудовое  Приморский край",
+      "desc": "Грузовое такси Грузовичок Mazda bongo 4 wd без тента, г/подъемн. 2 тонны, Стяжки для крепления груза, ВОЗИМ практически ВСЕ в т.ч., Услуга покупки…",
+      "links": [
+        "https://max.ru/join/TkQwPt2EMSIzqMFtZnnwB1EFfoPTA3E_pxw7Yl3b-FM"
+      ],
+      "bytes": 171126
+    },
+    {
+      "page": "https://topmsg.ru/mgroup/mgcat-transportation/",
+      "status": 200,
+      "title": "Группы Max Грузоперевозки",
+      "desc": "Ссылки на группы Max Грузоперевозки, рейтинг и отзывы пользователей, вступить в действующие групповые чаты макс по ссылке приглашению.",
+      "links": [],
+      "bytes": 138693
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/",
+      "status": 200,
+      "title": "🚗 Авто",
+      "desc": "Автомобильные чаты в мессенджере MAX — это всё про машины: от тюнинга и технических советов до автоновостей и общения с водителями. Для тех, кто за рулём и в теме.",
+      "links": [],
+      "bytes": 206630
+    },
+    {
+      "page": "https://maxcc.ru/",
+      "status": 200,
+      "title": "",
+      "desc": "maxcc.ru - крупнейший каталог каналов, чатов и ботов. Найдите и добавьте каналы, чаты и боты для MAX, Telegram, ВКонтакте, Дзен, YouTube и RuTube. Полный каталог русскоязычных интернет-сообществ в одном месте. Актуальные новости из мира соц",
+      "links": [],
+      "bytes": 88590
+    },
+    {
+      "page": "https://maxchats.ru/",
+      "status": 200,
+      "title": "",
+      "desc": "DIGITALGID.RU - лучший выбор для регистрации доменов и создания сайтов",
+      "links": [],
+      "bytes": 116650
+    },
+    {
+      "page": "https://maxlist.ru/",
+      "status": 200,
+      "title": "",
+      "desc": "��� �������� ������������ ������������� ��� �������� ����� � ������� �������� 1Gb.ru",
+      "links": [],
+      "bytes": 4578
+    }
+  ],
+  "auto": [
+    {
+      "page": "https://maxhubs.ru/chats/auto/",
+      "status": 200,
+      "title": "🚗 Авто",
+      "desc": "Автомобильные чаты в мессенджере MAX — это всё про машины: от тюнинга и технических советов до автоновостей и общения с водителями. Для тех, кто за рулём и в теме.",
+      "links": [],
+      "bytes": 206630
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/avtorazbor-2/",
+      "status": 200,
+      "title": "Мой Авторазбор",
+      "desc": "Продажа автозапчастей.",
+      "links": [
+        "https://max.ru/join/WdaFxXwP_HVl3kSmwMChqxZoD2zw17ew-9LXwwJ9bCg"
+      ],
+      "bytes": 156248
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/avtorazbor/",
+      "status": 200,
+      "title": "Авторазбор",
+      "desc": "Продажа автозапчастей, наличие. 'Авторазбор' — это живое сообщество пользователей, где вы всегда найдете что-то интересное, полезное или весёлое…",
+      "links": [
+        "https://max.ru/join/rkrWjGC7AjgIXwii03mCW6MbDNeekJFkUqnK2yq1_yE"
+      ],
+      "bytes": 161460
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/avtorynok-belgorod/",
+      "status": 200,
+      "title": "Авторынок Белгород",
+      "desc": "Продажа автомобилей",
+      "links": [
+        "https://max.ru/join/NH6kzGl7GTVZ3xbbtZMtAHT9QzSMz1owyAvPaQjj3Fc"
+      ],
+      "bytes": 156637
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/chat-trassy-m7-volga/",
+      "status": 200,
+      "title": "Чат трассы М7 Волга",
+      "desc": "Чат водителей и путешественников по трассе М-7 «Волга». Здесь можно: • узнать о пробках, ДТП и ремонте дорог; • получить информацию о погоде и…",
+      "links": [
+        "https://max.ru/join/NVuAyL9vDyEdCPQLOi5iyJbzCOdQd7jcw87ey-RXW6k"
+      ],
+      "bytes": 157031
+    },
+    {
+      "page": "https://maxhubs.ru/chats/auto/kyron-pro/",
+      "status": 200,
+      "title": "KYRON pro",
+      "desc": "Чат владельцев SsangYong Kyron и Actyon.",
+      "links": [
+        "https://max.ru/join/8M_TEews-R2X0ISIUFfja5rhmUkyiCbAjcu3dEYtBB8"
+      ],
+      "bytes": 156078
+    },
+    {
+      "page": "https://maxhubs.ru/chats/m12-vostok-chat/",
+      "status": 200,
+      "title": "М12 восток чат",
+      "desc": "В данной группе узнаете первыми о новостях с трассы м12",
+      "links": [
+        "https://max.ru/join/lxgrR9gQgUjqmulzGPEiVRbtv97p-NiPMdmMCF4l2aI"
+      ],
+      "bytes": 156533
+    }
+  ],
+  "search": [
+    {
+      "q": "москва груз",
+      "joins": [],
+      "pages": [
+        "https://maxhubs.ru/channels/society/gruzchiki-moskva-rabota-podrabotka-shabashka/",
+        "https://maxhubs.ru/channels/society/gruzotaksi-konstantin-i-tovarishhi-ryazan/"
+      ]
+    },
+    {
+      "q": "москва перевоз",
+      "joins": [],
+      "pages": [
+        "https://maxhubs.ru/channels/society/gruzotaksi-konstantin-i-tovarishhi-ryazan/"
+      ]
+    },
+    {
+      "q": "цфо",
+      "joins": [],
+      "pages": [
+        "https://maxhubs.ru/channels/business/rtk/",
+        "https://maxhubs.ru/channels/fgbu-czlati-po-czfo/",
+        "https://maxhubs.ru/channels/finance/mku-czfo-mr-belokatajskij-rajon-rb/",
+        "https://maxhubs.ru/channels/mau-czfor-ritm/",
+        "https://maxhubs.ru/channels/news/soczfond-kontekst/",
+        "https://maxhubs.ru/channels/sport/sportivno-trenirovochnyj-czentr-tambov/",
+        "https://maxhubs.ru/channels/travel/turs-sale-deshyovye-i-goryashhie-tury/"
+      ]
+    },
+    {
+      "q": "биржа груз",
+      "joins": [],
+      "pages": []
+    },
+    {
+      "q": "фура москва",
+      "joins": [],
+      "pages": []
+    },
+    {
+      "q": "реф москва",
+      "joins": [],
+      "pages": [
+        "https://maxhubs.ru/channels/cooking/fgbu-apk-naczryba/",
+        "https://maxhubs.ru/channels/news/prefektura-sao/",
+        "https://maxhubs.ru/channels/society/koshkam-dom-o-zhivotnyh-priyuta-tinao-i-ne-tolko/"
+      ]
+    }
+  ]
+}

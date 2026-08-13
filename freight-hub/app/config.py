@@ -11,6 +11,12 @@ load_dotenv(ROOT / ".env")
 DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "data" / "hub.db")))
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8088"))
+# Allow browser UI on another origin (e.g. Vercel static → Railway API)
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
 
 # Telethon (optional TG ingest)
 API_ID = int(os.getenv("API_ID", "0") or 0)
@@ -27,6 +33,9 @@ MIN_SCORE = int(os.getenv("MIN_SCORE", "40"))
 CROSS_DEDUP_HOURS = float(os.getenv("CROSS_DEDUP_HOURS", "6"))
 WATCHDOG_SEC = int(os.getenv("WATCHDOG_SEC", "120"))
 LISTENER_RETRY_SEC = int(os.getenv("LISTENER_RETRY_SEC", "60"))
+# Feed / DB retention: drop loads older than this many days
+MAX_LOAD_AGE_DAYS = float(os.getenv("MAX_LOAD_AGE_DAYS", "7"))
+MAX_LOAD_AGE_SEC = MAX_LOAD_AGE_DAYS * 86400
 USER_AGENT = os.getenv(
     "USER_AGENT",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -40,6 +49,20 @@ OWN_TELETHON = os.getenv("OWN_TELETHON", "1").strip() not in {"0", "false", "no"
 ENABLE_TG = ENABLE_TG and OWN_TELETHON
 ATI_API_TOKEN = os.getenv("ATI_API_TOKEN", "").strip()
 MONOPOLY_API_TOKEN = os.getenv("MONOPOLY_API_TOKEN", "").strip()
+
+# Telegram MTProto proxy (t.me/proxy?server=&port=&secret=)
+# Example secret starts with dd… for fake-TLS MTProxy.
+TG_PROXY_SERVER = os.getenv("TG_PROXY_SERVER", "").strip()
+TG_PROXY_PORT = int(os.getenv("TG_PROXY_PORT", "0") or 0)
+TG_PROXY_SECRET = os.getenv("TG_PROXY_SECRET", "").strip()
+
+
+def telethon_proxy() -> tuple | None:
+    """Proxy args for Telethon MTProto (host, port, secret)."""
+    if TG_PROXY_SERVER and TG_PROXY_PORT and TG_PROXY_SECRET:
+        return (TG_PROXY_SERVER, TG_PROXY_PORT, TG_PROXY_SECRET)
+    return None
+
 
 # MAX messenger ingest (PyMax user session; unofficial API)
 ENABLE_MAX = os.getenv("ENABLE_MAX", "1").strip() not in {"0", "false", "no"}

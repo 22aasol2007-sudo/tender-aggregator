@@ -7,6 +7,17 @@ import re
 from dataclasses import dataclass, field
 
 _WS = re.compile(r"\s+")
+_ARROW_RE = re.compile(r"(?:➡️|⬅️|➡|⬅|→|←|⇒|⇔|➔|⟶|⟷)")
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U00002600-\U000026FF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "]+",
+    flags=re.UNICODE,
+)
 
 SHIPPER_STRONG = [
     r"ищу\s+машин",
@@ -410,8 +421,22 @@ CITY_ALIASES: dict[str, str] = {
     "чита": "чита",
     "улан-удэ": "улан-удэ",
     "ташкент": "ташкент",
-    "караганда": "караганда",
+    "тошкент": "ташкент",
+    "джизак": "джизак",
+    "джиззак": "джизак",
+    "урганч": "ургенч",
     "ургенч": "ургенч",
+    "хорезм": "ургенч",
+    "хоразм": "ургенч",
+    "навои": "навои",
+    "навоий": "навои",
+    "нукус": "нукус",
+    "чирчик": "чирчик",
+    "ангрен": "ангрен",
+    "мерсин": "мерсин",
+    "худжанд": "худжанд",
+    "поти": "поти",
+    "караганда": "караганда",
     "алматы": "алматы",
     "алма-ата": "алматы",
     "бишкек": "бишкек",
@@ -425,7 +450,9 @@ CITY_ALIASES: dict[str, str] = {
 
 def normalize(text: str) -> str:
     t = (text or "").lower().replace("ё", "е")
-    t = t.replace("→", "-").replace("—", "-").replace("–", "-")
+    t = _ARROW_RE.sub("-", t)
+    t = t.replace("—", "-").replace("–", "-").replace("﹣", "-").replace("−", "-")
+    t = _EMOJI_RE.sub(" ", t)
     return _WS.sub(" ", t).strip()
 
 
@@ -508,6 +535,7 @@ _CITY_STOP = {
     "тент",
     "реф",
     "машина",
+    "мошина",
     "ставки",
     "ставка",
     "сегодня",
@@ -530,6 +558,34 @@ _CITY_STOP = {
     "контакт",
     "телефон",
     "адрес",
+    "готов",
+    "готова",
+    "готово",
+    "готовы",
+    "задняя",
+    "задней",
+    "боковая",
+    "боковой",
+    "верхняя",
+    "верхней",
+    "нижняя",
+    "нижней",
+    "реально",
+    "налом",
+    "нал",
+    "безнал",
+    "аванс",
+    "вес",
+    "объем",
+    "объём",
+    "нужны",
+    "коллеги",
+    "привет",
+    "вопрос",
+    "рынок",
+    "склад",
+    "палет",
+    "палеты",
 }
 
 
@@ -572,14 +628,30 @@ def _canon_city_flex(token: str) -> str | None:
 
 def _city_token(token: str) -> str | None:
     """Canonize known city or keep plausible unknown place name."""
-    c = _canon_city_flex(token)
+    t = (token or "").strip().lower().replace("ё", "е")
+    t = _EMOJI_RE.sub(" ", t)
+    t = re.sub(r"^[^а-яa-z0-9]+|[^а-яa-z0-9.\-]+$", "", t)
+    t = _WS.sub(" ", t).strip(" .,;:()[]")
+    if not t:
+        return None
+    c = _canon_city_flex(t)
     if c:
         return c
-    t = token.strip().lower().replace("ё", "е")
     if t in _CITY_STOP:
         return None
+    # multi-word: try first 1–2 tokens
+    words = t.split()
+    if len(words) >= 2:
+        c2 = _canon_city_flex(" ".join(words[:2]))
+        if c2:
+            return c2
+        c1 = _canon_city_flex(words[0])
+        if c1:
+            return c1
     if _looks_like_city(t):
         return t
+    if words and _looks_like_city(words[0]):
+        return words[0]
     return None
 
 
@@ -597,6 +669,7 @@ _FROM_TO_RE = re.compile(
 _LOAD_CITY_RE = re.compile(
     r"(?:погрузк[ауиеойя]*|загрузк[ауиеойя]*|откуда|пункт\s+погрузки)"
     r"\s*[:=/\-]?\s*"
+    r"(?!готов|готова|готово|готовы|задн|боков|верхн|нижн|налом|безнал)"
     r"([А-ЯЁа-яёA-Za-z][А-ЯЁа-яёA-Za-z.\-\s]{1,40}?)"
     r"(?=\s*(?:разгруз|выгруз|куда|пункт\s+разгруз|,|;|\n|$|\d+\s*т))",
     re.I,
@@ -605,6 +678,7 @@ _LOAD_CITY_RE = re.compile(
 _UNLOAD_CITY_RE = re.compile(
     r"(?:разгрузк[ауиеойя]*|выгрузк[ауиеойя]*|куда|пункт\s+разгрузки)"
     r"\s*[:=/\-]?\s*"
+    r"(?!готов|готова|готово|готовы|задн|боков|верхн|нижн|налом|безнал)"
     r"([А-ЯЁа-яёA-Za-z][А-ЯЁа-яёA-Za-z.\-\s]{1,40}?)"
     r"(?=\s*(?:погруз|загруз|откуда|,|;|\n|$|\d+\s*т|тент|реф|ставк))",
     re.I,
@@ -652,11 +726,8 @@ def _extract_labeled_route(norm: str) -> tuple[str | None, str | None]:
 
 
 def _extract_route(norm: str) -> tuple[str | None, str | None]:
-    labeled = _extract_labeled_route(norm)
-    if labeled[0] or labeled[1]:
-        return labeled
-
-    # Multi-hop on one line first: A - B - C → A to C (not A to B)
+    # Prefer explicit A-B routes first. Labeled "погрузка: готов" must not win.
+    # Multi-hop on one line: A - B - C → A to C (not A to B)
     for line in re.split(r"[\n|;]+", norm):
         parts = [p.strip() for p in re.split(r"\s*[-–—/→]\s*", line) if p.strip()]
         city_parts = []
@@ -671,6 +742,8 @@ def _extract_route(norm: str) -> tuple[str | None, str | None]:
                 city_parts.append(c)
         if len(city_parts) >= 3 and city_parts[0] != city_parts[-1]:
             return city_parts[0], city_parts[-1]
+        if len(city_parts) == 2 and city_parts[0] != city_parts[1]:
+            return city_parts[0], city_parts[1]
 
     for m in _ROUTE_PAIR_RE.finditer(norm):
         a, b = _city_token(m.group(1)), _city_token(m.group(2))
@@ -683,9 +756,12 @@ def _extract_route(norm: str) -> tuple[str | None, str | None]:
         if a or b:
             return a, b
 
+    labeled = _extract_labeled_route(norm)
+    if labeled[0] or labeled[1]:
+        return labeled
+
     # Do NOT grab arbitrary first two known cities across a multi-load post.
     return None, None
-
 
 _ROUTE_START_RE = re.compile(
     r"^\s*(?:"
