@@ -435,9 +435,11 @@ async def stats() -> dict[str, Any]:
 async def analyze_route(
     destination: str = Query(..., min_length=2, max_length=80),
     base: str | None = Query(None, max_length=80),
+    from_city: str | None = Query(None, max_length=80),
     offer_rub: float | None = Query(None, ge=0, le=50_000_000),
     tonnage: float | None = Query(None, ge=0, le=100),
     body: str | None = Query(None, max_length=32),
+    route_km: float | None = Query(None, ge=1, le=20_000),
     live: bool = Query(True),
 ) -> dict[str, Any]:
     """Backhaul liquidity + suggested min rate for base→destination."""
@@ -459,6 +461,8 @@ async def analyze_route(
         tonnage=tonnage,
         body=body,
         live_probe=live,
+        route_km_override=route_km,
+        from_city=(from_city or "").strip() or None,
     )
 
 
@@ -534,11 +538,9 @@ async def analyze_screenshot(
         tonnage=targets.get("tonnage"),
         body=targets.get("body"),
         live_probe=live,
+        route_km_override=targets.get("listed_route_km"),
+        from_city=targets.get("from_city") or fields.get("from_city"),
     )
-    # Prefer km from ATI card when analyzer geo is missing
-    if analysis.get("ok") and not analysis.get("route_km") and targets.get("listed_route_km"):
-        analysis["route_km"] = targets["listed_route_km"]
-
     advice = None
     pr = (analysis or {}).get("pricing") or {}
     bh = (analysis or {}).get("backhaul") or {}
@@ -586,6 +588,11 @@ async def analyze_screenshot(
                 "listed_rub": offer,
                 "gap_rub": gap,
             }
+    elif analysis.get("ok"):
+        advice = {
+            "action": "counter",
+            "text": "Не удалось посчитать ставку: нет километража (город без координат и км на скрине). Загрузите более чёткий скрин ATI или укажите крупный город выгрузки.",
+        }
 
     return {
         "ok": True,

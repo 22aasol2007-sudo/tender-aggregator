@@ -654,9 +654,9 @@ function renderAnalyzeResult(data, extra = {}) {
     <div class="analyze-grid">
       <div class="analyze-card">
         <div class="ati-label">Маршрут</div>
-        <div class="analyze-big">${esc(data.base)} → ${esc(data.destination)}</div>
+        <div class="analyze-big">${esc(data.from_city || data.base)} → ${esc(data.destination)}</div>
         <div class="muted">${data.route_km ? `${data.route_km} км` : "км не определены"} · ~${pr.hours_empty_return ?? "—"} ч / ${pr.days_empty_return ?? "—"} сут (с порожняком)</div>
-      </div>
+        ${!data.route_km ? `<div class="offer-verdict bad">Нет километража — ставка не считается. Укажите города с координатами или км на скрине ATI.</div>` : ""}      </div>
       <div class="analyze-card">
         <div class="ati-label">Обратка к базе (город + ${bh.radius_km ?? 100} км)</div>
         <div class="analyze-big">${bh.count ?? 0}</div>

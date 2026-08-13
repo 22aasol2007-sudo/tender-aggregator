@@ -63,6 +63,8 @@ class RateAnalyzer:
         tonnage: float | None = None,
         body: str | None = None,
         live_probe: bool = True,
+        route_km_override: float | None = None,
+        from_city: str | None = None,
     ) -> dict[str, Any]:
         base_n = _norm(base or "москва") or "москва"
         dest_n = _norm(destination or "")
@@ -71,10 +73,31 @@ class RateAnalyzer:
 
         params = truck_params()
         radius = float(params["backhaul_radius_km"])
+        load_from = _norm(from_city) if from_city else None
 
-        route_km, _ = calc_price_per_km(None, base_n, dest_n)
+        route_km = None
+        # Prefer actual loading city from the ad when present
+        if load_from:
+            route_km, _ = calc_price_per_km(None, load_from, dest_n)
+        if route_km is None:
+            route_km, _ = calc_price_per_km(None, base_n, dest_n)
         if route_km is None:
             route_km, _ = calc_price_per_km(None, dest_n, base_n)
+        if route_km is None and route_km_override:
+            try:
+                route_km = float(route_km_override)
+            except (TypeError, ValueError):
+                route_km = None
+        elif route_km_override:
+            # Trust ATI km if close or if geo missing precision for villages
+            try:
+                listed = float(route_km_override)
+                if route_km is None or abs(listed - float(route_km)) / max(listed, 1) > 0.25:
+                    # if listed differs a lot, still prefer listed from ATI card
+                    if listed > 20:
+                        route_km = listed
+            except (TypeError, ValueError):
+                pass
 
         outbound = await self.db.route_stats(from_city=base_n, to_city=dest_n, days=7)
         backhaul = await self.db.route_stats(from_city=dest_n, to_city=base_n, days=7)
@@ -122,7 +145,7 @@ class RateAnalyzer:
         bh_ppk = backhaul_broad.get("median_ppk") or backhaul.get("median_ppk")
         km = float(route_km or 0)
 
-        econ = price_outbound_leg(km=km, p_find_backhaul=p_find, p=params) if km > 0 else {"ok": False}
+        econ = price_outbound_leg(km=km, p_find_backhaul=p_find, p=params) if km > 0 else {"ok": False, "error": "нет км"}
         suggested_min_total = econ.get("suggested_min_total_rub") if econ.get("ok") else None
         suggested_mid_total = econ.get("suggested_mid_total_rub") if econ.get("ok") else None
         suggested_max_total = econ.get("suggested_max_total_rub") if econ.get("ok") else None
@@ -138,11 +161,13 @@ class RateAnalyzer:
             )
 
         sources_used = await self.db.stats_sources_in_window(days=7)
+        route_label_from = load_from or base_n
 
         return {
             "ok": True,
             "base": base_n,
             "destination": dest_n,
+            "from_city": route_label_from,
             "route_km": round(km, 1) if km else None,
             "tonnage": tonnage,
             "body": body,
@@ -207,7 +232,11 @@ class RateAnalyzer:
                 f"Целевая чистая прибыль {int(params['target_net_min'])}–{int(params['target_net_max'])} ₽ на рейс.",
                 f"Обратка: город выгрузки + радиус {int(radius)} км к «{base_n}» (лента 7 суток + live внешних площадок).",
                 "Порожний возврат в расчёте заложен с вероятностью (1 − p_find).",
-            ],
+            ] + (
+                []
+                if km > 0
+                else ["Не удалось определить километраж — ставка не посчитана. Проверьте города или км на скрине."]
+            ),
             "updated_at": time.time(),
         }
 
