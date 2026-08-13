@@ -199,6 +199,7 @@ class TgPasswordIn(BaseModel):
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     import json as _json
+    import time as _time
 
     st = await db.stats()
     tg_h = await db.get_tg_health()
@@ -209,40 +210,88 @@ async def health() -> dict[str, Any]:
         mx_h = {}
     if not isinstance(mx_h, dict):
         mx_h = {}
+    now = _time.time()
     hints: list[str] = []
     tg_alive = bool(tg and getattr(tg, "ok", False))
+    mx_alive = bool(mx and getattr(mx, "ok", False) and mx_h.get("ok"))
+
+    def _status(ok: bool, note: str = "") -> str:
+        if ok:
+            return "on"
+        n = (note or "").lower()
+        if "reconnect" in n or "timeout" in n:
+            return "warn"
+        return "off"
+
+    tg_status = _status(tg_alive, str((tg_h or {}).get("note") or ""))
+    max_status = _status(mx_alive, str((mx_h or {}).get("note") or ""))
+    web_sources = ("perevozka24", "cargocash", "vezetvsem", "papacargo", "avtodispetcher")
+    web_count = sum(int((st.get("by_source") or {}).get(s) or 0) for s in web_sources)
+    sites_status = "on" if web_count > 0 else "warn"
+
     if not tg_alive:
         if not config.API_ID or not config.API_HASH:
             hints.append("Нет API_ID/API_HASH — основной объём заявок идёт из Telegram.")
         else:
             note = str((tg_h or {}).get("note") or "")
             if "need_qr_login" in note or "two different IP" in note or "session_revoked" in note:
-                hints.append("Telegram: сессия сброшена (два IP). Войдите заново: /tg-login")
-            elif not (tg_h or {}).get("ok"):
-                hints.append("Telegram не подключён / reconnect… (VPN?)")
+                hints.append("Telegram: нужна облачная сессия. Войдите: /tg-login")
+            else:
+                hints.append("Telegram отключён. Проверьте сессию: /tg-login")
     elif tg_h.get("failed_count"):
-        hints.append(f"Не резолвится чатов: {tg_h.get('failed_count')} (см. tg_health).")
-    mx_alive = bool(mx and getattr(mx, "ok", False) and mx_h.get("ok"))
+        hints.append(f"Telegram: не резолвится чатов: {tg_h.get('failed_count')}")
+
     if config.ENABLE_MAX and not mx_alive:
         note = mx_h.get("note") or "off"
         if note in {"no_session", "disabled", "off"} or not mx_h:
-            hints.append("MAX: нет сессии — запусти python login_max.py и отсканируй QR.")
+            hints.append("MAX: нет сессии — войдите через login_max.py")
         else:
             hints.append(f"MAX: {note}")
+
+    # Silent messenger channels
+    for src, label, alive in (
+        ("telegram", "Telegram", tg_alive),
+        ("max", "MAX", mx_alive),
+    ):
+        if not alive:
+            continue
+        try:
+            last = float((await db.get_setting(f"last_ingest_{src}")) or 0)
+        except Exception:
+            last = 0.0
+        if last and now - last > 3 * 3600:
+            hours = int((now - last) / 3600)
+            hints.append(f"{label}: нет новых заявок уже {hours} ч")
+
     if st["total"] < 30:
-        hints.append(
-            "Бесплатные агрегаторы отдают мало грузов. Нужен VPN + TG session для объёма."
-        )
+        hints.append("Мало заявок в ленте — обновите источники.")
+
+    latest_ts = 0.0
+    for key in ("telegram", "max"):
+        try:
+            latest_ts = max(latest_ts, float((await db.get_setting(f"last_ingest_{key}")) or 0))
+        except Exception:
+            pass
+    for src_key in ("updated_at",):
+        try:
+            latest_ts = max(latest_ts, float((tg_h or {}).get(src_key) or 0))
+            latest_ts = max(latest_ts, float((mx_h or {}).get(src_key) or 0))
+        except Exception:
+            pass
+
     return {
         "ok": True,
-        "tg": bool(tg and getattr(tg, "ok", False)),
+        "tg": tg_alive,
         "tg_configured": bool(config.API_ID and config.API_HASH),
         "tg_health": tg_h,
-        "max": bool(mx and getattr(mx, "ok", False) and mx_h.get("ok")),
+        "max": mx_alive,
         "max_health": mx_h,
         "total_loads": st["total"],
         "by_source": st["by_source"],
+        "statuses": {"tg": tg_status, "max": max_status, "sites": sites_status},
+        "updated_ago_sec": max(0, int(now - latest_ts)) if latest_ts else 0,
         "hints": hints,
+        "public_url": "https://freight-edge.vercel.app",
         "optimizations": {
             "parallel_scrape": True,
             "per_source_intervals": True,
@@ -250,7 +299,6 @@ async def health() -> dict[str, Any]:
             "wal": True,
             "watchdog_sec": config.WATCHDOG_SEC,
         },
-        "single_listener": "Hub owns Telethon; bot should use USE_HUB_INGEST=1",
     }
 
 
@@ -311,7 +359,46 @@ async def loads(
         limit=limit,
         offset=offset,
     )
-    return {"items": rows, "count": len(rows)}
+    from app.ingest import why_rank
+
+    for row in rows:
+        row["why"] = why_rank(
+            score=int(row.get("score") or 0),
+            km_from=row.get("km_from"),
+            km_to=row.get("km_to"),
+            near_km=near,
+            source=str(row.get("source") or ""),
+            scraped_at=row.get("scraped_at"),
+        )
+    filter_reasons: list[str] = []
+    if not rows:
+        if source:
+            filter_reasons.append(f"источник «{source}»")
+        if shipper_only:
+            filter_reasons.append("без водителей")
+        if min_score > 40:
+            filter_reasons.append(f"скор ≥ {min_score}")
+        if hot:
+            filter_reasons.append("только горячие")
+        if reefer:
+            filter_reasons.append("только реф")
+        if frm or to:
+            filter_reasons.append("узкий маршрут")
+        if geo:
+            filter_reasons.append(f"коридор {int(near)}/{int(far)} км от базы")
+        if not filter_reasons:
+            filter_reasons.append("нет свежих заявок — нажмите «Обновить»")
+    rank_explain = (
+        f"Сверху — ближе к базе ({int(near)} км) и выше скор; коридор до {int(far)} км."
+    )
+    return {
+        "items": rows,
+        "count": len(rows),
+        "filter_reasons": filter_reasons,
+        "rank_explain": rank_explain,
+        "near_km": near,
+        "far_km": far,
+    }
 
 
 @app.get("/api/profile")
@@ -346,6 +433,55 @@ async def mute_direction(body: MuteIn) -> dict[str, Any]:
 async def clear_mutes() -> dict[str, Any]:
     await db.set_json_setting("muted_directions", [])
     return {"ok": True, "muted_directions": []}
+
+
+@app.post("/api/maintenance/reparse-kinds")
+async def reparse_kinds(limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any]:
+    """Upgrade cargo-like other rows with route+tonnage to shipper."""
+    from app.parse import parse_load
+
+    assert db._db is not None
+    cur = await db._db.execute(
+        "SELECT id, body, kind FROM loads "
+        "WHERE IFNULL(kind,'other') IN ('other','') "
+        "ORDER BY scraped_at DESC LIMIT ?",
+        (limit,),
+    )
+    rows = await cur.fetchall()
+    updated = 0
+    for r in rows:
+        parsed = parse_load(r["body"] or "")
+        new_kind = parsed.kind
+        if new_kind == "other" and parsed.from_city and parsed.to_city and parsed.tonnage is not None:
+            new_kind = "shipper"
+        if new_kind and new_kind != (r["kind"] or ""):
+            await db._db.execute("UPDATE loads SET kind=? WHERE id=?", (new_kind, r["id"]))
+            updated += 1
+    await db._db.commit()
+    return {"ok": True, "scanned": len(rows), "updated": updated}
+
+
+@app.post("/api/maintenance/backup")
+async def backup_db() -> dict[str, Any]:
+    """Copy SQLite DB to /data/backups/hub-YYYYmmdd-HHMMSS.db"""
+    import shutil
+    from datetime import datetime, timezone
+
+    src = config.DB_PATH
+    if not src.exists():
+        return {"ok": False, "error": "db_missing"}
+    dest_dir = src.parent / "backups"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    dest = dest_dir / f"hub-{stamp}.db"
+    shutil.copy2(src, dest)
+    old = sorted(dest_dir.glob("hub-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in old[10:]:
+        try:
+            p.unlink()
+        except Exception:
+            pass
+    return {"ok": True, "path": str(dest), "size": dest.stat().st_size}
 
 
 @app.post("/api/scrape")

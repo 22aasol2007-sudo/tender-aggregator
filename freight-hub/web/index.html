@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Freight Hub — заявки из чатов и агрегаторов</title>
+  <title>Freight Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -11,75 +11,96 @@
 </head>
 <body>
   <div class="bg"></div>
+
   <header class="top">
     <div class="brand">
       <span class="mark">FH</span>
       <div>
         <h1>Freight Hub</h1>
-        <p>TG-чаты + бесплатные агрегаторы · одна лента</p>
+        <p>Одна лента · TG · MAX · сайты</p>
       </div>
     </div>
     <div class="top-actions">
-      <button id="btnScrape" class="btn ghost" type="button">Обновить источники</button>
-      <div id="health" class="pill">…</div>
+      <button id="btnScrape" class="btn ghost" type="button">Обновить</button>
+      <div id="statusBar" class="status-bar" aria-live="polite">
+        <span class="st" data-k="tg"><i></i>TG</span>
+        <span class="st" data-k="max"><i></i>MAX</span>
+        <span class="st" data-k="sites"><i></i>Сайты</span>
+        <span id="updatedAgo" class="ago">…</span>
+      </div>
     </div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
 
-  <section class="profile">
-    <input id="pBase" type="text" placeholder="База (город)" />
-    <select id="pBody">
-      <option value="">Кузов</option>
-      <option value="reefer">Реф</option>
-      <option value="isotherm">Изотерм</option>
-      <option value="tent">Тент</option>
-      <option value="board">Борт</option>
-      <option value="box">Фургон</option>
-    </select>
-    <input id="pTonnage" type="number" step="0.1" placeholder="Тоннаж" />
-    <input id="pRadius" type="number" step="10" placeholder="Близко к базе, км" title="Одна точка маршрута ≤ этого радиуса от базы (например 150)" />
-    <input id="pRadiusFar" type="number" step="50" placeholder="Дальний радиус, км" title="Вторая точка маршрута ≤ этого радиуса от базы (например 1500)" />
-    <label class="check"><input id="pBackhaul" type="checkbox" /> Обратка</label>
-    <button id="btnSaveProfile" class="btn ghost" type="button">Сохранить профиль</button>
+  <section class="zone">
+    <div class="zone-head">
+      <h2>Моя машина</h2>
+      <div class="presets">
+        <button type="button" class="chip" data-preset="reefer-msk">Реф Мск</button>
+        <button type="button" class="chip" data-preset="tent-20">Тент 20т</button>
+        <button type="button" class="chip" data-preset="box-city">Фургон город</button>
+      </div>
+    </div>
+    <div class="profile">
+      <input id="pBase" type="text" placeholder="База (город)" />
+      <select id="pBody">
+        <option value="">Кузов</option>
+        <option value="reefer">Реф</option>
+        <option value="isotherm">Изотерм</option>
+        <option value="tent">Тент</option>
+        <option value="board">Борт</option>
+        <option value="box">Фургон</option>
+      </select>
+      <input id="pTonnage" type="number" step="0.1" placeholder="Тоннаж" />
+      <input id="pRadius" type="number" step="10" placeholder="Близко, км" title="Одна точка ≤ этого радиуса от базы" />
+      <input id="pRadiusFar" type="number" step="50" placeholder="Дальняя, км" title="Вторая точка ≤ этого радиуса" />
+      <label class="check"><input id="pBackhaul" type="checkbox" /> Обратка</label>
+      <button id="btnSaveProfile" class="btn ghost" type="button">Сохранить</button>
+    </div>
   </section>
 
-  <section class="filters">
-    <input id="q" type="search" placeholder="Поиск: город, груз, телефон…" />
-    <select id="source">
-      <option value="">Все источники</option>
-      <option value="telegram">Telegram</option>
-      <option value="max">MAX</option>
-      <option value="tg_public">TG public</option>
-      <option value="papacargo">PapaCargo</option>
-      <option value="perevozka24">Перевозка24</option>
-      <option value="cargocash">CargoCash</option>
-      <option value="vezetvsem">Везёт Всем</option>
-      <option value="roolz">Roolz</option>
-      <option value="ingruz">InGruz</option>
-      <option value="avtodispetcher">Автодиспетчер</option>
-      <option value="monopoly">Monopoly</option>
-      <option value="ati">ATI</option>
-    </select>
-    <select id="body">
-      <option value="">Любой кузов</option>
-      <option value="reefer">Реф</option>
-      <option value="isotherm">Изотерм</option>
-      <option value="tent">Тент</option>
-      <option value="board">Борт</option>
-      <option value="box">Фургон</option>
-    </select>
-    <input id="from" type="text" placeholder="Откуда (Питер, МСК…)" />
-    <input id="to" type="text" placeholder="Куда" />
-    <select id="sort">
-      <option value="time">Сначала новые</option>
-      <option value="score">Сначала скор</option>
-    </select>
-    <label class="check"><input id="shipperOnly" type="checkbox" checked /> Только shipper</label>
-    <label class="check"><input id="reefer" type="checkbox" /> Только реф</label>
-    <label class="check"><input id="hotOnly" type="checkbox" /> Горячие ≤30м ≥70</label>
-    <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="40" /></label>
-    <button id="btnApply" class="btn" type="button">Показать</button>
+  <section class="zone">
+    <div class="zone-head">
+      <h2>Сейчас искать</h2>
+      <button id="btnMore" class="linkish" type="button">Ещё фильтры</button>
+    </div>
+    <div class="filters">
+      <input id="q" type="search" placeholder="Поиск: город, груз, телефон…" />
+      <select id="source">
+        <option value="">Все источники</option>
+        <option value="telegram">Telegram</option>
+        <option value="max">MAX</option>
+        <option value="tg_public">TG public</option>
+        <option value="papacargo">PapaCargo</option>
+        <option value="perevozka24">Перевозка24</option>
+        <option value="cargocash">CargoCash</option>
+        <option value="vezetvsem">Везёт Всем</option>
+        <option value="avtodispetcher">Автодиспетчер</option>
+      </select>
+      <input id="from" type="text" placeholder="Откуда" />
+      <input id="to" type="text" placeholder="Куда" />
+      <select id="sort">
+        <option value="time">Сначала новые</option>
+        <option value="score">Сначала скор</option>
+      </select>
+      <button id="btnApply" class="btn" type="button">Показать</button>
+      <button id="btnReset" class="btn ghost" type="button">Сбросить</button>
+    </div>
+    <div id="moreFilters" class="more-filters" hidden>
+      <select id="body">
+        <option value="">Любой кузов</option>
+        <option value="reefer">Реф</option>
+        <option value="isotherm">Изотерм</option>
+        <option value="tent">Тент</option>
+        <option value="board">Борт</option>
+        <option value="box">Фургон</option>
+      </select>
+      <label class="check"><input id="shipperOnly" type="checkbox" checked /> Без водителей</label>
+      <label class="check"><input id="reefer" type="checkbox" /> Только реф</label>
+      <label class="check"><input id="hotOnly" type="checkbox" /> Горячие ≤30м</label>
+      <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="40" /></label>
+    </div>
   </section>
 
   <main>
@@ -88,7 +109,7 @@
   </main>
 
   <footer>
-    <p>Hub: сайты + Telegram + MAX в одной ленте. Бот: USE_HUB_INGEST=1. ATI — только с легальным доступом.</p>
+    <p>Публичный вход: этот сайт. TG-сессия только в облаке — локальный hub с той же сессией не запускайте.</p>
   </footer>
 
   <dialog id="dlg">

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -32,6 +33,17 @@ HARD_GEO_SKIP = {
     "incomplete_route",
 }
 
+ARCHIVE_RE = re.compile(
+    r"(заверш[её]н\w*|архив\w*|снят с публикации|заказ выполнен|исполнен\w*|удал[её]н\w*)",
+    re.I,
+)
+
+
+def is_archived_text(text: str | None) -> bool:
+    if not text:
+        return False
+    return bool(ARCHIVE_RE.search(text))
+
 
 def is_junk_route(from_city: str | None, to_city: str | None, *, source: str = "") -> bool:
     """Drop pseudo-routes that confuse the feed (same city both ends)."""
@@ -51,6 +63,31 @@ def _km_to_base(city: str | None, base: str = "москва") -> float | None:
         return None
 
 
+def why_rank(
+    *,
+    score: int,
+    km_from: float | None,
+    km_to: float | None,
+    near_km: float,
+    source: str,
+    scraped_at: float | None,
+) -> list[str]:
+    out: list[str] = []
+    if score >= 85:
+        out.append("очень высокий скор")
+    elif score >= 70:
+        out.append("высокий скор")
+    if km_from is not None and km_from <= near_km:
+        out.append("погрузка у базы")
+    elif km_to is not None and km_to <= near_km:
+        out.append("выгрузка у базы")
+    if source in {"telegram", "max"}:
+        out.append("из мессенджера")
+    if scraped_at and time.time() - float(scraped_at) <= 300:
+        out.append("только что")
+    return out[:3]
+
+
 async def _persist(
     db: HubDB,
     raw: RawLoad,
@@ -60,6 +97,8 @@ async def _persist(
     scoring: str,
     profile_user: dict[str, Any],
 ) -> str:
+    if is_archived_text(raw.body) or is_archived_text(raw.title):
+        return "skipped"
     result = score_load(parsed, profile_user, min_score=min_score, scoring=scoring)
     if result.reason in HARD_GEO_SKIP:
         return "skipped"
@@ -147,6 +186,8 @@ async def ingest_raw(
     scoring=strict — skip if ScoreResult.ok is false.
     Multi-route TG posts are split into separate loads when split_blocks=True.
     """
+    if is_archived_text(raw.body) or is_archived_text(raw.title):
+        return "skipped"
     profile_user = {**DEFAULT_USER, **(user or {})}
     if not user:
         try:

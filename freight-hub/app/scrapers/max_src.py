@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("scraper.max")
 
-BACKFILL_PER_CHAT = 60
+BACKFILL_PER_CHAT = 100
 
 
 class MaxIngest:

@@ -18,4 +18,19 @@ DEFAULT_MAX_CHANNELS: list[dict[str, str]] = [
         "url": "https://max.ru/id7811790480_biz",
         "title": "Едет Груз / переезд / грузчики",
     },
+    {
+        "slug": "id4632271387_biz",
+        "url": "https://max.ru/id4632271387_biz",
+        "title": "ТК Грузовоз",
+    },
+    {
+        "slug": "negabaritika",
+        "url": "https://max.ru/negabaritika",
+        "title": "Негабаритика",
+    },
+    {
+        "slug": "gruzovichkof",
+        "url": "https://max.ru/gruzovichkof",
+        "title": "Грузовичкоф",
+    },
 ]
