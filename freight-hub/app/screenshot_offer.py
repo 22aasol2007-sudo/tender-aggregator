@@ -227,7 +227,7 @@ async def vision_gemini(image_bytes: bytes, mime: str) -> dict[str, Any]:
     key = (getattr(config, "GEMINI_API_KEY", "") or "").strip()
     if not key:
         return {}
-    model = (getattr(config, "GEMINI_VISION_MODEL", "") or "gemini-2.0-flash").strip()
+    model = (getattr(config, "GEMINI_VISION_MODEL", "") or "gemini-flash-latest").strip()
     b64 = base64.b64encode(image_bytes).decode("ascii")
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
