@@ -51,7 +51,7 @@ USER_AGENT = os.getenv(
 )
 
 # Reuse TG chat list from freight_core defaults
-MAX_TG_CHATS = int(os.getenv("MAX_TG_CHATS", "50"))
+MAX_TG_CHATS = int(os.getenv("MAX_TG_CHATS", "70"))
 # When bot also runs: bot must set USE_HUB_INGEST=1 and not open the same .session
 OWN_TELETHON = os.getenv("OWN_TELETHON", "1").strip() not in {"0", "false", "no"}
 ENABLE_TG = ENABLE_TG and OWN_TELETHON

@@ -11,6 +11,17 @@ DEFAULT_CHATS: list[dict[str, str]] = [
     {"username": "gruzov_perevozka", "title": "Москва Питер попутный"},
     {"username": "perevezem24", "title": "ПЕРЕВОЗКИ МОСКВА РОССИЯ"},
     {"username": "gruzdogruz", "title": "Грузоперевозки ATI ЦФО"},
+    # From «Москва Перевозки 91» screen — mid-tonnage / MSK corridor
+    {"username": "zagruzki_moskva", "title": "Грузы попутный Газель Бычок"},
+    {"username": "gruzmsk197", "title": "Грузы диспетчера МСК МО"},
+    {"username": "gruzoperevozkiv", "title": "Грузоперевозки Москва Питер"},
+    {"username": "perevozkimoskvaoblast", "title": "Грузоперевозки Москва и область"},
+    {"username": "gruzopervoski", "title": "Перевозки Москва Россия 24ч"},
+    {"username": "spb_mos", "title": "Перевозки СПб Москва"},
+    {"username": "gruzik_peregruzik", "title": "Грузоперевозки Москва регионы"},
+    {"username": "gruzdaspros", "title": "Грузоперевозки Москва"},
+    {"username": "gruzmoskva24", "title": "Перевозки Москва МО"},
+    {"username": "perevozkagruzro", "title": "Перевозки и грузы МСК МО"},
     # Federal / Russia boards (часто МСК↔регионы)
     {"username": "tutgruz", "title": "TutGruz"},
     {"username": "gruzoperevozki_rossiya", "title": "ГРУЗОПЕРЕВОЗКИ РОССИЯ"},
@@ -52,7 +63,7 @@ DEFAULT_CHATS: list[dict[str, str]] = [
     {"username": "rucargoru", "title": "ГРУЗОПЕРЕВОЗКИ СНГ Европа Азия"},
 ]
 
-assert len(DEFAULT_CHATS) == 43, len(DEFAULT_CHATS)
+assert len(DEFAULT_CHATS) == 53, len(DEFAULT_CHATS)
 assert len({c["username"].lower() for c in DEFAULT_CHATS}) == len(DEFAULT_CHATS)
 
 # Chats removed for MSK±150 focus (local / wrong region):
@@ -82,6 +93,7 @@ PUBLIC_TG_CHANNELS: list[str] = [
     "logisticarsi",
     "gruzoperevozki_365",
     "gruzoperevozky_moskva",
+    "zagruzki_moskva",
 ]
 
 # Shipper looking for a truck / load offer useful to a carrier.
