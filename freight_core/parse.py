@@ -165,6 +165,8 @@ CITY_ALIASES: dict[str, str] = {
     "н.новгород": "нижний новгород",
     "нижний": "нижний новгород",
     "н новгород": "нижний новгород",
+    "нижний новгород": "нижний новгород",
+    "рощино": "рощино",
     "ростов": "ростов-на-дону",
     "ростов на дону": "ростов-на-дону",
     "рнд": "ростов-на-дону",
@@ -657,6 +659,10 @@ def _canon_city(token: str) -> str | None:
     # Exact match on ё-normalized aliases
     for alias, canon in CITY_ALIASES.items():
         if alias.replace("ё", "е") == t:
+            return canon
+    # Already a canonical multi-word name («нижний новгород»)
+    for canon in CITY_ALIASES.values():
+        if canon.replace("ё", "е") == t:
             return canon
     # Short single-token only: prefix/stem — NEVER substring-search inside a long blob
     # (that turned "…фрязино…москва…" into a false route).
