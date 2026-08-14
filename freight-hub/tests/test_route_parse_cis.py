@@ -48,3 +48,17 @@ def test_space_route_single():
 def test_no_false_ref_bez_city():
     p = parse_load("Реф без режм")
     assert p.from_city is None or p.from_city not in {"реф", "без"}
+
+
+def test_navoi_mytishchi_not_kubinka():
+    """Customs city must not become destination; region (settlement) → settlement."""
+    p = parse_load(
+        "Погрузка завтра\n"
+        "Навои (Нур Ота) → Московская обл. (Мытищи)\n"
+        "Растаможка - Кубинка\n"
+        "2та тент станд."
+    )
+    assert p.from_city == "навои"
+    assert p.to_city == "мытищи"
+    assert p.to_city != "кубинка"
+    assert p.from_city != "москва"

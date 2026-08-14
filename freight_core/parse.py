@@ -524,6 +524,9 @@ CITY_ALIASES: dict[str, str] = {
     "хоразм": "ургенч",
     "навои": "навои",
     "навоий": "навои",
+    "нур ота": "навои",
+    "нур-ота": "навои",
+    "нурота": "навои",
     "нукус": "нукус",
     "чирчик": "чирчик",
     "ангрен": "ангрен",
@@ -634,6 +637,9 @@ _CITY_STOP = {
     "тент",
     "реф",
     "машина",
+    "машину",
+    "машины",
+    "машиной",
     "мошина",
     "ставки",
     "ставка",
@@ -656,6 +662,11 @@ _CITY_STOP = {
     "оплата",
     "контакт",
     "телефон",
+    "тел",
+    "цена",
+    "руб",
+    "рубль",
+    "рублей",
     "адрес",
     "готов",
     "готова",
@@ -697,6 +708,9 @@ _CITY_STOP = {
     "договорная",
     "договорной",
     "торг",
+    "растаможка",
+    "растаможки",
+    "таможня",
     "режим",
     "режима",
     "режм",
@@ -721,7 +735,35 @@ def _looks_like_city(token: str) -> bool:
         return False
     if not re.fullmatch(r"[а-яa-z][а-яa-z.\-]*", t):
         return False
-    return t not in _CITY_STOP
+    if t in _CITY_STOP:
+        return False
+    # «машину» / «цены» — stop-word stems with case endings
+    for suf in ("ами", "ями", "ого", "ому", "ыми", "ими", "ой", "ей", "ую", "юю", "ы", "и", "у", "а", "е", "я"):
+        if len(t) > len(suf) + 2 and t.endswith(suf) and t[: -len(suf)] in _CITY_STOP:
+            return False
+    return True
+
+
+def _known_cities_on_line(line: str) -> list[str]:
+    """Only gazetteer cities (no looks-like), for space-separated routes."""
+    raw = (line or "").lower().replace("ё", "е")
+    raw = re.sub(r"[()]", " ", raw)
+    words = re.findall(r"[а-яa-z][а-яa-z.\-]{2,28}", raw)
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        two = " ".join(words[i : i + 2]) if i + 1 < len(words) else ""
+        hit = _canon_city_flex(two) if two else None
+        if hit:
+            if not out or out[-1] != hit:
+                out.append(hit)
+            i += 2
+            continue
+        hit = _canon_city_flex(words[i])
+        if hit and hit not in _CITY_STOP and (not out or out[-1] != hit):
+            out.append(hit)
+        i += 1
+    return out
 
 
 def _canon_city_flex(token: str) -> str | None:
@@ -851,10 +893,67 @@ def _extract_labeled_route(norm: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _strip_non_route_clauses(norm: str) -> str:
+    """Drop customs / paperwork clauses that look like route hops («растаможка - Кубинка»)."""
+    t = norm or ""
+    t = re.sub(
+        r"\b(?:растаможк\w*|таможн\w*|растамож\w*)\s*[-–—:=]?\s*"
+        r"[а-яёa-z0-9.\-\s()]{0,50}",
+        " ",
+        t,
+        flags=re.I,
+    )
+    return _WS.sub(" ", t).strip()
+
+
+def _place_from_segment(seg: str) -> str | None:
+    """City from a route segment; prefer «обл. (Мытищи)» → мытищи over region→москва."""
+    raw = (seg or "").strip()
+    if not raw:
+        return None
+    # Skip pure customs leftovers
+    if re.match(r"^(?:растаможк\w*|таможн\w*)\b", raw, re.I):
+        return None
+    # Region / area with settlement in parentheses
+    m = re.search(
+        r"(?:област\w*|обл\.?|край|район|респ(?:ублик\w*)?)\s*\(([^)]{2,40})\)",
+        raw,
+        re.I,
+    )
+    if m:
+        inner = m.group(1).strip()
+        c = _city_token(inner) or _canon_city_flex(inner.lower().replace("ё", "е"))
+        if c and c not in _CITY_STOP:
+            return c
+    # Primary token before parenthesis: «Навои (Нур Ота)» → навои
+    before = re.split(r"\(", raw, maxsplit=1)[0].strip(" .,;:")
+    if before:
+        cities = _cities_on_line(before)
+        if cities:
+            return cities[0]
+        c = _city_token(before)
+        if c:
+            return c
+    # Fallback: any city on the segment (parens kept for settlement names)
+    raw_keep = raw
+    # temporarily expose paren contents as words
+    exposed = re.sub(r"[()]", " ", raw_keep)
+    cities = _cities_on_line(exposed)
+    if cities:
+        # Prefer non-moscow if segment mentions область + another city
+        if "обл" in exposed and len(cities) >= 2:
+            for c in cities:
+                if c != "москва":
+                    return c
+        return cities[0]
+    return None
+
+
 def _cities_on_line(line: str) -> list[str]:
     """Ordered unique-ish city tokens on one offer line (known + plausible)."""
     raw = (line or "").lower().replace("ё", "е")
-    raw = re.sub(r"\([^)]{0,40}\)", " ", raw)  # drop (МКАД) etc.
+    # Keep parenthetical settlements visible as tokens
+    raw = re.sub(r"[()]", " ", raw)
     words = re.findall(r"[а-яa-z][а-яa-z.\-]{2,28}", raw)
     out: list[str] = []
     i = 0
@@ -872,7 +971,6 @@ def _cities_on_line(line: str) -> list[str]:
             continue
         one = _city_token(words[i])
         if one and one not in _CITY_STOP and (not out or out[-1] != one):
-            # skip bare "мкад" already in stop; keep known / looks-like
             out.append(one)
         i += 1
     return out
@@ -882,53 +980,59 @@ def _extract_route(norm: str) -> tuple[str | None, str | None]:
     # Prefer explicit A-B routes first. Labeled "погрузка: готов" must not win.
     # Multi-hop on one line: A - B - C → A to C (not A to B)
     # Do not split on temperature dashes like "реф -18".
+    # Strip «растаможка - …» so customs city is not mistaken for destination.
     _dash_split = re.compile(r"\s+[-–—→]\s+(?!\d)")
+    work = _strip_non_route_clauses(norm)
 
-    for line in re.split(r"[\n|;]+", norm):
+    for line in re.split(r"[\n|;]+", work):
         line = line.strip()
         if not line:
             continue
         parts = [p.strip() for p in _dash_split.split(line) if p.strip()]
         city_parts: list[str] = []
         for p in parts:
-            p0 = re.split(
-                r"\s+(?:груз|догруз|нужн|ищу|тент|реф|тонн)", p, maxsplit=1, flags=re.I
-            )[0].strip()
-            p0 = re.sub(r"^\d+[.)]\s*", "", p0)
-            if re.fullmatch(r"\d+[.,]?\d*", p0 or ""):
-                continue
-            # Prefer first city on this dash-segment, not substring of whole blob
-            cities = _cities_on_line(p0)
-            if cities:
-                city_parts.append(cities[0])
-            else:
-                c = _city_token(p0)
-                if c:
-                    city_parts.append(c)
-        if len(city_parts) >= 3 and city_parts[0] != city_parts[-1]:
+            # Prefer full segment («есть груз москва») — cargo keyword trim can drop the city
+            c = _place_from_segment(p)
+            if not c:
+                p0 = re.split(
+                    r"\s+(?:груз|догруз|нужн|ищу|тент|реф|тонн)",
+                    p,
+                    maxsplit=1,
+                    flags=re.I,
+                )[0].strip()
+                p0 = re.sub(r"^\d+[.)]\s*", "", p0)
+                if re.fullmatch(r"\d+[.,]?\d*", p0 or ""):
+                    continue
+                c = _place_from_segment(p0)
+            if c:
+                city_parts.append(c)
+        # Dedupe consecutive
+        dedup: list[str] = []
+        for c in city_parts:
+            if not dedup or dedup[-1] != c:
+                dedup.append(c)
+        city_parts = dedup
+        if len(city_parts) >= 2 and city_parts[0] != city_parts[-1]:
             return city_parts[0], city_parts[-1]
-        if len(city_parts) == 2 and city_parts[0] != city_parts[1]:
-            return city_parts[0], city_parts[1]
 
         # TG style without dash: «Фрязино Душанбе», «Москва Душанбе»
         if len(line) <= 160:
-            spaced = _cities_on_line(line)
-            # «Дмитровск + Москва Душанбе» → first … last
+            spaced = _known_cities_on_line(line)
             if len(spaced) >= 2 and spaced[0] != spaced[-1]:
                 return spaced[0], spaced[-1]
 
-    for m in _ROUTE_PAIR_RE.finditer(norm):
-        a, b = _city_token(m.group(1)), _city_token(m.group(2))
+    for m in _ROUTE_PAIR_RE.finditer(work):
+        a, b = _place_from_segment(m.group(1)), _place_from_segment(m.group(2))
         if a and b and a != b and a not in _CITY_STOP and b not in _CITY_STOP:
             return a, b
 
-    m = _FROM_TO_RE.search(norm)
+    m = _FROM_TO_RE.search(work)
     if m:
         a, b = _clean_place(m.group(1)), _clean_place(m.group(2))
         if a or b:
             return a, b
 
-    labeled = _extract_labeled_route(norm)
+    labeled = _extract_labeled_route(work)
     if labeled[0] or labeled[1]:
         return labeled
 

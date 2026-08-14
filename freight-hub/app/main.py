@@ -1046,6 +1046,11 @@ async def reparse_routes(
         "худжанд",
         "самарканд",
         "ашхабад",
+        "навои",
+        "нур ота",
+        "нур-ота",
+        "растаможк",
+        "мытищи",
     )
     # NOTE: SQLite LOWER() is ASCII-only — filter Cyrillic markers in Python.
     cur = await db._db.execute(
