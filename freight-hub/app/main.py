@@ -582,59 +582,68 @@ async def analyze_screenshot(
     live: bool = Form(True),
 ) -> dict[str, Any]:
     """Upload freight-board screenshot → extract route/rate → backhaul profitability."""
-    raw = await file.read()
-    extracted = await extract_from_screenshot(raw, filename=file.filename)
-    if not extracted.get("ok"):
+    try:
+        raw = await file.read()
+        extracted = await extract_from_screenshot(raw, filename=file.filename)
+        if not extracted.get("ok"):
+            return {
+                "ok": False,
+                "error": extracted.get("error") or "Не удалось разобрать скрин",
+                "extracted": extracted.get("fields") or {},
+                "method": extracted.get("method"),
+                "vision_ready": vision_configured(),
+            }
+
+        fields = extracted["fields"]
+        base_city = (base or "").strip() or await _profile_base()
+        targets = resolve_analyze_targets(fields, base=base_city)
+        if not targets.get("destination"):
+            return {
+                "ok": False,
+                "error": "На скрине не найден город выгрузки/погрузки",
+                "extracted": fields,
+                "method": extracted.get("method"),
+            }
+
+        truck = await _truck_profile_dict()
+        analyzer = RateAnalyzer(db)
+        analysis = await analyzer.analyze(
+            base=targets["base"],
+            destination=str(targets["destination"]),
+            offer_rub=targets.get("offer_rub"),
+            tonnage=targets.get("tonnage"),
+            body=targets.get("body"),
+            live_probe=live,
+            route_km_override=targets.get("listed_route_km"),
+            from_city=targets.get("from_city") or fields.get("from_city"),
+            params_override=_econ_overrides_from_profile(truck),
+        )
+        advice = (analysis or {}).get("verdict")
+        if not advice and analysis.get("ok") and not analysis.get("route_km"):
+            advice = {
+                "action": "skip",
+                "label": "мимо",
+                "tone": "skip",
+                "text": "Нет километража — поправьте OCR (км) и пересчитайте.",
+            }
+
         return {
-            "ok": False,
-            "error": extracted.get("error") or "Не удалось разобрать скрин",
-            "extracted": extracted.get("fields") or {},
+            "ok": True,
             "method": extracted.get("method"),
+            "extracted": fields,
+            "targets": targets,
+            "advice": advice,
+            "analysis": analysis,
             "vision_ready": vision_configured(),
         }
-
-    fields = extracted["fields"]
-    base_city = (base or "").strip() or await _profile_base()
-    targets = resolve_analyze_targets(fields, base=base_city)
-    if not targets.get("destination"):
+    except Exception as exc:
+        log.exception("analyze_screenshot failed: %s", exc)
         return {
             "ok": False,
-            "error": "На скрине не найден город выгрузки/погрузки",
-            "extracted": fields,
-            "method": extracted.get("method"),
+            "error": "Не удалось разобрать скрин (сервер). Попробуйте ещё раз или заполните поля вручную.",
+            "detail": str(exc)[:240],
+            "vision_ready": vision_configured(),
         }
-
-    truck = await _truck_profile_dict()
-    analyzer = RateAnalyzer(db)
-    analysis = await analyzer.analyze(
-        base=targets["base"],
-        destination=str(targets["destination"]),
-        offer_rub=targets.get("offer_rub"),
-        tonnage=targets.get("tonnage"),
-        body=targets.get("body"),
-        live_probe=live,
-        route_km_override=targets.get("listed_route_km"),
-        from_city=targets.get("from_city") or fields.get("from_city"),
-        params_override=_econ_overrides_from_profile(truck),
-    )
-    advice = (analysis or {}).get("verdict")
-    if not advice and analysis.get("ok") and not analysis.get("route_km"):
-        advice = {
-            "action": "skip",
-            "label": "мимо",
-            "tone": "skip",
-            "text": "Нет километража — поправьте OCR (км) и пересчитайте.",
-        }
-
-    return {
-        "ok": True,
-        "method": extracted.get("method"),
-        "extracted": fields,
-        "targets": targets,
-        "advice": advice,
-        "analysis": analysis,
-        "vision_ready": vision_configured(),
-    }
 
 
 SOURCE_GROUPS: dict[str, list[str]] = {

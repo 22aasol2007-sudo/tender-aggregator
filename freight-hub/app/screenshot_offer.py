@@ -275,7 +275,8 @@ async def vision_gemini(image_bytes: bytes, mime: str) -> dict[str, Any]:
     if not key:
         return {}
     model = (getattr(config, "GEMINI_VISION_MODEL", "") or "gemini-flash-latest").strip()
-    b64 = base64.b64encode(image_bytes).decode("ascii")
+    payload_bytes, payload_mime = _prepare_vision_image(image_bytes, mime)
+    b64 = base64.b64encode(payload_bytes).decode("ascii")
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         f"?key={key}"
@@ -285,18 +286,25 @@ async def vision_gemini(image_bytes: bytes, mime: str) -> dict[str, Any]:
             {
                 "parts": [
                     {"text": VISION_PROMPT},
-                    {"inline_data": {"mime_type": mime, "data": b64}},
+                    {"inline_data": {"mime_type": payload_mime, "data": b64}},
                 ]
             }
         ],
         "generationConfig": {"temperature": 0.1, "maxOutputTokens": 800},
     }
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        r = await client.post(url, json=body)
-        if r.status_code >= 400:
-            log.warning("gemini vision %s: %s", r.status_code, r.text[:300])
-            return {}
-        data = r.json()
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
+            r = await client.post(url, json=body)
+            if r.status_code >= 400:
+                log.warning("gemini vision %s: %s", r.status_code, r.text[:300])
+                return {}
+            data = r.json()
+    except httpx.TimeoutException as exc:
+        log.warning("gemini vision timeout: %s", exc)
+        return {}
+    except Exception as exc:
+        log.warning("gemini vision failed: %s", exc)
+        return {}
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
@@ -321,8 +329,9 @@ async def vision_openai(image_bytes: bytes, mime: str) -> dict[str, Any]:
         return {}
     base = (getattr(config, "OPENAI_BASE_URL", "") or "https://api.openai.com/v1").rstrip("/")
     model = (getattr(config, "OPENAI_VISION_MODEL", "") or "gpt-4o-mini").strip()
-    b64 = base64.b64encode(image_bytes).decode("ascii")
-    data_url = f"data:{mime};base64,{b64}"
+    payload_bytes, payload_mime = _prepare_vision_image(image_bytes, mime)
+    b64 = base64.b64encode(payload_bytes).decode("ascii")
+    data_url = f"data:{payload_mime};base64,{b64}"
     payload = {
         "model": model,
         "temperature": 0.1,
@@ -337,12 +346,19 @@ async def vision_openai(image_bytes: bytes, mime: str) -> dict[str, Any]:
         ],
     }
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        r = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
-        if r.status_code >= 400:
-            log.warning("openai vision %s: %s", r.status_code, r.text[:300])
-            return {}
-        data = r.json()
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
+            r = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
+            if r.status_code >= 400:
+                log.warning("openai vision %s: %s", r.status_code, r.text[:300])
+                return {}
+            data = r.json()
+    except httpx.TimeoutException as exc:
+        log.warning("openai vision timeout: %s", exc)
+        return {}
+    except Exception as exc:
+        log.warning("openai vision failed: %s", exc)
+        return {}
     try:
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
@@ -387,6 +403,33 @@ def sniff_mime(image_bytes: bytes, filename: str | None = None) -> str:
     return "image/jpeg"
 
 
+def _prepare_vision_image(image_bytes: bytes, mime: str) -> tuple[bytes, str]:
+    """Downscale/compress large screenshots so vision APIs respond faster."""
+    if len(image_bytes) <= 900_000:
+        return image_bytes, mime
+    try:
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_bytes))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        elif img.mode == "L":
+            img = img.convert("RGB")
+        w, h = img.size
+        longest = max(w, h)
+        if longest > 1600:
+            scale = 1600 / float(longest)
+            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=82, optimize=True)
+        compressed = out.getvalue()
+        if compressed and len(compressed) < len(image_bytes):
+            return compressed, "image/jpeg"
+    except Exception as exc:
+        log.debug("vision resize skipped: %s", exc)
+    return image_bytes, mime
+
+
 async def extract_from_screenshot(
     image_bytes: bytes,
     *,
@@ -402,14 +445,22 @@ async def extract_from_screenshot(
     vision_fields: dict[str, Any] = {}
     ocr_fields: dict[str, Any] = {}
 
-    # Prefer vision when configured
+    # Prefer vision when configured (timeouts/errors → empty → OCR fallback)
     if (getattr(config, "GEMINI_API_KEY", "") or "").strip():
-        vision_fields = await vision_gemini(image_bytes, mime)
+        try:
+            vision_fields = await vision_gemini(image_bytes, mime)
+        except Exception as exc:
+            log.warning("gemini extract crashed: %s", exc)
+            vision_fields = {}
         if vision_fields.get("from_city") or vision_fields.get("to_city"):
             methods.append("gemini")
     if not vision_fields.get("from_city") and not vision_fields.get("to_city"):
         if (getattr(config, "OPENAI_API_KEY", "") or "").strip():
-            vision_fields = await vision_openai(image_bytes, mime)
+            try:
+                vision_fields = await vision_openai(image_bytes, mime)
+            except Exception as exc:
+                log.warning("openai extract crashed: %s", exc)
+                vision_fields = {}
             if vision_fields.get("from_city") or vision_fields.get("to_city"):
                 methods.append("openai")
 

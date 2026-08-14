@@ -835,8 +835,20 @@ async function runAnalyzeScreenshot() {
     const tok = writeToken();
     if (tok) headers["X-Hub-Token"] = tok;
     const r = await fetch("/api/analyze/screenshot", { method: "POST", body: fd, headers });
-    if (!r.ok) throw new Error(await r.text());
-    const data = await r.json();
+    const rawText = await r.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch (_) {
+      data = null;
+    }
+    if (!r.ok) {
+      const msg = (data && data.error)
+        || (rawText && !rawText.includes("<") ? rawText.slice(0, 200) : null)
+        || "Сервер не ответил на разбор скрина. Попробуйте ещё раз или заполните поля вручную.";
+      throw new Error(msg);
+    }
+    if (!data) throw new Error("Пустой ответ сервера");
     if (!data.ok) {
       $("analyzeOut").innerHTML = `<p class="analyze-err">${esc(data.error || "Ошибка")}</p>`;
       return;
