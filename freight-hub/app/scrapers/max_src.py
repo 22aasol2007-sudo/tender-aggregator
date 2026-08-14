@@ -20,6 +20,13 @@ if TYPE_CHECKING:
 log = logging.getLogger("scraper.max")
 
 BACKFILL_PER_CHAT = 100
+CATCHUP_EVERY_SEC = 900
+CATCHUP_PER_CHAT = 30
+
+
+def _max_id_variants(cid: int) -> set[int]:
+    out = {int(cid), -int(cid)}
+    return out
 
 
 class MaxIngest:
@@ -103,6 +110,7 @@ class MaxIngest:
             await self._save_health(ok=True, note="listening")
             ready.set()
             asyncio.create_task(self._backfill(c))
+            asyncio.create_task(self._catchup_loop(c))
 
         @self.client.on_message()
         async def _on_message(message: Message, c: Any) -> None:
@@ -161,12 +169,13 @@ class MaxIngest:
                 if not chat or not getattr(chat, "id", None):
                     raise RuntimeError("empty chat")
                 cid = int(chat.id)
-                self._chat_ids.add(cid)
-                self._id_to_meta[cid] = {
-                    "slug": slug,
-                    "title": getattr(chat, "title", None) or ch.get("title") or slug,
-                    "url": link,
-                }
+                self._chat_ids |= _max_id_variants(cid)
+                for vid in _max_id_variants(cid):
+                    self._id_to_meta[vid] = {
+                        "slug": slug,
+                        "title": getattr(chat, "title", None) or ch.get("title") or slug,
+                        "url": link,
+                    }
                 self._resolved += 1
                 log.info("MAX resolved %s -> %s", slug, cid)
             except Exception as exc:
@@ -248,21 +257,81 @@ class MaxIngest:
         log.info("MAX backfill done, added=%s", added)
         await self._save_health(ok=True, note="backfill_done")
 
+    async def _catchup_loop(self, c: Any) -> None:
+        await asyncio.sleep(90)
+        while not self._stopped and self._ok:
+            try:
+                n = await self._light_catchup(c)
+                if n:
+                    log.info("MAX catch-up added %s", n)
+            except Exception as exc:
+                log.warning("MAX catch-up: %s", exc)
+            await asyncio.sleep(CATCHUP_EVERY_SEC)
+
+    async def _light_catchup(self, c: Any) -> int:
+        added = 0
+        self.db.begin_batch()
+        try:
+            seen_slugs: set[str] = set()
+            for cid, meta in list(self._id_to_meta.items()):
+                slug = meta.get("slug") or ""
+                if slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
+                try:
+                    msgs = await c.fetch_history(cid, backward=CATCHUP_PER_CHAT)
+                    for msg in msgs or []:
+                        text = (getattr(msg, "text", None) or "").strip()
+                        if len(text) < 20:
+                            continue
+                        msg_ts = getattr(msg, "time", None) or getattr(msg, "timestamp", None)
+                        posted_at = None
+                        if msg_ts is not None:
+                            try:
+                                posted_at = float(msg_ts.timestamp()) if hasattr(msg_ts, "timestamp") else float(msg_ts)
+                                if posted_at > 1e12:
+                                    posted_at /= 1000.0
+                                if time.time() - posted_at > config.MAX_LOAD_AGE_SEC:
+                                    continue
+                            except Exception:
+                                posted_at = None
+                        mid = getattr(msg, "id", None) or getattr(msg, "cid", None) or id(msg)
+                        raw = RawLoad(
+                            source="max",
+                            external_id=f"{meta['slug']}:{mid}",
+                            title=meta["title"],
+                            body=text,
+                            url=meta.get("url"),
+                            posted_at=posted_at,
+                            raw={"chat": meta["slug"], "msg_id": mid, "via": "catchup"},
+                        )
+                        status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+                        if status == "added":
+                            added += 1
+                    await asyncio.sleep(0.3)
+                except Exception as exc:
+                    log.debug("MAX catch-up %s: %s", meta.get("slug"), exc)
+        finally:
+            await self.db.end_batch()
+        if added:
+            await self._save_health(ok=True, note=f"catchup_added:{added}")
+        return added
+
     async def _handle_message(self, message: Any) -> None:
         chat_id = getattr(message, "chat_id", None)
         if chat_id is None:
             return
         cid = int(chat_id)
-        if cid not in self._chat_ids:
+        if cid not in self._chat_ids and (-cid) not in self._chat_ids:
             return
         text = (getattr(message, "text", None) or "").strip()
         if len(text) < 20:
             return
-        meta = self._id_to_meta.get(cid) or {
-            "slug": str(cid),
-            "title": "MAX",
-            "url": None,
-        }
+        meta = (
+            self._id_to_meta.get(cid)
+            or self._id_to_meta.get(-cid)
+            or {"slug": str(cid), "title": "MAX", "url": None}
+        )
         mid = getattr(message, "id", None) or getattr(message, "cid", None)
         posted_at = None
         msg_ts = getattr(message, "time", None) or getattr(message, "timestamp", None)
@@ -283,7 +352,9 @@ class MaxIngest:
             raw={"chat": meta["slug"], "msg_id": mid},
         )
         try:
-            await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+            status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+            if status == "added":
+                log.info("MAX live +1 %s", meta.get("slug"))
             await self._save_health(ok=True, note="listening")
         except Exception as exc:
             self._last_error = str(exc)

@@ -6,9 +6,9 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, utils
 from telethon.tl.types import User
 
 from app import config
@@ -22,6 +22,34 @@ if TYPE_CHECKING:
 log = logging.getLogger("scraper.telegram")
 
 BACKFILL_PER_CHAT = 80
+CATCHUP_EVERY_SEC = 900  # 15 min — safety net if NewMessage is quiet
+CATCHUP_PER_CHAT = 25
+
+
+def _peer_id_variants(entity_or_id: Any) -> set[int]:
+    """Telethon mixes bare channel ids and -100… peer ids — accept both."""
+    out: set[int] = set()
+    try:
+        out.add(int(utils.get_peer_id(entity_or_id)))
+    except Exception:
+        pass
+    try:
+        raw = int(getattr(entity_or_id, "id", entity_or_id) or 0)
+    except (TypeError, ValueError):
+        raw = 0
+    if raw:
+        out.add(raw)
+        out.add(-raw)
+        # Channel / megagroup marked peer
+        if raw > 0:
+            out.add(int(f"-100{raw}"))
+        s = str(abs(raw))
+        if s.startswith("100") and len(s) > 3:
+            try:
+                out.add(int(s[3:]))
+            except ValueError:
+                pass
+    return {x for x in out if x}
 
 
 class TelegramIngest:
@@ -154,13 +182,13 @@ class TelegramIngest:
         for u in list(self._usernames):
             try:
                 ent = await self.client.get_entity(u)
-                self._ids.add(int(ent.id))
+                self._ids |= _peer_id_variants(ent)
                 self._resolved += 1
             except Exception as exc:
                 self._failed.append(u)
                 log.debug("resolve %s: %s", u, exc)
             await asyncio.sleep(0.2)
-        self.client.add_event_handler(self.on_message, events.NewMessage)
+        self.client.add_event_handler(self.on_message, events.NewMessage(incoming=True))
         log.info(
             "TG watching %s usernames / %s ids (failed resolve %s)",
             len(self._usernames),
@@ -170,6 +198,7 @@ class TelegramIngest:
         self._ok = True
         await self._save_health(ok=True, note="listening")
         asyncio.create_task(self._backfill())
+        asyncio.create_task(self._catchup_loop())
 
     async def _safe_disconnect(self) -> None:
         if self.client:
@@ -247,23 +276,88 @@ class TelegramIngest:
         log.info("TG backfill done, added=%s", added)
         await self._save_health(ok=True, note="backfill_done")
 
+    async def _catchup_loop(self) -> None:
+        """Re-scan recent messages if live NewMessage events go silent."""
+        await asyncio.sleep(60)
+        while not self._stopped:
+            try:
+                if self.client and self._ok:
+                    n = await self._light_catchup()
+                    if n:
+                        log.info("TG catch-up added %s", n)
+            except Exception as exc:
+                log.warning("TG catch-up: %s", exc)
+            await asyncio.sleep(CATCHUP_EVERY_SEC)
+
+    async def _light_catchup(self) -> int:
+        if not self.client:
+            return 0
+        added = 0
+        self.db.begin_batch()
+        try:
+            for u in list(self._usernames):
+                if self._stopped or not self.client:
+                    break
+                try:
+                    ent = await self.client.get_entity(u)
+                    async for msg in self.client.iter_messages(ent, limit=CATCHUP_PER_CHAT):
+                        text = (msg.message or "").strip()
+                        if len(text) < 20:
+                            continue
+                        msg_ts = getattr(msg, "date", None)
+                        posted_at = None
+                        if msg_ts is not None:
+                            try:
+                                posted_at = float(msg_ts.timestamp())
+                                if time.time() - posted_at > config.MAX_LOAD_AGE_SEC:
+                                    continue
+                            except Exception:
+                                posted_at = None
+                        username = (getattr(ent, "username", None) or u or "").lower()
+                        link = f"https://t.me/{username}/{msg.id}" if username else None
+                        raw = RawLoad(
+                            source="telegram",
+                            external_id=f"{username or ent.id}:{msg.id}",
+                            title=(getattr(ent, "title", None) or username or "TG"),
+                            body=text,
+                            url=link,
+                            posted_at=posted_at,
+                            raw={"chat": username, "msg_id": msg.id, "via": "catchup"},
+                        )
+                        status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+                        if status == "added":
+                            added += 1
+                except Exception as exc:
+                    log.debug("TG catch-up %s: %s", u, exc)
+                await asyncio.sleep(0.15)
+        finally:
+            await self.db.end_batch()
+        if added:
+            await self._save_health(ok=True, note=f"catchup_added:{added}")
+        return added
+
     async def stop(self) -> None:
         self._stopped = True
         await self._safe_disconnect()
         if self._task:
             self._task.cancel()
 
+    def _is_watched_chat(self, chat: Any, username: str) -> bool:
+        if username and username in self._usernames:
+            return True
+        return bool(self._ids & _peer_id_variants(chat))
+
     async def on_message(self, event: events.NewMessage.Event) -> None:
         chat = await event.get_chat()
         if isinstance(chat, User):
             return
         username = (getattr(chat, "username", None) or "").lower()
-        chat_id = int(getattr(chat, "id", 0) or 0)
-        if username not in self._usernames and chat_id not in self._ids:
+        if not self._is_watched_chat(chat, username):
             return
         text = (event.raw_text or "").strip()
         if len(text) < 20:
             return
+        chat_id = int(getattr(chat, "id", 0) or 0)
         link = f"https://t.me/{username}/{event.id}" if username else None
         posted_at = None
         try:
@@ -282,7 +376,9 @@ class TelegramIngest:
             raw={"chat": username, "msg_id": event.id},
         )
         try:
-            await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+            status = await ingest_raw(self.db, raw, min_score=0, scoring="browse")
+            if status == "added":
+                log.info("TG live +1 @%s", username or chat_id)
             await self._save_health(ok=True, note="listening")
         except Exception as exc:
             self._last_error = str(exc)
