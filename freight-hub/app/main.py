@@ -1014,27 +1014,32 @@ async def reparse_routes(
     assert db._db is not None
     cutoff = _time.time() - float(days) * 86400
     markers = (
-        "%душанбе%",
-        "%ташкент%",
-        "%бишкек%",
-        "%алматы%",
-        "%худжанд%",
-        "%самарканд%",
+        "душанбе",
+        "ташкент",
+        "бишкек",
+        "алматы",
+        "худжанд",
+        "самарканд",
+        "ашхабад",
     )
-    like_sql = " OR ".join(["LOWER(COALESCE(body,'')) LIKE ?"] * len(markers))
+    # NOTE: SQLite LOWER() is ASCII-only — filter Cyrillic markers in Python.
     cur = await db._db.execute(
-        f"""
+        """
         SELECT id, source, external_id, body, from_city, to_city, url, title, price, tonnage
         FROM loads
         WHERE source IN ('telegram','max','tg_public')
           AND scraped_at >= ?
-          AND ({like_sql})
         ORDER BY scraped_at DESC
         LIMIT ?
         """,
-        (cutoff, *markers, limit),
+        (cutoff, limit),
     )
-    rows = [dict(r) for r in await cur.fetchall()]
+    raw_rows = [dict(r) for r in await cur.fetchall()]
+    rows: list[dict[str, Any]] = []
+    for r in raw_rows:
+        blob = (r.get("body") or "").lower().replace("ё", "е")
+        if any(m in blob for m in markers):
+            rows.append(r)
 
     # Group by base external_id (strip #block suffix)
     groups: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1090,48 +1095,41 @@ async def reparse_routes(
                 ]
                 examples.append({"external_id": base_ext, "routes": routes, "status": status})
 
-    # Also fix any remaining short false Moscow destinations without CIS marker in to_city
-    cur2 = await db._db.execute(
-        """
-        SELECT id, body, from_city, to_city, tonnage, source, external_id
-        FROM loads
-        WHERE source IN ('telegram','max','tg_public')
-          AND scraped_at >= ?
-          AND LOWER(IFNULL(to_city,'')) = 'москва'
-          AND LOWER(IFNULL(body,'')) LIKE '%душанбе%'
-        LIMIT 500
-        """,
-        (cutoff,),
-    )
+    # Patch any remaining false Moscow destinations when CIS marker is in body
     patched = 0
-    for r in await cur2.fetchall():
+    for r in raw_rows:
+        to = (r.get("to_city") or "").lower().replace("ё", "е")
+        blob = (r.get("body") or "").lower().replace("ё", "е")
+        if to != "москва" or "душанбе" not in blob:
+            continue
         p = parse_load(r["body"] or "")
         if not p.to_city or p.to_city == "москва":
-            # Prefer block that matches from_city
             for b in parse_load_blocks(r["body"] or ""):
                 if b.from_city and b.to_city and b.to_city != "москва":
-                    if not r["from_city"] or b.from_city == (r["from_city"] or "").lower():
+                    if not r.get("from_city") or b.from_city == (r.get("from_city") or "").lower():
                         p = b
                         break
         if p.to_city and p.to_city != "москва":
-            frm = p.from_city or r["from_city"]
-            to = p.to_city
-            title = f"{frm or '?'} → {to or '?'}"
+            frm = p.from_city or r.get("from_city")
+            to_city = p.to_city
+            title = f"{frm or '?'} → {to_city or '?'}"
             km_from = distance_km(frm, "москва") if frm else None
-            km_to = distance_km(to, "москва") if to else None
+            km_to = distance_km(to_city, "москва") if to_city else None
             await db._db.execute(
                 """
                 UPDATE loads SET from_city=?, to_city=?, title=?, km_from=?, km_to=?,
                   route_km=NULL, price_per_km=NULL, kind=COALESCE(NULLIF(?,''), kind)
                 WHERE id=?
                 """,
-                (frm, to, title, km_from, km_to, p.kind or "", r["id"]),
+                (frm, to_city, title, km_from, km_to, p.kind or "", r["id"]),
             )
             patched += 1
 
     await db._db.commit()
     return {
         "ok": True,
+        "scanned_messenger": len(raw_rows),
+        "matched_markers": len(rows),
         "groups": len(groups),
         "fixed": fixed,
         "created_batches": created,
