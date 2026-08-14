@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING, Any
 
 from telethon import TelegramClient, events, utils
 from telethon.tl.types import User
+import hashlib
 
 from app import config
 from app.defaults import DEFAULT_CHATS
 from app.ingest import ingest_raw
+from app.ingest_metrics import record
 from app.models import RawLoad
 
 if TYPE_CHECKING:
@@ -109,6 +111,29 @@ class TelegramIngest:
             backoff = min(backoff * 1.7, float(config.LISTENER_RETRY_SEC * 5))
 
     @staticmethod
+    def _session_fingerprint() -> str:
+        raw = (config.TG_SESSION or "").strip()
+        if not raw:
+            try:
+                if config.TG_SESSION_FILE.exists():
+                    raw = config.TG_SESSION_FILE.read_text(encoding="utf-8").strip()
+            except Exception:
+                raw = ""
+        if not raw:
+            raw = str(config.SESSION_PATH)
+        return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:12]
+
+    async def _backup_session_string(self) -> None:
+        """Keep a copy of StringSession on the data volume (no secrets in logs)."""
+        if not config.TG_SESSION:
+            return
+        try:
+            dest = config.DB_PATH.parent / "tg_string.session.bak"
+            dest.write_text(config.TG_SESSION.strip(), encoding="utf-8")
+        except Exception as exc:
+            log.debug("session backup skipped: %s", exc)
+
+    @staticmethod
     def _purge_dead_session() -> None:
         for p in (
             Path(str(config.SESSION_PATH) + ".session"),
@@ -176,6 +201,7 @@ class TelegramIngest:
         await self.client.start()
         me = await self.client.get_me()
         log.info("TG logged in as %s", me.username or me.first_name)
+        await self._backup_session_string()
         self._resolved = 0
         self._failed = []
         self._ids.clear()
@@ -219,6 +245,7 @@ class TelegramIngest:
                 "failed_count": len(self._failed),
                 "backfill_added": self._backfill_added,
                 "last_error": self._last_error,
+                "session_fp": self._session_fingerprint(),
                 "updated_at": time.time(),
             }
         )
@@ -357,6 +384,7 @@ class TelegramIngest:
         text = (event.raw_text or "").strip()
         if len(text) < 20:
             return
+        record("live_seen", source="telegram")
         chat_id = int(getattr(chat, "id", 0) or 0)
         link = f"https://t.me/{username}/{event.id}" if username else None
         posted_at = None

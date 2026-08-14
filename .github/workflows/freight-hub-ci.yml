@@ -1,0 +1,61 @@
+name: freight-hub-ci
+
+on:
+  push:
+    paths:
+      - "freight-hub/**"
+      - "freight_core/**"
+      - ".github/workflows/freight-hub-ci.yml"
+  pull_request:
+    paths:
+      - "freight-hub/**"
+      - "freight_core/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: freight-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install sentry-sdk
+      - name: Unit tests
+        env:
+          PYTHONPATH: ..
+        run: python -m pytest tests/ -q --tb=short
+      - name: Syntax check
+        run: |
+          python -m compileall app
+          node --check web/app.js
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - name: Health smoke (public Vercel)
+        run: |
+          set -e
+          URL="https://freight-edge.vercel.app/api/health"
+          BODY=$(curl -fsS --max-time 45 "$URL")
+          echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); assert d.get('ok') is True; print('ok', d.get('total_loads'), d.get('statuses'))"
+      - name: Ingest pulse (warn only)
+        run: |
+          BODY=$(curl -fsS --max-time 45 "https://freight-edge.vercel.app/api/health")
+          python - <<'PY'
+          import json, os, urllib.request
+          d = json.load(urllib.request.urlopen("https://freight-edge.vercel.app/api/health"))
+          m = (d.get("ingest_metrics") or {}).get("1h") or {}
+          added = int(m.get("added") or 0)
+          print("adds_1h", added, "by_reason", m.get("by_reason"))
+          # Soft gate: do not fail deploy if quiet night, but print clearly
+          if added == 0:
+            print("::warning::No ingest adds in last hour — check TG/MAX drought lamps")
+          PY

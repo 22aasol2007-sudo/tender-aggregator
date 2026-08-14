@@ -57,3 +57,30 @@ async def maybe_alert_zero_streak(source: str, streak: int) -> None:
     await send_alert(
         f"⚠️ Источник «{source}»: 0 добавлений {streak} циклов подряд"
     )
+
+
+_last_drought_alert: dict[str, float] = {}
+
+
+async def maybe_alert_messenger_drought(
+    *,
+    source: str,
+    hours: float,
+    listening: bool,
+) -> bool:
+    """Alert at most once per 6h per source when listener is up but adds stalled."""
+    import time
+
+    if not listening or hours < float(getattr(config, "MESSENGER_DROUGHT_HOURS", 2)):
+        return False
+    now = time.time()
+    prev = _last_drought_alert.get(source, 0)
+    if now - prev < 6 * 3600:
+        return False
+    ok = await send_alert(
+        f"⚠️ {source}: listening, но нет новых заявок уже {int(hours)} ч. "
+        f"Проверьте сессию / фильтры / https://freight-edge.vercel.app"
+    )
+    if ok:
+        _last_drought_alert[source] = now
+    return ok

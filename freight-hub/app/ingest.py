@@ -223,32 +223,37 @@ async def _persist(
     scoring: str,
     profile_user: dict[str, Any],
 ) -> str:
+    from app.ingest_metrics import record
+
     if is_archived_text(raw.body) or is_archived_text(raw.title):
+        record("skipped_other", source=raw.source)
         return "skipped"
     result = score_load(parsed, profile_user, min_score=min_score, scoring=scoring)
     messenger = raw.source in {"telegram", "tg_public", "max"}
     # Messengers: keep rows even outside corridor / with weak geo — UI filters later.
-    # Hard geo-drop was starving TG/MAX (listening OK, but 0 adds for many hours).
     if result.reason in HARD_GEO_SKIP and not (scoring == "browse" and messenger):
+        record("skipped_geo", source=raw.source)
         return "skipped"
     if scoring == "strict" and not result.ok:
+        record("skipped_other", source=raw.source)
         return "skipped"
 
     from_city = raw.from_city or parsed.from_city
     to_city = raw.to_city or parsed.to_city
     if is_junk_route(from_city, to_city, source=raw.source):
+        record("skipped_other", source=raw.source)
         return "skipped"
 
     score = result.score
     if result.reason in HARD_GEO_SKIP and messenger:
-        # Store for diagnostics, but keep score below default UI floor (40)
-        # so soft-geo flood doesn't drown the feed.
         if not (from_city and to_city):
+            record("skipped_geo", source=raw.source)
             return "skipped"
         if result.reason in {"geo_unknown", "incomplete_route", "no_route"}:
             score = max(score, 28)
         else:
             score = max(score, 32)
+        record("soft_geo_kept", source=raw.source)
     if scoring == "browse" and raw.source not in {"telegram", "tg_public", "max"} and (
         from_city or to_city
     ):
@@ -256,6 +261,7 @@ async def _persist(
 
     tonnage = raw.tonnage if raw.tonnage is not None else parsed.tonnage
     if not tonnage_allowed(tonnage):
+        record("skipped_tonnage", source=raw.source)
         return "skipped"
 
     posted_at = getattr(raw, "posted_at", None)
@@ -270,6 +276,7 @@ async def _persist(
         age = time.time() - posted_at_f
         # Hard rule: never ingest anything older than retention window
         if age > config.MAX_LOAD_AGE_SEC:
+            record("skipped_age", source=raw.source)
             return "skipped"
         # Far-future clock skew → fall back to scrape time
         if age < -2 * 3600:
@@ -292,6 +299,7 @@ async def _persist(
             within_sec=config.CROSS_DEDUP_HOURS * 3600,
         )
         if dup and int(dup.get("score") or 0) >= score:
+            record("skipped_dup", source=raw.source)
             return "skipped"
 
     km_from = _km_to_base(from_city, _profile_base(profile_user))
@@ -331,6 +339,7 @@ async def _persist(
     }
     status = await db.upsert_load(item)
     if status == "added":
+        record("added", source=raw.source)
         if raw.source in {"telegram", "max"}:
             await db.set_setting(f"last_ingest_{raw.source}", str(time.time()))
         try:
@@ -339,6 +348,10 @@ async def _persist(
             await maybe_alert_hot(item)
         except Exception:
             pass
+    elif status == "updated":
+        record("updated", source=raw.source)
+    else:
+        record("skipped_other", source=raw.source)
     return status
 
 

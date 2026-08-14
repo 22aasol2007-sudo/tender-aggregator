@@ -627,6 +627,49 @@ class HubDB:
         )
         await self.db.commit()
 
+    async def vacuum_if_due(self) -> bool:
+        """Run SQLite VACUUM at most every VACUUM_EVERY_HOURS."""
+        from app import config as _cfg
+
+        every = float(getattr(_cfg, "VACUUM_EVERY_HOURS", 12) or 0)
+        if every <= 0:
+            return False
+        raw = await self.get_setting("last_vacuum_at")
+        try:
+            last = float(raw) if raw else 0.0
+        except (TypeError, ValueError):
+            last = 0.0
+        now = time.time()
+        if now - last < every * 3600:
+            return False
+        try:
+            await self.db.execute("VACUUM")
+            await self.db.commit()
+            await self.set_setting("last_vacuum_at", str(now))
+            return True
+        except Exception:
+            return False
+
+    async def find_route_siblings(
+        self,
+        route_fp: str,
+        *,
+        within_sec: float,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        if not route_fp:
+            return []
+        cur = await self.db.execute(
+            """
+            SELECT id, source, external_id, url, score, scraped_at FROM loads
+            WHERE route_fp = ? AND scraped_at >= ?
+            ORDER BY score DESC, scraped_at DESC
+            LIMIT ?
+            """,
+            (route_fp, time.time() - within_sec, limit),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
     async def stats_sources_in_window(self, *, days: float = 7) -> list[dict[str, Any]]:
         cutoff = time.time() - float(days) * 86400
         cur = await self.db.execute(

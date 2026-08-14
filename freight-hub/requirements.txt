@@ -13,4 +13,6 @@ python-multipart>=0.0.9
 Pillow>=10.0.0
 pytesseract>=0.3.10
 pytest>=8.0
+sentry-sdk[fastapi]>=2.0
+psycopg[binary]>=3.2
 

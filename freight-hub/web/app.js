@@ -302,6 +302,11 @@ function cardHtml(item) {
 
   const meta = [];
   meta.push(`<span class="source-tag">${esc(sourceLabel(item.source))}</span>`);
+  if (Array.isArray(item.sources) && item.sources.length > 1) {
+    const names = item.sources.map((s) => sourceLabel(s.source)).filter(Boolean);
+    const uniq = [...new Set(names)];
+    if (uniq.length > 1) meta.push(`<span class="source-tag multi">${esc(uniq.join(" + "))}</span>`);
+  }
   const posted = fmtPosted(item);
   if (posted) meta.push(`<span class="posted-at" title="Дата публикации на источнике">${esc(posted)}</span>`);
   if (item.km_from != null) meta.push(`погр. ${Math.round(item.km_from)} км`);
@@ -977,7 +982,7 @@ function renderMarketScale(market) {
   const sc = market.scale || {};
   const vsLabel = market.vs === "in_band" ? "в рынке" : (market.vs === "above_market" ? "выше рынка" : "ниже рынка");
   return `<div class="market-scale ${esc(market.vs || "")}">
-    <div class="ati-label">Рынок по плечу · n=${market.n} · ${market.window_days || 7} дн</div>
+    <div class="ati-label">Рынок по плечу · n=${market.n} · ${market.window_days || 7} дн${market.scope ? ` · ${esc(market.scope)}` : ""}</div>
     <div class="ms-track" aria-hidden="true">
       <i class="ms-band" style="left:${sc.p25_pct || 0}%; width:${Math.max(2, (sc.p75_pct || 100) - (sc.p25_pct || 0))}%"></i>
       <i class="ms-mark med" style="left:${sc.median_pct || 50}%" title="медиана"></i>

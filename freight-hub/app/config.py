@@ -17,6 +17,9 @@ CORS_ORIGINS = [
     for o in os.getenv("CORS_ORIGINS", "").split(",")
     if o.strip()
 ]
+_PUBLIC = os.getenv("PUBLIC_URL", "https://freight-edge.vercel.app").strip().rstrip("/")
+if _PUBLIC and _PUBLIC not in CORS_ORIGINS:
+    CORS_ORIGINS.append(_PUBLIC)
 
 # Telethon (optional TG ingest)
 API_ID = int(os.getenv("API_ID", "0") or 0)
@@ -110,3 +113,11 @@ ALERT_BOT_TOKEN = os.getenv("ALERT_BOT_TOKEN", "").strip()
 ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID", "").strip()
 ALERT_MIN_SCORE = int(os.getenv("ALERT_MIN_SCORE", "80") or 80)
 ZERO_ADD_STREAK_WARN = int(os.getenv("ZERO_ADD_STREAK_WARN", "3") or 3)
+# Messenger drought (listening but no successful adds)
+MESSENGER_DROUGHT_HOURS = float(os.getenv("MESSENGER_DROUGHT_HOURS", "2") or 2)
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://freight-edge.vercel.app").strip().rstrip("/")
+# Optional Postgres (Neon). Empty = keep SQLite production path.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+# Auto VACUUM after cleanup every N hours (0 = off)
+VACUUM_EVERY_HOURS = float(os.getenv("VACUUM_EVERY_HOURS", "12") or 12)

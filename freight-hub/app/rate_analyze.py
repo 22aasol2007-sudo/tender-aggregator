@@ -209,21 +209,42 @@ class RateAnalyzer:
             p=params,
         )
 
-        # Market band from real feed only — never invent DEFAULT_LOADED_PPK as "market"
+        # Market band: exact → hub → corridor; never invent DEFAULT as "market"
         market = None
-        n_priced = int(outbound.get("n_priced") or 0)
-        med_price = outbound.get("median_price")
-        p25 = outbound.get("p25_price")
-        p75 = outbound.get("p75_price")
-        real_ppk = outbound.get("median_ppk")  # may be None
-        if suggested_min_total is not None and med_price and n_priced >= 3:
-            delta = float(suggested_min_total) - float(med_price)
-            mid = float(med_price)
+        scopes_tried: list[dict[str, Any]] = []
+        candidates: list[tuple[str, dict[str, Any]]] = [("exact", outbound)]
+        if dest_hub and dest_hub != dest_n:
+            hub_out = await self.db.route_stats(from_city=base_n, to_city=dest_hub, days=7)
+            candidates.append(("hub", hub_out))
+        if int(outbound.get("n_priced") or 0) < 3:
+            for peer in ("санкт-петербург", "тула", "владимир", "рязань", "тверь"):
+                if peer in {dest_n, dest_hub or "", base_n}:
+                    continue
+                peer_stats = await self.db.route_stats(from_city=base_n, to_city=peer, days=7)
+                if int(peer_stats.get("n_priced") or 0) >= 3:
+                    candidates.append(("corridor", peer_stats))
+                    break
+
+        chosen: dict[str, Any] | None = None
+        scope_name = "exact"
+        for scope_name, cand in candidates:
+            n_p = int(cand.get("n_priced") or 0)
+            scopes_tried.append({"scope": scope_name, "n": n_p, "median": cand.get("median_price")})
+            if n_p >= 3 and cand.get("median_price"):
+                chosen = cand
+                break
+
+        if suggested_min_total is not None and chosen:
+            n_priced = int(chosen.get("n_priced") or 0)
+            med_price = float(chosen["median_price"])
+            p25 = chosen.get("p25_price")
+            p75 = chosen.get("p75_price")
+            real_ppk = chosen.get("median_ppk")
+            your = float(suggested_min_total)
             lo = float(p25 or med_price)
             hi = float(p75 or med_price)
-            your = float(suggested_min_total)
-            span = max(hi - lo, mid * 0.2, 1.0)
-            # position 0..100 for scale (clamp)
+            span = max(hi - lo, med_price * 0.2, 1.0)
+
             def _pos(v: float) -> float:
                 return max(0.0, min(100.0, ((v - lo) / span) * 100.0))
 
@@ -237,17 +258,17 @@ class RateAnalyzer:
                 "ok": True,
                 "n": n_priced,
                 "window_days": 7,
-                "scope": "exact",
+                "scope": scope_name,
                 "p25_rub": round(lo, 0),
-                "median_total_rub": round(mid, 0),
+                "median_total_rub": round(med_price, 0),
                 "p75_rub": round(hi, 0),
                 "median_ppk": round(float(real_ppk), 1) if real_ppk else None,
                 "your_min_rub": round(your, 0),
-                "delta_rub": round(delta, 0),
+                "delta_rub": round(your - med_price, 0),
                 "vs": vs,
                 "scale": {
                     "p25_pct": round(_pos(lo), 1),
-                    "median_pct": round(_pos(mid), 1),
+                    "median_pct": round(_pos(med_price), 1),
                     "p75_pct": round(_pos(hi), 1),
                     "your_pct": round(_pos(your), 1),
                 },
@@ -255,14 +276,14 @@ class RateAnalyzer:
         elif suggested_min_total is not None:
             market = {
                 "ok": False,
-                "n": n_priced,
+                "n": int(outbound.get("n_priced") or 0),
                 "window_days": 7,
                 "your_min_rub": round(float(suggested_min_total), 0),
                 "reason": "мало сделок по плечу для рыночной шкалы",
+                "scopes_tried": scopes_tried,
             }
 
-        # keep pricing.market_outbound_ppk as soft fallback for economics only
-        out_ppk = real_ppk or DEFAULT_LOADED_PPK
+        out_ppk = (chosen or outbound).get("median_ppk") or DEFAULT_LOADED_PPK
 
         waterfall = None
         if offer_eval and offer_eval.get("waterfall"):

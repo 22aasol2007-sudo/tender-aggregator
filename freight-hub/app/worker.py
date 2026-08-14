@@ -92,6 +92,8 @@ class ScrapeWorker:
                 out.append(res)
         if cleanup:
             await self.db.cleanup_smart()
+        if await self.db.vacuum_if_due():
+            log.info("SQLite VACUUM done")
         return out
 
     async def run_due(self, *, force_all: bool = False) -> list[dict]:
@@ -116,6 +118,8 @@ class ScrapeWorker:
             else:
                 out.append(res)
         await self.db.cleanup_smart()
+        if await self.db.vacuum_if_due():
+            log.info("SQLite VACUUM done")
         await self._track_zero_adds(out)
         return out
 

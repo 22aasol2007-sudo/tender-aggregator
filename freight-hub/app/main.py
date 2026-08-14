@@ -39,6 +39,12 @@ mx: MaxIngest | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global tg, mx
+    try:
+        from app.observability import init_sentry
+
+        init_sentry()
+    except Exception:
+        pass
     await db.connect()
     # Defaults: one leg ≤150 km of Moscow, other ≤1500 km (either direction)
     default_profile = '{"base":"москва","radius":150,"radius_far":1500}'
@@ -352,8 +358,8 @@ async def health() -> dict[str, Any]:
         else:
             hints.append(f"MAX: {note}")
 
-    # Silent messenger channels — listening but no adds → warn light
-    drought_sec = 3 * 3600
+    # Silent messenger channels — listening but no adds → warn light + TG alert
+    drought_sec = float(getattr(config, "MESSENGER_DROUGHT_HOURS", 2)) * 3600
     for src, label, alive, status_key in (
         ("telegram", "Telegram", tg_alive, "tg"),
         ("max", "MAX", mx_alive, "max"),
@@ -365,12 +371,20 @@ async def health() -> dict[str, Any]:
         except Exception:
             last = 0.0
         if last and now - last > drought_sec:
-            hours = int((now - last) / 3600)
-            hints.append(f"{label}: нет новых заявок уже {hours} ч")
+            hours = (now - last) / 3600
+            hints.append(f"{label}: нет новых заявок уже {int(hours)} ч")
             if status_key == "tg" and tg_status == "on":
                 tg_status = "warn"
             if status_key == "max" and max_status == "on":
                 max_status = "warn"
+            try:
+                from app.alerts import maybe_alert_messenger_drought
+
+                await maybe_alert_messenger_drought(
+                    source=label, hours=hours, listening=True
+                )
+            except Exception:
+                pass
 
     if st["total"] < 30:
         hints.append("Мало заявок в ленте — обновите источники.")
@@ -450,6 +464,8 @@ async def health() -> dict[str, Any]:
         },
     }
 
+    from app.ingest_metrics import snapshot as ingest_snapshot
+
     return {
         "ok": True,
         "tg": tg_alive,
@@ -461,13 +477,22 @@ async def health() -> dict[str, Any]:
         "by_source": st["by_source"],
         "statuses": {"tg": tg_status, "max": max_status, "sites": sites_status},
         "coverage": coverage,
+        "ingest_metrics": {
+            "1h": ingest_snapshot(hours=1),
+            "24h": ingest_snapshot(hours=24),
+        },
+        "db": {
+            "backend": "postgres" if getattr(config, "DATABASE_URL", "") else "sqlite",
+            "path": str(config.DB_PATH),
+            "postgres_url_set": bool(getattr(config, "DATABASE_URL", "")),
+        },
         "updated_ago_sec": max(0, int(now - latest_ts)) if latest_ts else 0,
         "hints": hints,
         "tg_need_login": tg_need_login,
         "tg_down": not tg_alive,
         "zero_add_streaks": zero_streaks if isinstance(zero_streaks, dict) else {},
         "write_token_required": bool(config.HUB_WRITE_TOKEN),
-        "public_url": "https://freight-edge.vercel.app",
+        "public_url": getattr(config, "PUBLIC_URL", None) or "https://freight-edge.vercel.app",
         "api_via": "vercel_proxy",
         "optimizations": {
             "parallel_scrape": True,
@@ -741,6 +766,44 @@ async def loads(
             scraped_at=row.get("scraped_at"),
             kind=str(row.get("kind") or "") or None,
         )
+
+    # Cross-source merge: one card per route_fp with source badges
+    if rows:
+        merged: list[dict[str, Any]] = []
+        seen_fp: set[str] = set()
+        for row in rows:
+            fp = str(row.get("route_fp") or "")
+            if not fp or fp in seen_fp:
+                if fp and fp in seen_fp:
+                    continue
+                merged.append(row)
+                continue
+            seen_fp.add(fp)
+            try:
+                sibs = await db.find_route_siblings(
+                    fp, within_sec=config.CROSS_DEDUP_HOURS * 3600, limit=8
+                )
+            except Exception:
+                sibs = []
+            sources = []
+            for s in sibs:
+                sources.append(
+                    {
+                        "source": s.get("source"),
+                        "url": s.get("url"),
+                        "score": s.get("score"),
+                    }
+                )
+            if not sources:
+                sources = [{"source": row.get("source"), "url": row.get("url"), "score": row.get("score")}]
+            row["sources"] = sources
+            row["source_count"] = len(sources)
+            if len(sources) > 1:
+                why = list(row.get("why") or [])
+                why.append(f"{len(sources)} источника")
+                row["why"] = why[:4]
+            merged.append(row)
+        rows = merged
     filter_reasons: list[str] = []
     outside_corridor: dict[str, Any] | None = None
     channel_labels = {"telegram": "Telegram", "max": "MAX", "sites": "Агрегаторы", "all": "Все"}
