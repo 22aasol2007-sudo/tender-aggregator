@@ -109,6 +109,24 @@ CITY_ALIASES: dict[str, str] = {
     "подмосковье": "москва",
     "moscow": "москва",
     "msk": "москва",
+    # СНГ / дальние выгрузки (часто без тире: «Фрязино Душанбе»)
+    "душанбе": "душанбе",
+    "dushanbe": "душанбе",
+    "ташкент": "ташкент",
+    "tashkent": "ташкент",
+    "бишкек": "бишкек",
+    "алматы": "алматы",
+    "алма-ата": "алматы",
+    "алма ата": "алматы",
+    "астана": "астана",
+    "нур-султан": "астана",
+    "ереван": "ереван",
+    "баку": "баку",
+    "минск": "минск",
+    "тбилиси": "тбилиси",
+    "ашхабад": "ашхабад",
+    "самарканд": "самарканд",
+    "худжанд": "худжанд",
     "спб": "санкт-петербург",
     "питер": "санкт-петербург",
     "петербург": "санкт-петербург",
@@ -180,6 +198,8 @@ CITY_ALIASES: dict[str, str] = {
     "видное московской": "видное",
     "зеленоград": "зеленоград",
     "дмитров": "дмитров",
+    "дмитровск": "дмитровск",
+    "обнинск": "обнинск",
     "клин": "клин",
     "чехов": "чехов",
     "раменское": "раменское",
@@ -575,11 +595,16 @@ def _canon_city(token: str) -> str | None:
     for alias, canon in CITY_ALIASES.items():
         if alias.replace("ё", "е") == t:
             return canon
+    # Short single-token only: prefix/stem — NEVER substring-search inside a long blob
+    # (that turned "…фрязино…москва…" into a false route).
+    if " " in t or len(t) > 32:
+        return None
     for alias, canon in CITY_ALIASES.items():
         a = alias.replace("ё", "е")
-        if a in t or t in a:
-            if len(t) >= 3:
-                return canon
+        if len(a) < 3 or " " in a:
+            continue
+        if len(t) >= 4 and (a.startswith(t) or (t.startswith(a) and len(t) - len(a) <= 2)):
+            return canon
     return None
 
 
@@ -660,6 +685,22 @@ _CITY_STOP = {
     "склад",
     "палет",
     "палеты",
+    "без",
+    "режим",
+    "режима",
+    "режм",
+    "редм",
+    "авто",
+    "числа",
+    "число",
+    "мкад",
+    "или",
+    "важно",
+    "сделать",
+    "наличие",
+    "водитель",
+    "оригинал",
+    "актом",
 }
 
 
@@ -799,25 +840,71 @@ def _extract_labeled_route(norm: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _cities_on_line(line: str) -> list[str]:
+    """Ordered unique-ish city tokens on one offer line (known + plausible)."""
+    raw = (line or "").lower().replace("ё", "е")
+    raw = re.sub(r"\([^)]{0,40}\)", " ", raw)  # drop (МКАД) etc.
+    words = re.findall(r"[а-яa-z][а-яa-z.\-]{2,28}", raw)
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        two = " ".join(words[i : i + 2]) if i + 1 < len(words) else ""
+        hit = None
+        if two:
+            hit = _canon_city_flex(two) or (
+                _city_token(two) if _canon_city(two) else None
+            )
+        if hit:
+            if not out or out[-1] != hit:
+                out.append(hit)
+            i += 2
+            continue
+        one = _city_token(words[i])
+        if one and one not in _CITY_STOP and (not out or out[-1] != one):
+            # skip bare "мкад" already in stop; keep known / looks-like
+            out.append(one)
+        i += 1
+    return out
+
+
 def _extract_route(norm: str) -> tuple[str | None, str | None]:
     # Prefer explicit A-B routes first. Labeled "погрузка: готов" must not win.
     # Multi-hop on one line: A - B - C → A to C (not A to B)
+    # Do not split on temperature dashes like "реф -18".
+    _dash_split = re.compile(r"\s+[-–—→]\s+(?!\d)")
+
     for line in re.split(r"[\n|;]+", norm):
-        parts = [p.strip() for p in re.split(r"\s*[-–—/→]\s*", line) if p.strip()]
-        city_parts = []
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in _dash_split.split(line) if p.strip()]
+        city_parts: list[str] = []
         for p in parts:
             p0 = re.split(
                 r"\s+(?:груз|догруз|нужн|ищу|тент|реф|тонн)", p, maxsplit=1, flags=re.I
             )[0].strip()
-            # skip "1. Москва" numbering prefix
             p0 = re.sub(r"^\d+[.)]\s*", "", p0)
-            c = _city_token(p0)
-            if c:
-                city_parts.append(c)
+            if re.fullmatch(r"\d+[.,]?\d*", p0 or ""):
+                continue
+            # Prefer first city on this dash-segment, not substring of whole blob
+            cities = _cities_on_line(p0)
+            if cities:
+                city_parts.append(cities[0])
+            else:
+                c = _city_token(p0)
+                if c:
+                    city_parts.append(c)
         if len(city_parts) >= 3 and city_parts[0] != city_parts[-1]:
             return city_parts[0], city_parts[-1]
         if len(city_parts) == 2 and city_parts[0] != city_parts[1]:
             return city_parts[0], city_parts[1]
+
+        # TG style without dash: «Фрязино Душанбе», «Москва Душанбе»
+        if len(line) <= 160:
+            spaced = _cities_on_line(line)
+            # «Дмитровск + Москва Душанбе» → first … last
+            if len(spaced) >= 2 and spaced[0] != spaced[-1]:
+                return spaced[0], spaced[-1]
 
     for m in _ROUTE_PAIR_RE.finditer(norm):
         a, b = _city_token(m.group(1)), _city_token(m.group(2))
@@ -837,16 +924,24 @@ def _extract_route(norm: str) -> tuple[str | None, str | None]:
     # Do NOT grab arbitrary first two known cities across a multi-load post.
     return None, None
 
+
+_OFFER_BULLET_RE = re.compile(
+    r"^\s*(?:‼️|❗|❗️|‼|🌍|🚚|📦|▪️|●|•|\*{1,2})\s+",
+)
+
 _ROUTE_START_RE = re.compile(
     r"^\s*(?:"
     r"\d+[.)]\s*"  # 1. / 2)
     r"|[-–—*•]\s*"
+    r"|(?:‼️|❗|❗️|‼|🌍|🚚|📦)\s*"
     r")?"
     r"(?:"
     r"[А-ЯЁа-яёA-Za-z][А-ЯЁа-яёA-Za-z.\-\s]{1,40}\s*[-–—/→]\s*[А-ЯЁа-яёA-Za-z]"
     r"|(?:из|от)\s+[А-ЯЁа-яёA-Za-z]"
     r"|(?:погрузк|загрузк|разгрузк|выгрузк)[а-я]*\s*[:=]"
     r"|(?:погрузк|загрузк)[а-я]*\s+[А-ЯЁа-яёA-Za-z]"
+    # Capitalized «Фрязино Душанбе» — case-sensitive (do not match «Реф без»)
+    r"|(?-i:[А-ЯЁ][а-яё]{2,}(?:\s*\([^)]{0,30}\))?\s+(?:\+\s*)?[А-ЯЁ][а-яё]{2,})"
     r")",
     re.I,
 )
@@ -871,17 +966,26 @@ def split_load_blocks(text: str) -> list[str]:
 
     def _cur_has_route() -> bool:
         blob = "\n".join(cur)
-        return bool(
-            _ROUTE_PAIR_RE.search(blob)
-            or _FROM_TO_RE.search(blob)
-            or _LOAD_UNLOAD_INLINE_RE.search(blob)
-            or (_LOAD_CITY_RE.search(blob) and _UNLOAD_CITY_RE.search(blob))
-        )
+        if _ROUTE_PAIR_RE.search(blob) or _FROM_TO_RE.search(blob) or _LOAD_UNLOAD_INLINE_RE.search(blob):
+            return True
+        if _LOAD_CITY_RE.search(blob) and _UNLOAD_CITY_RE.search(blob):
+            return True
+        # Space-route on any short line already collected
+        for ln in cur:
+            if len(ln) <= 160 and len(_cities_on_line(ln)) >= 2:
+                return True
+        return False
 
     for i, line in enumerate(lines):
         stripped = line.strip()
         is_blank = not stripped
         starts_route = bool(_ROUTE_START_RE.match(line)) if stripped else False
+        starts_bullet = bool(_OFFER_BULLET_RE.match(line)) if stripped else False
+        # New block on ‼️ / emoji bullet when current already holds an offer
+        if starts_bullet and cur and ( _cur_has_route() or len("\n".join(cur).strip()) > 20):
+            blocks.append(cur)
+            cur = [line]
+            continue
         # New block when a route-looking line starts and current already has a route
         if starts_route and cur and _cur_has_route():
             blocks.append(cur)
@@ -891,7 +995,7 @@ def split_load_blocks(text: str) -> list[str]:
         if is_blank and cur and _cur_has_route():
             # peek ahead for another route start
             nxt = next((ln for ln in lines[i + 1 :] if ln.strip()), "")
-            if nxt and _ROUTE_START_RE.match(nxt):
+            if nxt and (_ROUTE_START_RE.match(nxt) or _OFFER_BULLET_RE.match(nxt)):
                 blocks.append(cur)
                 cur = []
                 continue
