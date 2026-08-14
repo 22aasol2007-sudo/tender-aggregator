@@ -1023,6 +1023,7 @@ def parse_load(text: str) -> ParsedLoad:
     driver = _first_match(DRIVER_PATTERNS, norm)
     frm, to = _extract_route(norm)
     tonnage = _extract_tonnage(norm)
+    price = _extract_price(norm, text)
     if shipper_strong and driver:
         kind = "mixed"
     elif shipper_strong:
@@ -1033,11 +1034,8 @@ def parse_load(text: str) -> ParsedLoad:
         kind = "other"
     else:
         kind = "other"
-    # Cargo ads often omit keywords: route + tonnage ⇒ treat as shipper
-    if kind == "other" and not driver and frm and to and tonnage is not None:
-        kind = "shipper"
-    # Route + money without keywords → still a cargo offer
-    if kind == "other" and not driver and frm and to and (price or tonnage):
+    # Cargo ads often omit keywords: route + tonnage/price ⇒ treat as shipper
+    if kind == "other" and not driver and frm and to and (price or tonnage is not None):
         kind = "shipper"
     if kind == "other" and not driver and frm and to and len(norm) >= 40:
         kind = "shipper"
@@ -1054,7 +1052,7 @@ def parse_load(text: str) -> ParsedLoad:
         temps=_extract_temps(norm),
         phones=_extract_phones(text),
         contacts=_extract_contacts(text),
-        price=_extract_price(norm, text),
+        price=price,
         load_date=_extract_load_date(text),
         shipper_hits=shipper,
         driver_hits=driver,

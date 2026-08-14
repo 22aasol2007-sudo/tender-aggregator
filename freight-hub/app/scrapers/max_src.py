@@ -183,17 +183,20 @@ class MaxIngest:
                 log.warning("MAX resolve %s: %s", slug, exc)
             await asyncio.sleep(0.3)
         log.info(
-            "MAX watching %s chats (failed %s)",
-            len(self._chat_ids),
+            "MAX watching %s channels (resolved %s, failed %s, id variants %s)",
+            len(self._channels),
+            self._resolved,
             len(self._failed),
+            len(self._chat_ids),
         )
 
     async def _save_health(self, *, ok: bool, note: str, hint: str | None = None) -> None:
         data: dict[str, Any] = {
             "ok": ok,
             "note": note,
+            # watched = unique channels configured/attempted (not ±id variants)
             "resolved": self._resolved,
-            "watched": len(self._chat_ids),
+            "watched": len(self._channels),
             "failed": self._failed[:20],
             "failed_count": len(self._failed),
             "backfill_added": self._backfill_added,
@@ -208,7 +211,12 @@ class MaxIngest:
         added = 0
         self.db.begin_batch()
         try:
+            seen_slugs: set[str] = set()
             for cid, meta in list(self._id_to_meta.items()):
+                slug = meta.get("slug") or ""
+                if slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
                 try:
                     msgs = await c.fetch_history(cid, backward=BACKFILL_PER_CHAT)
                     for msg in msgs or []:

@@ -426,7 +426,8 @@ async def health() -> dict[str, Any]:
         mx_ok = _i((mx_h or {}).get("resolved")) if mx_alive else 0
         mx_failed = _i((mx_h or {}).get("failed_count"))
         mx_watched = _i((mx_h or {}).get("watched"))
-        mx_total = max(mx_watched + mx_failed, mx_ok + mx_failed)
+        # watched = unique channels (not ±id variants); never add failed twice
+        mx_total = max(mx_watched, mx_ok + mx_failed)
         if mx_total <= 0 and mx:
             try:
                 mx_total = len(getattr(mx, "_channels", []) or [])
