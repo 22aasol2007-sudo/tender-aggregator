@@ -221,7 +221,10 @@ async def _persist(
     if is_archived_text(raw.body) or is_archived_text(raw.title):
         return "skipped"
     result = score_load(parsed, profile_user, min_score=min_score, scoring=scoring)
-    if result.reason in HARD_GEO_SKIP:
+    messenger = raw.source in {"telegram", "tg_public", "max"}
+    # Messengers: keep rows even outside corridor / with weak geo — UI filters later.
+    # Hard geo-drop was starving TG/MAX (listening OK, but 0 adds for many hours).
+    if result.reason in HARD_GEO_SKIP and not (scoring == "browse" and messenger):
         return "skipped"
     if scoring == "strict" and not result.ok:
         return "skipped"
@@ -232,6 +235,12 @@ async def _persist(
         return "skipped"
 
     score = result.score
+    if result.reason in HARD_GEO_SKIP and messenger:
+        # Soft floor so weakly-geo posts still appear when user lowers score / opens channel tab
+        if from_city or to_city:
+            score = max(score, 42)
+        else:
+            score = max(score, 30)
     if scoring == "browse" and raw.source not in {"telegram", "tg_public", "max"} and (
         from_city or to_city
     ):
