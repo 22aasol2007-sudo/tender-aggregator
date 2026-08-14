@@ -998,6 +998,149 @@ async def reparse_kinds(limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any
     return {"ok": True, "scanned": len(rows), "updated": updated}
 
 
+@app.post("/api/maintenance/reparse-routes", dependencies=[Depends(require_write_token)])
+async def reparse_routes(
+    days: float = Query(7, ge=0.5, le=30),
+    limit: int = Query(2000, ge=1, le=8000),
+) -> dict[str, Any]:
+    """Re-split/reparse messenger posts (fixes «Фрязино→Москва» instead of «→Душанбе»)."""
+    import time as _time
+
+    from app.ingest import ingest_raw
+    from app.models import RawLoad
+    from freight_core.geo import distance_km
+    from freight_core.parse import parse_load, parse_load_blocks
+
+    assert db._db is not None
+    cutoff = _time.time() - float(days) * 86400
+    markers = (
+        "%душанбе%",
+        "%ташкент%",
+        "%бишкек%",
+        "%алматы%",
+        "%худжанд%",
+        "%самарканд%",
+    )
+    like_sql = " OR ".join(["LOWER(COALESCE(body,'')) LIKE ?"] * len(markers))
+    cur = await db._db.execute(
+        f"""
+        SELECT id, source, external_id, body, from_city, to_city, url, title, price, tonnage
+        FROM loads
+        WHERE source IN ('telegram','max','tg_public')
+          AND scraped_at >= ?
+          AND ({like_sql})
+        ORDER BY scraped_at DESC
+        LIMIT ?
+        """,
+        (cutoff, *markers, limit),
+    )
+    rows = [dict(r) for r in await cur.fetchall()]
+
+    # Group by base external_id (strip #block suffix)
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        ext = str(r["external_id"] or "")
+        base_ext = ext.split("#", 1)[0]
+        key = (str(r["source"]), base_ext)
+        prev = groups.get(key)
+        body = r.get("body") or ""
+        if not prev or len(body) > len(prev.get("body") or ""):
+            groups[key] = r
+
+    fixed = 0
+    created = 0
+    deleted = 0
+    examples: list[dict[str, Any]] = []
+
+    for (source, base_ext), sample in groups.items():
+        body = sample.get("body") or ""
+        if not body.strip():
+            continue
+        blocks = parse_load_blocks(body)
+        if not blocks:
+            continue
+
+        # Drop old rows for this message (single + split)
+        del_cur = await db._db.execute(
+            "DELETE FROM loads WHERE source=? AND (external_id=? OR external_id LIKE ?)",
+            (source, base_ext, f"{base_ext}#%"),
+        )
+        deleted += int(del_cur.rowcount or 0)
+
+        raw = RawLoad(
+            source=source,
+            external_id=base_ext,
+            title=sample.get("title"),
+            body=body,
+            url=sample.get("url"),
+            price=sample.get("price"),
+            tonnage=sample.get("tonnage"),
+            raw={"via": "reparse_routes"},
+        )
+        status = await ingest_raw(db, raw, min_score=0, scoring="browse", split_blocks=True)
+        if status in {"added", "updated"}:
+            fixed += 1
+            if status == "added":
+                created += 1
+            if len(examples) < 8:
+                routes = [
+                    {"from": b.from_city, "to": b.to_city}
+                    for b in blocks
+                    if b.from_city or b.to_city
+                ]
+                examples.append({"external_id": base_ext, "routes": routes, "status": status})
+
+    # Also fix any remaining short false Moscow destinations without CIS marker in to_city
+    cur2 = await db._db.execute(
+        """
+        SELECT id, body, from_city, to_city, tonnage, source, external_id
+        FROM loads
+        WHERE source IN ('telegram','max','tg_public')
+          AND scraped_at >= ?
+          AND LOWER(IFNULL(to_city,'')) = 'москва'
+          AND LOWER(IFNULL(body,'')) LIKE '%душанбе%'
+        LIMIT 500
+        """,
+        (cutoff,),
+    )
+    patched = 0
+    for r in await cur2.fetchall():
+        p = parse_load(r["body"] or "")
+        if not p.to_city or p.to_city == "москва":
+            # Prefer block that matches from_city
+            for b in parse_load_blocks(r["body"] or ""):
+                if b.from_city and b.to_city and b.to_city != "москва":
+                    if not r["from_city"] or b.from_city == (r["from_city"] or "").lower():
+                        p = b
+                        break
+        if p.to_city and p.to_city != "москва":
+            frm = p.from_city or r["from_city"]
+            to = p.to_city
+            title = f"{frm or '?'} → {to or '?'}"
+            km_from = distance_km(frm, "москва") if frm else None
+            km_to = distance_km(to, "москва") if to else None
+            await db._db.execute(
+                """
+                UPDATE loads SET from_city=?, to_city=?, title=?, km_from=?, km_to=?,
+                  route_km=NULL, price_per_km=NULL, kind=COALESCE(NULLIF(?,''), kind)
+                WHERE id=?
+                """,
+                (frm, to, title, km_from, km_to, p.kind or "", r["id"]),
+            )
+            patched += 1
+
+    await db._db.commit()
+    return {
+        "ok": True,
+        "groups": len(groups),
+        "fixed": fixed,
+        "created_batches": created,
+        "deleted_old": deleted,
+        "patched_moscow": patched,
+        "examples": examples,
+    }
+
+
 @app.post("/api/maintenance/backup", dependencies=[Depends(require_write_token)])
 async def backup_db() -> dict[str, Any]:
     """Copy SQLite DB to /data/backups/hub-YYYYmmdd-HHMMSS.db"""

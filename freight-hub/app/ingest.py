@@ -252,7 +252,36 @@ async def _persist(
         if result.reason in {"geo_unknown", "incomplete_route", "no_route"}:
             score = max(score, 28)
         else:
-            score = max(score, 32)
+            # Дальний рейс из-под базы (Фрязино→Душанбе): не хоронить скором 32
+            import json as _json
+
+            base = _profile_base(profile_user)
+            kf = _km_to_base(from_city, base)
+            kt = _km_to_base(to_city, base)
+            near = 150.0
+            raw_prof = profile_user.get("truck_profile")
+            prof: dict[str, Any] = raw_prof if isinstance(raw_prof, dict) else {}
+            if not prof and isinstance(raw_prof, str) and raw_prof.strip():
+                try:
+                    parsed_prof = _json.loads(raw_prof)
+                    if isinstance(parsed_prof, dict):
+                        prof = parsed_prof
+                except Exception:
+                    pass
+            try:
+                near = float(prof.get("radius") or near)
+            except (TypeError, ValueError):
+                pass
+            origin_near = kf is not None and kf <= near
+            dest_far = kt is not None and kt > near
+            if origin_near and dest_far and result.reason in {
+                "far_leg_too_far",
+                "outside_far_radius",
+                "no_near_leg",
+            }:
+                score = max(score, 55)
+            else:
+                score = max(score, 32)
         record("soft_geo_kept", source=raw.source)
     if scoring == "browse" and raw.source not in {"telegram", "tg_public", "max"} and (
         from_city or to_city
