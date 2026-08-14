@@ -56,6 +56,20 @@ def test_offer_verdict():
     assert high["verdict"] == "выгодно"
 
 
+def test_waterfall_matches_expected_net():
+    """Fuel/driver baseline + empty_risk must equal EV costs (no double-count)."""
+    priced = price_outbound_leg(km=200, p_find_backhaul=0.4)
+    assert priced["ok"]
+    r = float(priced["suggested_mid_total_rub"])
+    wf_net = next(s["rub"] for s in priced["waterfall"]["steps"] if s["key"] == "net")
+    expect = net_profit(revenue=r, costs=float(priced["expected_costs_rub"]))
+    assert abs(wf_net - round(expect, 0)) <= 2
+
+    offer = evaluate_offer(offer_rub=r, km=200, p_find_backhaul=0.4)
+    offer_net = next(s["rub"] for s in offer["waterfall"]["steps"] if s["key"] == "net")
+    assert abs(offer_net - offer["expected_net_rub"]) <= 2
+
+
 def test_waterfall_and_scenarios():
     priced = price_outbound_leg(km=200, p_find_backhaul=0.4)
     assert priced["ok"]

@@ -186,8 +186,8 @@ def price_outbound_leg(
         "suggested_max_ppk": round(r_max / km, 1),
         "waterfall": waterfall(
             rate_rub=r_mid,
-            fuel_rub=fuel_exp,
-            driver_rub=driver_exp,
+            fuel_rub=fuel_one,
+            driver_rub=driver_out,
             empty_risk_rub=empty_risk,
             p=p,
         ),
@@ -304,8 +304,8 @@ def evaluate_offer(
         "in_target_band": p["target_net_min"] <= net <= p["target_net_max"],
         "waterfall": waterfall(
             rate_rub=float(offer_rub),
-            fuel_rub=float(priced["fuel_expected_rub"]),
-            driver_rub=float(priced["driver_expected_rub"]),
+            fuel_rub=float(priced["fuel_one_way_rub"]),
+            driver_rub=float(priced["driver_outbound_rub"]),
             empty_risk_rub=float(priced["empty_risk_rub"]),
             p=p,
         ),

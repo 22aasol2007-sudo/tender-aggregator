@@ -1149,10 +1149,8 @@ def parse_load(text: str) -> ParsedLoad:
         kind = "other"
     else:
         kind = "other"
-    # Cargo ads often omit keywords: route + tonnage/price ⇒ treat as shipper
-    if kind == "other" and not driver and frm and to and (price or tonnage is not None):
-        kind = "shipper"
-    if kind == "other" and not driver and frm and to and len(norm) >= 40:
+    # Cargo ads often omit keywords: any clear route ⇒ shipper (TG «Фрязино Душанбе»)
+    if kind == "other" and not driver and frm and to:
         kind = "shipper"
 
     return ParsedLoad(

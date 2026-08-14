@@ -1004,8 +1004,20 @@ $("btnScrape").addEventListener("click", async () => {
 });
 
 ["q", "from", "to"].forEach((id) => {
-  $(id).addEventListener("keydown", (e) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadList().catch(alert);
+  });
+});
+
+let _searchTimer = null;
+["q", "from", "to"].forEach((id) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => loadList().catch(() => {}), 450);
   });
 });
 
