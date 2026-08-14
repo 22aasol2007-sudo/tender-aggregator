@@ -651,26 +651,32 @@ function renderWaterfall(wf) {
     return `<div class="wf-row ${isNet ? "wf-net" : ""}">
       <span class="wf-sign">${esc(s.sign || "")}</span>
       <span class="wf-label">${esc(s.label)}</span>
-      <span class="wf-val">${fmtRub(Math.abs(s.rub))}${s.rub < 0 ? "" : ""}</span>
+      <span class="wf-val">${s.rub < 0 && s.key !== "rate" ? "−" : ""}${fmtRub(Math.abs(s.rub))}</span>
     </div>`;
   }).join("");
   return `<div class="waterfall">${rows}</div>`;
 }
 
 function fillAnalyzeFormFromData(data, extracted = {}) {
-  if ($("aFrom") && (data.from_city || extracted.from_city)) {
-    $("aFrom").value = data.from_city || extracted.from_city || "";
-  }
-  if ($("aDest") && (data.destination || extracted.to_city)) {
-    $("aDest").value = data.destination || extracted.to_city || "";
-  }
+  const junk = new Set(["загр", "выгр", "погр", "разгр", "готов", "готова"]);
+  const clean = (v) => {
+    const s = String(v || "").trim().toLowerCase();
+    return s && !junk.has(s) ? v : "";
+  };
+  const from = clean(extracted.from_city) || clean(data.from_city);
+  const dest = clean(extracted.to_city) || clean(data.destination);
+  if ($("aFrom") && from) $("aFrom").value = from;
+  if ($("aDest") && dest) $("aDest").value = dest;
   if ($("aBase") && data.base) $("aBase").value = data.base;
   if ($("aKm") && (data.route_km != null || extracted.route_km != null)) {
     $("aKm").value = Math.round(Number(data.route_km ?? extracted.route_km));
   }
   const offer = (data.pricing && data.pricing.offer && data.pricing.offer.offer_rub)
     || extracted.price_rub;
-  if ($("aOffer") && offer != null) $("aOffer").value = Math.round(Number(offer));
+  if ($("aOffer")) {
+    if (offer != null && Number(offer) >= 3000) $("aOffer").value = Math.round(Number(offer));
+    else if (extracted.price_rub == null && !(data.pricing && data.pricing.offer)) $("aOffer").value = "";
+  }
 }
 
 function renderAnalyzeResult(data, extra = {}) {

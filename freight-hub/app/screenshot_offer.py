@@ -22,26 +22,57 @@ VISION_PROMPT = """Ты разбираешь скриншот объявлени
 (ATI.SU, Перевозка24, Везёт Всем, CargoCash, PapaCargo, Roolz, Автодиспетчер, Loginet,
 Cargomart, Svezem, Monopoly, Telegram/MAX и т.п.) или мобильного приложения.
 
-Игнорируй рекламу, меню, кнопки «войти», иконки. Возьми данные ИМЕННО выбранной карточки/объявления.
+Игнорируй рекламу, меню, кнопки «войти»/«показать контакты», иконки.
+Возьми данные ИМЕННО выбранной карточки/объявления.
 
 Верни ТОЛЬКО JSON без markdown:
 {
   "board": "ati|perevozka24|vezetvsem|cargocash|papacargo|roolz|avtodispetcher|cargomart|svezem|monopoly|telegram|max|other|null",
-  "from_city": "город погрузки или null",
-  "to_city": "город выгрузки или null",
+  "from_city": "населённый пункт погрузки или null",
+  "to_city": "населённый пункт выгрузки или null",
   "price_rub": число ставки в рублях целиком или null,
   "price_per_km": число ₽/км или null,
   "tonnage": тонны числом или null,
   "body": "reefer|isotherm|tent|board|box|null",
-  "route_km": километраж числом или null,
+  "route_km": километраж плеча числом или null,
   "raw_text": "краткий текст с экрана"
 }
-Города — коротко по-русски (Москва, Тула, Санкт-Петербург, Казань…).
-Если в адресе область/район — бери населённый пункт погрузки/выгрузки.
-Ставка «от 45 000» / «45000 руб» → price_rub=45000.
-Только «120 ₽/км» → price_per_km=120.
-Реф/рефрижератор → body=reefer; тент → tent; изотерм → isotherm; борт → board; фургон → box.
+
+Правила:
+- Города — коротко по-русски. Из ATI бери пункты в колонке «Маршрут» (напр. Радумля, Петро-Славянка), НЕ область и НЕ подписи «загр/выгр/погр/разгр».
+- НЕ путай номер заявки (#NKB…, #ATI…, NKB21947) со ставкой. Если ставки/цены на скрине нет — price_rub=null.
+- Километраж маршрута (зелёный/основной км плеча) → route_km; не бери «км от Москва» как длину рейса, если есть явный км направления.
+- Ставка «от 45 000» / «45000 руб» → price_rub=45000. Только «120 ₽/км» → price_per_km=120.
+- Реф/рефрижератор → body=reefer; тент → tent; изотерм → isotherm; борт → board; фургон → box.
 """
+
+
+_JUNK_CITY_TOKENS = {
+    "загр",
+    "выгр",
+    "погр",
+    "разгр",
+    "задн",
+    "задняя",
+    "боков",
+    "боковая",
+    "верхн",
+    "отд",
+    "машина",
+    "медкнижка",
+    "палеты",
+    "палет",
+    "готов",
+    "готова",
+    "круглосуточно",
+    "направл",
+    "транспорт",
+    "маршрут",
+    "контакты",
+    "показать",
+    "rus",
+    "nkb",
+}
 
 
 def vision_configured() -> dict[str, bool]:
@@ -68,9 +99,38 @@ def _norm_city(val: Any) -> str | None:
     s = str(val).strip()
     if not s or s.lower() in {"null", "none", "-"}:
         return None
-    # Drop region tails: "Тула, Тульская обл."
+    # Drop region tails / type suffixes: "Радумля д.", "Тула, Тульская обл."
     s = re.split(r"[,;(]", s, maxsplit=1)[0].strip()
-    return _canon_city(s) or s.lower() or None
+    s = re.sub(r"\s+[дпсху]\.\s*$", "", s, flags=re.I).strip()
+    low = s.lower().replace("ё", "е")
+    if low in _JUNK_CITY_TOKENS or any(low.startswith(j) for j in _JUNK_CITY_TOKENS if len(j) >= 4):
+        return None
+    if low in {"загр", "выгр", "погр", "разгр"}:
+        return None
+    return _canon_city(s) or (low if len(low) >= 3 else None)
+
+
+def _sane_price_rub(price: float | None, *, raw: str = "", route_km: float | None = None) -> float | None:
+    """Drop order ids / distances mistaken for client rate."""
+    if price is None:
+        return None
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return None
+    if p < 3000 or p > 15_000_000:
+        return None
+    raw_l = (raw or "").lower().replace("ё", "е")
+    # #NKB21947 / NKB21947 style refs
+    dig = str(int(p)) if p == int(p) else str(p)
+    if re.search(rf"(?:#?\s*nkb|#\s*[a-z]{{2,10}})\s*{re.escape(dig)}", raw_l):
+        return None
+    if re.search(rf"#\s*{re.escape(dig)}\b", raw_l):
+        return None
+    # Bare distance numbers often 3–4 digits + км
+    if route_km and abs(p - float(route_km)) < 1:
+        return None
+    return p
 
 
 def _norm_body(val: Any) -> str | None:
@@ -100,39 +160,61 @@ def fields_from_text(text: str) -> dict[str, Any]:
     parsed = parse_load(raw) if raw else None
     price = None
     ppk = None
-    # Common board formats: "45 000 ₽", "45000 руб", "120 ₽/км", "ставка: 80тр"
+    raw_l = raw.lower().replace("ё", "е")
+    # Prefer explicit rate markers; skip #NKB / order ids
     for m in re.finditer(
-        r"(?:ставк[аие]\s*[:=]?\s*)?(\d[\d\s]{2,8})\s*(?:₽|руб\.?|р\.|тр\b|тыс)?"
+        r"(?:ставк[аие]\s*[:=]?\s*|цена\s*[:=]?\s*|оплат[аие]\s*[:=]?\s*)?"
+        r"(\d[\d\s]{2,8})\s*(?:₽|руб\.?|р\.|тр\b|тыс)?"
         r"(?:\s*/\s*км|\s*за\s*км)?",
-        raw.lower().replace("ё", "е"),
+        raw_l,
         flags=re.I,
     ):
         chunk = m.group(0)
         num = m.group(1)
+        prefix = raw_l[max(0, m.start() - 10) : m.start()]
+        if "#" in prefix or "nkb" in prefix:
+            continue
+        if re.search(r"[a-zа-я]{2,}\s*$", prefix) and not re.search(
+            r"(?:ставк|цена|оплат|руб|₽)\s*$", prefix
+        ):
+            # e.g. NKB21947 or mid-word digits without currency
+            if "₽" not in chunk and "руб" not in chunk and "ставк" not in chunk and "тыс" not in chunk and "тр" not in chunk:
+                continue
         if "/км" in chunk or "за км" in chunk:
             try:
                 ppk = float(re.sub(r"[^\d.,]", "", num).replace(",", "."))
             except ValueError:
                 pass
         else:
-            price = parse_price_rub(num + (" тыс руб" if "тыс" in chunk or "тр" in chunk else " руб")) or price
+            if "₽" in chunk or "руб" in chunk or "ставк" in chunk or "тыс" in chunk or "тр" in chunk or "цена" in chunk:
+                price = parse_price_rub(num + (" тыс руб" if "тыс" in chunk or "тр" in chunk else " руб")) or price
 
     tonnage = parsed.tonnage if parsed else None
     if tonnage is None:
-        m = re.search(r"(\d+[.,]?\d*)\s*(?:т\b|тонн)", raw.lower())
+        m = re.search(r"(\d+[.,]?\d*)\s*(?:т\b|тонн)", raw_l)
         if m:
             try:
                 tonnage = float(m.group(1).replace(",", "."))
             except ValueError:
                 pass
+        # ATI "20 / 82" weight/volume
+        m = re.search(r"\b(\d{1,2})\s*/\s*\d{2,3}\b", raw_l)
+        if m and tonnage is None:
+            try:
+                tonnage = float(m.group(1))
+            except ValueError:
+                pass
 
     route_km = None
-    m = re.search(r"(\d{2,5})\s*км", raw.lower())
-    if m:
+    # Prefer explicit direction km; avoid "51 км от Москва"
+    for m in re.finditer(r"(\d{2,5})\s*км(?!\s*от)", raw_l):
         try:
-            route_km = float(m.group(1))
+            cand = float(m.group(1))
         except ValueError:
-            pass
+            continue
+        if 30 <= cand <= 8000:
+            route_km = cand
+            break
 
     from_city = _norm_city(parsed.from_city if parsed else None)
     to_city = _norm_city(parsed.to_city if parsed else None)
@@ -160,11 +242,24 @@ def fields_from_text(text: str) -> dict[str, Any]:
         if arrow_from and arrow_to:
             from_city, to_city = arrow_from, arrow_to
 
+    # ATI-like: "Радумля д." ... later "Петро-Славянка п."
+    if not from_city or not to_city:
+        places = re.findall(
+            r"\b([А-ЯЁ][а-яё]{2,}(?:-[А-ЯЁа-яё]+)?)\s*[дпсху]\.",
+            raw,
+        )
+        cleaned = [_norm_city(p) for p in places]
+        cleaned = [c for c in cleaned if c]
+        if len(cleaned) >= 2:
+            from_city = from_city or cleaned[0]
+            to_city = to_city or cleaned[-1]
+
     body = _norm_body(parsed.body if parsed else None) or _norm_body(raw)
     if parsed and parsed.price and price is None:
         price = parse_price_rub(parsed.price)
 
     board = _detect_board(raw)
+    price = _sane_price_rub(float(price) if price is not None else None, raw=raw, route_km=route_km)
 
     return {
         "board": board,
@@ -230,6 +325,11 @@ def merge_fields(*parts: dict[str, Any]) -> dict[str, Any]:
     if not out.get("board"):
         out["board"] = _detect_board(out.get("raw_text") or "\n".join(texts))
     out["raw_text"] = "\n".join(texts)[:2000]
+    out["price_rub"] = _sane_price_rub(
+        float(out["price_rub"]) if out.get("price_rub") is not None else None,
+        raw=out["raw_text"],
+        route_km=float(out["route_km"]) if out.get("route_km") is not None else None,
+    )
     return out
 
 
@@ -310,15 +410,17 @@ async def vision_gemini(image_bytes: bytes, mime: str) -> dict[str, Any]:
     except (KeyError, IndexError, TypeError):
         return {}
     parsed = _parse_json_loose(text)
+    route_km = _num(parsed.get("route_km"))
+    price = _sane_price_rub(_num(parsed.get("price_rub")), raw=text, route_km=route_km)
     return {
         "board": parsed.get("board") or _detect_board(str(parsed.get("raw_text") or text)),
         "from_city": _norm_city(parsed.get("from_city")),
         "to_city": _norm_city(parsed.get("to_city")),
-        "price_rub": _num(parsed.get("price_rub")),
+        "price_rub": price,
         "price_per_km": _num(parsed.get("price_per_km")),
         "tonnage": _num(parsed.get("tonnage")),
         "body": _norm_body(parsed.get("body")),
-        "route_km": _num(parsed.get("route_km")),
+        "route_km": route_km,
         "raw_text": str(parsed.get("raw_text") or text)[:2000],
     }
 
@@ -364,15 +466,17 @@ async def vision_openai(image_bytes: bytes, mime: str) -> dict[str, Any]:
     except (KeyError, IndexError, TypeError):
         return {}
     parsed = _parse_json_loose(text if isinstance(text, str) else str(text))
+    route_km = _num(parsed.get("route_km"))
+    price = _sane_price_rub(_num(parsed.get("price_rub")), raw=str(text), route_km=route_km)
     return {
         "board": parsed.get("board") or _detect_board(str(parsed.get("raw_text") or text)),
         "from_city": _norm_city(parsed.get("from_city")),
         "to_city": _norm_city(parsed.get("to_city")),
-        "price_rub": _num(parsed.get("price_rub")),
+        "price_rub": price,
         "price_per_km": _num(parsed.get("price_per_km")),
         "tonnage": _num(parsed.get("tonnage")),
         "body": _norm_body(parsed.get("body")),
-        "route_km": _num(parsed.get("route_km")),
+        "route_km": route_km,
         "raw_text": str(parsed.get("raw_text") or text)[:2000],
     }
 
