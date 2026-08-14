@@ -87,32 +87,32 @@ async def lifespan(_: FastAPI):
             log.info("backfilled route_km for %s loads", n)
     except Exception as exc:
         log.warning("route_km backfill failed: %s", exc)
-    # Promote route-bearing messenger "other" → shipper (short TG ads)
-    try:
-        from freight_core.parse import parse_load
+    # Promote route-bearing messenger "other" → shipper (short TG ads) — background
+    async def _kind_upgrade() -> None:
+        try:
+            from freight_core.parse import parse_load
 
-        assert db._db is not None
-        cur = await db._db.execute(
-            "SELECT id, body, kind FROM loads "
-            "WHERE IFNULL(kind,'other') IN ('other','') "
-            "AND source IN ('telegram','max','tg_public') "
-            "ORDER BY scraped_at DESC LIMIT 3000"
-        )
-        rows = await cur.fetchall()
-        up = 0
-        for r in rows:
-            p = parse_load(r["body"] or "")
-            if p.kind == "shipper" and (r["kind"] or "other") != "shipper":
-                await db._db.execute("UPDATE loads SET kind=? WHERE id=?", ("shipper", r["id"]))
-                up += 1
-            elif p.from_city and p.to_city and (r["kind"] or "other") in {"other", ""}:
-                await db._db.execute("UPDATE loads SET kind=? WHERE id=?", ("shipper", r["id"]))
-                up += 1
-        if up:
-            await db._db.commit()
-            log.info("startup kind upgrade: %s rows → shipper", up)
-    except Exception as exc:
-        log.warning("startup kind upgrade failed: %s", exc)
+            assert db._db is not None
+            cur = await db._db.execute(
+                "SELECT id, body, kind FROM loads "
+                "WHERE IFNULL(kind,'other') IN ('other','') "
+                "AND source IN ('telegram','max','tg_public') "
+                "ORDER BY scraped_at DESC LIMIT 3000"
+            )
+            rows = await cur.fetchall()
+            up = 0
+            for r in rows:
+                p = parse_load(r["body"] or "")
+                if p.from_city and p.to_city and (r["kind"] or "other") in {"other", ""}:
+                    await db._db.execute("UPDATE loads SET kind=? WHERE id=?", ("shipper", r["id"]))
+                    up += 1
+            if up:
+                await db._db.commit()
+                log.info("startup kind upgrade: %s rows → shipper", up)
+        except Exception as exc:
+            log.warning("startup kind upgrade failed: %s", exc)
+
+    asyncio.create_task(_kind_upgrade())
     worker.start()
 
     # Listeners start independently — one failure must not block the other
