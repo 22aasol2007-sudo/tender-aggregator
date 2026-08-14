@@ -192,18 +192,23 @@ def why_rank(
     near_km: float,
     source: str,
     scraped_at: float | None,
+    kind: str | None = None,
 ) -> list[str]:
     out: list[str] = []
     if score >= 85:
         out.append("очень высокий скор")
     elif score >= 70:
         out.append("высокий скор")
+    elif score < 40:
+        out.append("слабый сигнал / вне коридора")
     if km_from is not None and km_from <= near_km:
         out.append("погрузка у базы")
     elif km_to is not None and km_to <= near_km:
         out.append("выгрузка у базы")
     if source in {"telegram", "max"}:
         out.append("из мессенджера")
+    if kind == "other":
+        out.append("разбор слабый")
     if scraped_at and time.time() - float(scraped_at) <= 300:
         out.append("только что")
     return out[:3]
@@ -236,11 +241,14 @@ async def _persist(
 
     score = result.score
     if result.reason in HARD_GEO_SKIP and messenger:
-        # Soft floor so weakly-geo posts still appear when user lowers score / opens channel tab
-        if from_city or to_city:
-            score = max(score, 42)
+        # Store for diagnostics, but keep score below default UI floor (40)
+        # so soft-geo flood doesn't drown the feed.
+        if not (from_city and to_city):
+            return "skipped"
+        if result.reason in {"geo_unknown", "incomplete_route", "no_route"}:
+            score = max(score, 28)
         else:
-            score = max(score, 30)
+            score = max(score, 32)
     if scoring == "browse" and raw.source not in {"telegram", "tg_public", "max"} and (
         from_city or to_city
     ):

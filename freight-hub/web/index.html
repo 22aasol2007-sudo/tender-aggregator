@@ -6,6 +6,9 @@
   <meta name="hub-write-token" content="{{HUB_WRITE_TOKEN}}" />
   <meta name="write-token-required" content="{{WRITE_TOKEN_REQUIRED}}" />
   <title>Freight Hub</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <meta name="theme-color" content="#0a100e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -62,7 +65,7 @@
         <button type="button" class="chip" data-preset="box-city">Фургон город</button>
       </div>
     </div>
-    <div class="profile">
+    <div class="profile profile-core">
       <input id="pBase" type="text" placeholder="База (город)" />
       <select id="pBody">
         <option value="">Кузов</option>
@@ -76,15 +79,20 @@
       <input id="pRadius" type="number" step="10" placeholder="Близко, км" title="Одна точка ≤ этого радиуса от базы" />
       <input id="pRadiusFar" type="number" step="50" placeholder="Дальняя, км" title="Вторая точка ≤ этого радиуса" />
       <label class="check"><input id="pBackhaul" type="checkbox" /> Обратка</label>
-      <input id="pDiesel" type="number" step="1" placeholder="Дизель ₽/л" title="Цена дизеля" />
-      <input id="pFuelL" type="number" step="1" placeholder="л/100 км" title="Расход топлива" />
-      <input id="pDriver" type="number" step="500" placeholder="Водитель ₽/сут" />
-      <input id="pTax" type="number" step="1" min="0" max="90" placeholder="Налог %" title="Налог % от ставки клиенту" />
-      <input id="pAmort" type="number" step="1" min="0" max="40" placeholder="Аморт. %" />
-      <input id="pTargetMin" type="number" step="1000" placeholder="Цель чистыми от" />
-      <input id="pTargetMax" type="number" step="1000" placeholder="Цель чистыми до" />
       <button id="btnSaveProfile" class="btn ghost" type="button">Сохранить</button>
     </div>
+    <details class="profile-econ">
+      <summary>Параметры расчёта</summary>
+      <div class="profile">
+        <input id="pDiesel" type="number" step="1" placeholder="Дизель ₽/л" title="Цена дизеля" />
+        <input id="pFuelL" type="number" step="1" placeholder="л/100 км" title="Расход топлива" />
+        <input id="pDriver" type="number" step="500" placeholder="Водитель ₽/сут" />
+        <input id="pTax" type="number" step="1" min="0" max="90" placeholder="Налог %" title="Налог % от ставки клиенту" />
+        <input id="pAmort" type="number" step="1" min="0" max="40" placeholder="Аморт. %" />
+        <input id="pTargetMin" type="number" step="1000" placeholder="Цель чистыми от" />
+        <input id="pTargetMax" type="number" step="1000" placeholder="Цель чистыми до" />
+      </div>
+    </details>
   </section>
 
   <section class="zone">
@@ -129,18 +137,26 @@
     <div id="analyzeOut" class="analyze-out" hidden></div>
   </section>
 
-  <section id="viewFeed" class="zone">
-    <div class="zone-head">
+  <section id="viewFeed" class="zone feed-filters-zone">
+    <div class="zone-head feed-head-desktop">
       <h2>Фильтры поиска</h2>
       <button id="btnMore" class="linkish" type="button">Ещё параметры</button>
     </div>
-    <div class="tabs" role="tablist" aria-label="Источник">
+    <div class="tabs channel-tabs" role="tablist" aria-label="Источник">
       <button type="button" class="tab active" data-channel="all" role="tab" aria-selected="true">Все</button>
       <button type="button" class="tab tab-tg" data-channel="telegram" role="tab" aria-selected="false">Telegram</button>
       <button type="button" class="tab tab-max" data-channel="max" role="tab" aria-selected="false">MAX</button>
       <button type="button" class="tab tab-sites" data-channel="sites" role="tab" aria-selected="false">Агрегаторы</button>
     </div>
 
+    <div id="filtersSheet" class="filters-sheet" aria-hidden="true">
+      <div class="filters-sheet-backdrop" id="filtersBackdrop"></div>
+      <div class="filters-sheet-panel" role="dialog" aria-label="Фильтры">
+        <div class="filters-sheet-grab">
+          <span></span>
+          <strong>Фильтры</strong>
+          <button type="button" class="linkish" id="btnCloseFilters">Готово</button>
+        </div>
     <div class="ati-filters">
       <div class="ati-block">
         <div class="ati-label">Маршрут</div>
@@ -246,9 +262,14 @@
     </div>
     <div id="moreFilters" class="more-filters" hidden>
       <label class="check"><input id="reefer" type="checkbox" /> Только реф/изотерм</label>
-      <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="40" /></label>
+      <label class="score">Скор ≥ <input id="minScore" type="number" min="0" max="100" value="45" /></label>
+      <label class="check"><input id="geoCorridor" type="checkbox" checked /> Коридор у базы</label>
+    </div>
+      </div>
     </div>
   </section>
+
+  <button type="button" id="btnOpenFilters" class="fab-filters" hidden>Фильтры</button>
 
   <main id="feedMain">
     <div id="meta" class="meta"></div>
@@ -256,7 +277,7 @@
   </main>
 
   <footer>
-    <p>Публичный вход: этот сайт. TG-сессия только в облаке — локальный hub с той же сессией не запускайте.</p>
+    <p>Публичный вход: <a href="https://freight-edge.vercel.app">freight-edge.vercel.app</a> (прокси к API). Прямой Railway снаружи может быть недоступен.</p>
   </footer>
 
   <dialog id="dlg">

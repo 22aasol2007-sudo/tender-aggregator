@@ -678,11 +678,72 @@ class HubDB:
                 prices.append(float(amt))
         med_ppk = float(statistics.median(ppks)) if ppks else None
         med_price = float(statistics.median(prices)) if prices else None
+
+        def _pct(vals: list[float], p: float) -> float | None:
+            if not vals:
+                return None
+            if len(vals) == 1:
+                return float(vals[0])
+            s = sorted(vals)
+            if len(s) < 4:
+                return float(s[0] if p <= 25 else s[-1] if p >= 75 else statistics.median(s))
+            try:
+                qs = statistics.quantiles(s, n=4, method="inclusive")
+                return float(qs[0] if p <= 25 else qs[2])
+            except Exception:
+                return float(statistics.median(s))
+
         return {
             "count": len(rows),
+            "n_priced": len(prices),
+            "n_ppk": len(ppks),
             "median_ppk": round(med_ppk, 1) if med_ppk is not None else None,
             "median_price": round(med_price, 0) if med_price is not None else None,
+            "p25_price": round(_pct(prices, 25), 0) if prices else None,
+            "p75_price": round(_pct(prices, 75), 0) if prices else None,
+            "p25_ppk": round(_pct(ppks, 25), 1) if ppks else None,
+            "p75_ppk": round(_pct(ppks, 75), 1) if ppks else None,
         }
+
+    async def count_outside_corridor(
+        self,
+        *,
+        sources: list[str] | None = None,
+        source: str | None = None,
+        near_km: float = 150,
+        far_km: float = 1500,
+        min_score: int = 0,
+        max_age_sec: float | None = None,
+    ) -> int:
+        """How many loads exist for channel but fail the geo corridor filter."""
+        from app import config as _cfg
+
+        age = max_age_sec if max_age_sec is not None else float(_cfg.MAX_LOAD_AGE_SEC)
+        sql = [
+            "SELECT COUNT(*) AS c FROM loads WHERE score >= ?",
+            "AND created_at >= ? AND created_at <= ?",
+            "AND NOT ("
+            "km_from IS NOT NULL AND km_to IS NOT NULL "
+            "AND MIN(km_from, km_to) <= ? AND MAX(km_from, km_to) <= ?"
+            ")",
+        ]
+        args: list[Any] = [
+            min_score,
+            time.time() - age,
+            time.time() + 2 * 3600,
+            near_km,
+            far_km,
+        ]
+        if sources:
+            placeholders = ",".join("?" for _ in sources)
+            sql.append(f"AND source IN ({placeholders})")
+            args.extend(list(sources))
+        elif source:
+            sql.append("AND source = ?")
+            args.append(source)
+        cur = await self.db.execute(" ".join(sql), args)
+        row = await cur.fetchone()
+        return int(row["c"] if row else 0)
 
     async def backhaul_to_base_stats(
         self,

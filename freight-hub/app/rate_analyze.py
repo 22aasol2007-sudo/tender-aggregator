@@ -209,23 +209,60 @@ class RateAnalyzer:
             p=params,
         )
 
-        market_median_total = outbound.get("median_price")
-        if market_median_total is None and out_ppk and km > 0:
-            market_median_total = float(out_ppk) * km
+        # Market band from real feed only — never invent DEFAULT_LOADED_PPK as "market"
         market = None
-        if suggested_min_total is not None and market_median_total:
-            delta = float(suggested_min_total) - float(market_median_total)
+        n_priced = int(outbound.get("n_priced") or 0)
+        med_price = outbound.get("median_price")
+        p25 = outbound.get("p25_price")
+        p75 = outbound.get("p75_price")
+        real_ppk = outbound.get("median_ppk")  # may be None
+        if suggested_min_total is not None and med_price and n_priced >= 3:
+            delta = float(suggested_min_total) - float(med_price)
+            mid = float(med_price)
+            lo = float(p25 or med_price)
+            hi = float(p75 or med_price)
+            your = float(suggested_min_total)
+            span = max(hi - lo, mid * 0.2, 1.0)
+            # position 0..100 for scale (clamp)
+            def _pos(v: float) -> float:
+                return max(0.0, min(100.0, ((v - lo) / span) * 100.0))
+
+            if your > hi * 1.08:
+                vs = "above_market"
+            elif your < lo * 0.92:
+                vs = "below_market"
+            else:
+                vs = "in_band"
             market = {
-                "median_total_rub": round(float(market_median_total), 0),
-                "median_ppk": round(float(out_ppk), 1) if out_ppk else None,
-                "your_min_rub": round(float(suggested_min_total), 0),
+                "ok": True,
+                "n": n_priced,
+                "window_days": 7,
+                "scope": "exact",
+                "p25_rub": round(lo, 0),
+                "median_total_rub": round(mid, 0),
+                "p75_rub": round(hi, 0),
+                "median_ppk": round(float(real_ppk), 1) if real_ppk else None,
+                "your_min_rub": round(your, 0),
                 "delta_rub": round(delta, 0),
-                "vs": (
-                    "above_market"
-                    if delta > float(market_median_total) * 0.08
-                    else ("below_market" if delta < -float(market_median_total) * 0.08 else "near")
-                ),
+                "vs": vs,
+                "scale": {
+                    "p25_pct": round(_pos(lo), 1),
+                    "median_pct": round(_pos(mid), 1),
+                    "p75_pct": round(_pos(hi), 1),
+                    "your_pct": round(_pos(your), 1),
+                },
             }
+        elif suggested_min_total is not None:
+            market = {
+                "ok": False,
+                "n": n_priced,
+                "window_days": 7,
+                "your_min_rub": round(float(suggested_min_total), 0),
+                "reason": "мало сделок по плечу для рыночной шкалы",
+            }
+
+        # keep pricing.market_outbound_ppk as soft fallback for economics only
+        out_ppk = real_ppk or DEFAULT_LOADED_PPK
 
         waterfall = None
         if offer_eval and offer_eval.get("waterfall"):

@@ -205,25 +205,39 @@ function render(items, meta) {
   renderMuteBar(meta && meta.muted_directions);
 
   if (!items.length) {
+    const outside = meta && meta.outside_corridor;
     const reasons = (meta && meta.filter_reasons) || [];
-    const tip = reasons.length
-      ? reasons.join(" · ")
-      : "Снимите узкие фильтры или обновите источники.";
+    const tip = outside && outside.message
+      ? outside.message
+      : (reasons.length ? reasons.join(" · ") : "Снимите узкие фильтры или обновите источники.");
     const tgCta = lastTgDown
       ? `<a class="btn" href="/tg-login">Войти в Telegram</a>`
+      : "";
+    const outsideBtn = outside && outside.count
+      ? `<button type="button" class="btn" id="emptyOutside">Показать вне радиуса (${outside.count})</button>`
       : "";
     list.innerHTML = `<div class="empty">
       <div>Ничего не найдено</div>
       <div style="margin-top:8px">${esc(tip)}</div>
       <div class="empty-actions">
+        ${outsideBtn}
         ${tgCta}
         <button type="button" class="btn ghost" id="emptyReset">Сбросить фильтры</button>
       </div>
     </div>`;
     const btn = $("emptyReset");
     if (btn) btn.onclick = () => { resetFilters(); loadList().catch(alert); };
+    const outBtn = $("emptyOutside");
+    if (outBtn) {
+      outBtn.onclick = () => {
+        if ($("geoCorridor")) $("geoCorridor").checked = false;
+        loadList().catch(alert);
+      };
+    }
     return;
   }
+
+  maybeNotifyHot(items);
 
   const groups = { hot: [], today: [], rest: [] };
   for (const it of items) groups[groupOf(it)].push(it);
@@ -445,6 +459,7 @@ function currentParams() {
   params.set("min_score", minScore);
   params.set("sort", $("sort").value || "date");
   params.set("shipper_only", $("shipperOnly").checked ? "true" : "false");
+  params.set("geo", ($("geoCorridor") ? $("geoCorridor").checked : true) ? "true" : "false");
   if ($("reefer").checked) params.set("reefer", "true");
   if ($("hotOnly").checked) params.set("hot", "true");
   params.set("limit", "300");
@@ -480,7 +495,8 @@ function resetFilters() {
   $("shipperOnly").checked = true;
   $("reefer").checked = false;
   $("hotOnly").checked = false;
-  $("minScore").value = "40";
+  $("minScore").value = "45";
+  if ($("geoCorridor")) $("geoCorridor").checked = true;
   if ($("exactFrom")) $("exactFrom").checked = false;
   if ($("exactTo")) $("exactTo").checked = false;
   ["tonnageMin", "tonnageMax", "volumeMin", "volumeMax", "ppkMin", "priceMin", "routeKmMin", "routeKmMax"].forEach((id) => {
@@ -683,11 +699,7 @@ function renderAnalyzeResult(data, extra = {}) {
   const scBh = scenarios.with_backhaul || {};
   const scEmpty = scenarios.empty_return || {};
 
-  const marketHtml = market.median_total_rub != null
-    ? `<div class="market-line">Рынок (медиана ленты): <b>${fmtRub(market.median_total_rub)}</b>
-        · ваша мин. <b>${fmtRub(market.your_min_rub)}</b>
-        · Δ ${fmtRub(market.delta_rub)}</div>`
-    : "";
+  const marketHtml = renderMarketScale(market);
 
   fillAnalyzeFormFromData(data, extra.extracted || {});
 
@@ -953,8 +965,106 @@ $("btnScrape").addEventListener("click", async () => {
   });
 });
 
+function renderMarketScale(market) {
+  if (!market) return "";
+  if (!market.ok) {
+    return `<div class="market-scale weak">
+      <div class="ati-label">Рынок по плечу</div>
+      <div class="muted">${esc(market.reason || "мало данных")} · n=${market.n ?? 0}</div>
+      ${market.your_min_rub != null ? `<div class="muted">ваша мин. <b>${fmtRub(market.your_min_rub)}</b></div>` : ""}
+    </div>`;
+  }
+  const sc = market.scale || {};
+  const vsLabel = market.vs === "in_band" ? "в рынке" : (market.vs === "above_market" ? "выше рынка" : "ниже рынка");
+  return `<div class="market-scale ${esc(market.vs || "")}">
+    <div class="ati-label">Рынок по плечу · n=${market.n} · ${market.window_days || 7} дн</div>
+    <div class="ms-track" aria-hidden="true">
+      <i class="ms-band" style="left:${sc.p25_pct || 0}%; width:${Math.max(2, (sc.p75_pct || 100) - (sc.p25_pct || 0))}%"></i>
+      <i class="ms-mark med" style="left:${sc.median_pct || 50}%" title="медиана"></i>
+      <i class="ms-mark you" style="left:${sc.your_pct || 50}%" title="ваша мин."></i>
+    </div>
+    <div class="ms-legend">
+      <span>p25 ${fmtRub(market.p25_rub)}</span>
+      <span>мед. ${fmtRub(market.median_total_rub)}</span>
+      <span>p75 ${fmtRub(market.p75_rub)}</span>
+    </div>
+    <div class="market-line">ваша мин. <b>${fmtRub(market.your_min_rub)}</b> · Δ ${fmtRub(market.delta_rub)} · ${esc(vsLabel)}</div>
+  </div>`;
+}
+
+let seenHotIds = new Set();
+let hotNotifyReady = false;
+
+function maybeNotifyHot(items) {
+  const hot = (items || []).filter((it) => groupOf(it) === "hot");
+  if (!hot.length) return;
+  const fresh = hot.filter((it) => !seenHotIds.has(String(it.id || it.external_id)));
+  hot.forEach((it) => seenHotIds.add(String(it.id || it.external_id)));
+  if (seenHotIds.size > 400) {
+    seenHotIds = new Set([...seenHotIds].slice(-200));
+  }
+  if (!fresh.length || !hotNotifyReady) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const it = fresh[0];
+  try {
+    new Notification("Горячая заявка", {
+      body: routeText(it),
+      tag: `hot-${it.id || it.external_id}`,
+    });
+  } catch (_) {}
+}
+
+function openFiltersSheet() {
+  const sheet = $("filtersSheet");
+  if (!sheet) return;
+  sheet.classList.add("open");
+  sheet.setAttribute("aria-hidden", "false");
+  document.body.classList.add("sheet-open");
+}
+
+function closeFiltersSheet() {
+  const sheet = $("filtersSheet");
+  if (!sheet) return;
+  sheet.classList.remove("open");
+  sheet.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("sheet-open");
+}
+
+function wireFiltersSheet() {
+  const openBtn = $("btnOpenFilters");
+  const closeBtn = $("btnCloseFilters");
+  const backdrop = $("filtersBackdrop");
+  if (openBtn) openBtn.addEventListener("click", openFiltersSheet);
+  if (closeBtn) closeBtn.addEventListener("click", () => {
+    closeFiltersSheet();
+    loadList().catch(alert);
+  });
+  if (backdrop) backdrop.addEventListener("click", closeFiltersSheet);
+  const apply = $("btnApply");
+  if (apply) {
+    apply.addEventListener("click", () => closeFiltersSheet());
+  }
+}
+
+function registerPwa() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    // Ask once after first interaction
+    const ask = () => {
+      Notification.requestPermission().then((p) => { hotNotifyReady = p === "granted"; });
+      window.removeEventListener("click", ask);
+    };
+    window.addEventListener("click", ask, { once: true });
+  } else {
+    hotNotifyReady = typeof Notification !== "undefined" && Notification.permission === "granted";
+  }
+}
+
 (async function boot() {
   writeToken();
+  wireFiltersSheet();
+  registerPwa();
   const closeBtn = $("parseSummaryClose");
   if (closeBtn) {
     closeBtn.addEventListener("click", () => {

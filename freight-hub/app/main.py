@@ -352,10 +352,11 @@ async def health() -> dict[str, Any]:
         else:
             hints.append(f"MAX: {note}")
 
-    # Silent messenger channels
-    for src, label, alive in (
-        ("telegram", "Telegram", tg_alive),
-        ("max", "MAX", mx_alive),
+    # Silent messenger channels — listening but no adds → warn light
+    drought_sec = 3 * 3600
+    for src, label, alive, status_key in (
+        ("telegram", "Telegram", tg_alive, "tg"),
+        ("max", "MAX", mx_alive, "max"),
     ):
         if not alive:
             continue
@@ -363,23 +364,28 @@ async def health() -> dict[str, Any]:
             last = float((await db.get_setting(f"last_ingest_{src}")) or 0)
         except Exception:
             last = 0.0
-        if last and now - last > 3 * 3600:
+        if last and now - last > drought_sec:
             hours = int((now - last) / 3600)
             hints.append(f"{label}: нет новых заявок уже {hours} ч")
+            if status_key == "tg" and tg_status == "on":
+                tg_status = "warn"
+            if status_key == "max" and max_status == "on":
+                max_status = "warn"
 
     if st["total"] < 30:
         hints.append("Мало заявок в ленте — обновите источники.")
 
+    # Freshness clock = last successful add / scrape, NOT listener heartbeat
     latest_ts = 0.0
     for key in ("telegram", "max"):
         try:
             latest_ts = max(latest_ts, float((await db.get_setting(f"last_ingest_{key}")) or 0))
         except Exception:
             pass
-    for src_key in ("updated_at",):
+    for run in (st.get("recent_runs") or [])[:8]:
         try:
-            latest_ts = max(latest_ts, float((tg_h or {}).get(src_key) or 0))
-            latest_ts = max(latest_ts, float((mx_h or {}).get(src_key) or 0))
+            if run.get("ok") and (run.get("added") or run.get("updated")):
+                latest_ts = max(latest_ts, float(run.get("finished_at") or 0))
         except Exception:
             pass
 
@@ -462,6 +468,7 @@ async def health() -> dict[str, Any]:
         "zero_add_streaks": zero_streaks if isinstance(zero_streaks, dict) else {},
         "write_token_required": bool(config.HUB_WRITE_TOKEN),
         "public_url": "https://freight-edge.vercel.app",
+        "api_via": "vercel_proxy",
         "optimizations": {
             "parallel_scrape": True,
             "per_source_intervals": True,
@@ -732,8 +739,10 @@ async def loads(
             near_km=near,
             source=str(row.get("source") or ""),
             scraped_at=row.get("scraped_at"),
+            kind=str(row.get("kind") or "") or None,
         )
     filter_reasons: list[str] = []
+    outside_corridor: dict[str, Any] | None = None
     channel_labels = {"telegram": "Telegram", "max": "MAX", "sites": "Агрегаторы", "all": "Все"}
     if not rows:
         if channel_key in channel_labels and channel_key != "all":
@@ -762,6 +771,27 @@ async def loads(
             filter_reasons.append("тип загрузки")
         if geo:
             filter_reasons.append(f"коридор {int(near)}/{int(far)} км от базы «{base_city}»")
+            try:
+                n_out = await db.count_outside_corridor(
+                    sources=group_sources,
+                    source=source if not group_sources else None,
+                    near_km=near,
+                    far_km=far,
+                    min_score=min_score,
+                )
+            except Exception:
+                n_out = 0
+            if n_out > 0:
+                label = channel_labels.get(channel_key, "Лента")
+                outside_corridor = {
+                    "count": n_out,
+                    "label": label,
+                    "near_km": near,
+                    "far_km": far,
+                    "base": base_city,
+                    "message": f"{label}: {n_out} постов вне коридора {int(near)}/{int(far)} км",
+                }
+                filter_reasons = [outside_corridor["message"]]
         if not filter_reasons:
             filter_reasons.append("нет свежих заявок — нажмите «Обновить»")
     if sort == "ppk":
@@ -783,6 +813,8 @@ async def loads(
         "items": rows,
         "count": len(rows),
         "filter_reasons": filter_reasons,
+        "outside_corridor": outside_corridor,
+        "geo": geo,
         "rank_explain": rank_explain,
         "near_km": near,
         "far_km": far,
