@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -195,8 +196,6 @@ async def lifespan(_: FastAPI):
                         await _boot_max()
             except Exception as exc:
                 log.debug("watchdog: %s", exc)
-
-    import asyncio
 
     asyncio.create_task(_boot_tg())
     asyncio.create_task(_boot_max())
