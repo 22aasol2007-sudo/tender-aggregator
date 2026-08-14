@@ -681,6 +681,7 @@ function renderAnalyzeResult(data, extra = {}) {
   const wf = data.waterfall || (pr.offer && pr.offer.waterfall) || (data.economics && data.economics.waterfall);
   const scenarios = data.scenarios || (data.economics && data.economics.scenarios) || {};
   const market = data.market || {};
+  const offer = pr.offer || {};
 
   const liveFails = (live.sources || []).filter((s) => !s.ok);
   const liveOk = (live.sources || []).filter((s) => s.ok);
@@ -700,11 +701,28 @@ function renderAnalyzeResult(data, extra = {}) {
   const hubNote = data.destination_hub && data.destination_hub !== data.destination
     ? ` · хаб ${esc(data.destination_hub)}`
     : "";
+  const kmSrc = data.km_source === "manual" ? "ручн." : (data.km_source === "geo" ? "гео" : "?");
+  const bhBreak = `лента ${bh.count_feed ?? 0}`
+    + (bh.count_external ? ` + live ${bh.count_external}` : "")
+    + ` = ${bh.count ?? 0}`;
 
   const scBh = scenarios.with_backhaul || {};
   const scEmpty = scenarios.empty_return || {};
 
   const marketHtml = renderMarketScale(market);
+
+  let offerBlock = "";
+  if (offer.offer_rub != null) {
+    const vs = offer.vs_hurdle_rub;
+    const vsTxt = vs == null ? "" : (vs >= 0 ? `+${fmtRub(vs)} к порогу` : `${fmtRub(vs)} к порогу`);
+    offerBlock = `<div class="offer-summary">
+      <div>Ставка <b>${fmtRub(offer.offer_rub)}</b>${offer.offer_ppk != null ? ` · ${offer.offer_ppk} ₽/км` : ""}</div>
+      <div class="muted">чистыми ~${fmtRub(offer.expected_net_rub)} · ${esc(offer.verdict || "")}${vsTxt ? ` · ${vsTxt}` : ""}</div>
+      ${propose != null ? `<div class="muted">порог «от» ${fmtRub(propose)}</div>` : ""}
+    </div>`;
+  }
+
+  const notes = (data.notes || []).map((n) => `<li>${esc(n)}</li>`).join("");
 
   fillAnalyzeFormFromData(data, extra.extracted || {});
 
@@ -714,9 +732,10 @@ function renderAnalyzeResult(data, extra = {}) {
       <div class="verdict-light">${esc(verdict.label || "—")}</div>
       <div class="verdict-num">${propose != null ? `от ${fmtRub(propose)}` : "нет ставки"}</div>
       <div class="verdict-sub">${esc(verdict.text || "")}</div>
+      ${offerBlock}
       <div class="muted">${esc(data.from_city || data.base)} → ${esc(data.destination)}${hubNote}
-        · ${data.route_km ? `${data.route_km} км` : "км?"}${data.km_source === "manual" ? " (ручн.)" : ""}
-        · обратка ${bh.count ?? 0} · риск ${esc(bh.risk || "—")}</div>
+        · ${data.route_km ? `${data.route_km} км (${kmSrc})` : "км?"}
+        · обратка ${bhBreak} · p≈${bh.p_find ?? "—"} · риск ${esc(bh.risk || "—")}</div>
       ${marketHtml}
     </div>
 
@@ -747,6 +766,8 @@ function renderAnalyzeResult(data, extra = {}) {
       <div class="muted" style="margin-top:8px">Live: ${esc(liveSummary)}${live.cached ? " (кэш)" : ""}</div>
       ${liveDetails ? `<details class="live-details"><summary>Подробности live / ошибки</summary><ul class="analyze-sources">${liveDetails}</ul></details>` : ""}
     </div>
+
+    ${notes ? `<ul class="analyze-notes">${notes}</ul>` : ""}
   `;
 }
 
@@ -982,7 +1003,7 @@ function renderMarketScale(market) {
   const sc = market.scale || {};
   const vsLabel = market.vs === "in_band" ? "в рынке" : (market.vs === "above_market" ? "выше рынка" : "ниже рынка");
   return `<div class="market-scale ${esc(market.vs || "")}">
-    <div class="ati-label">Рынок по плечу · n=${market.n} · ${market.window_days || 7} дн${market.scope ? ` · ${esc(market.scope)}` : ""}</div>
+    <div class="ati-label">Рынок по плечу · n=${market.n} · ${market.window_days || 7} дн${market.scope ? ` · ${esc(market.scope)}` : ""}${market.unit === "ppk" ? " · ₽/км" : ""}</div>
     <div class="ms-track" aria-hidden="true">
       <i class="ms-band" style="left:${sc.p25_pct || 0}%; width:${Math.max(2, (sc.p75_pct || 100) - (sc.p25_pct || 0))}%"></i>
       <i class="ms-mark med" style="left:${sc.median_pct || 50}%" title="медиана"></i>

@@ -118,18 +118,25 @@ def price_outbound_leg(
 
     hours_empty = trip_hours(km_one_way=km, with_backhaul=False, p=p)
     hours_bh = trip_hours(km_one_way=km, with_backhaul=True, p=p)
+    # Outbound-only leg (обратка оплачивает возврат): езда в одну сторону + одна ПРР
+    speed = max(30.0, p["avg_speed_kmh"])
+    hours_out = float(km) / speed + p["load_unload_hours"]
     days_empty = trip_days(hours_empty)
     days_bh = trip_days(hours_bh)
+    days_out = trip_days(hours_out)
     driver_empty = days_empty * p["driver_day_rub"]
     driver_bh = days_bh * p["driver_day_rub"]
+    driver_out = days_out * p["driver_day_rub"]
 
+    # Порожняк: топливо туда-обратно + водитель на полный рейс.
+    # С обраткой: топливо только «туда» (возврат закрывает обратка) + водитель на плечо «туда».
     costs_if_empty = fuel_round + driver_empty
-    costs_if_bh = fuel_one + driver_empty * 0.55
+    costs_if_bh = fuel_one + driver_out
     expected_costs = (1.0 - pf) * costs_if_empty + pf * costs_if_bh
 
     fuel_exp = (1.0 - pf) * fuel_round + pf * fuel_one
-    driver_exp = (1.0 - pf) * driver_empty + pf * (driver_empty * 0.55)
-    empty_risk = max(0.0, expected_costs - costs_if_bh)
+    driver_exp = (1.0 - pf) * driver_empty + pf * driver_out
+    empty_risk = max(0.0, (1.0 - pf) * (costs_if_empty - costs_if_bh))
 
     r_min = revenue_for_target_net(costs=expected_costs, target_net=p["target_net_min"], p=p)
     r_mid = revenue_for_target_net(
@@ -160,11 +167,14 @@ def price_outbound_leg(
         "fuel_expected_rub": round(fuel_exp, 0),
         "driver_empty_rub": round(driver_empty, 0),
         "driver_backhaul_rub": round(driver_bh, 0),
+        "driver_outbound_rub": round(driver_out, 0),
         "driver_expected_rub": round(driver_exp, 0),
         "empty_risk_rub": round(empty_risk, 0),
         "costs_if_empty_rub": round(costs_if_empty, 0),
         "costs_if_backhaul_rub": round(costs_if_bh, 0),
         "expected_costs_rub": round(expected_costs, 0),
+        "hours_outbound_leg": round(hours_out, 1),
+        "days_outbound_leg": days_out,
         "suggested_min_total_rub": round(r_min, 0),
         "suggested_mid_total_rub": round(r_mid, 0),
         "suggested_max_total_rub": round(r_max, 0),

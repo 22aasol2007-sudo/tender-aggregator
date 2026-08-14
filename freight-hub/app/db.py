@@ -710,6 +710,7 @@ class HubDB:
         rows = await cur.fetchall()
         ppks: list[float] = []
         prices: list[float] = []
+        kms: list[float] = []
         for r in rows:
             if r["price_per_km"] is not None:
                 try:
@@ -719,8 +720,16 @@ class HubDB:
             amt = parse_price_rub(r["price"])
             if amt is not None:
                 prices.append(float(amt))
+            if r["route_km"] is not None:
+                try:
+                    kv = float(r["route_km"])
+                    if kv > 0:
+                        kms.append(kv)
+                except (TypeError, ValueError):
+                    pass
         med_ppk = float(statistics.median(ppks)) if ppks else None
         med_price = float(statistics.median(prices)) if prices else None
+        med_km = float(statistics.median(kms)) if kms else None
 
         def _pct(vals: list[float], p: float) -> float | None:
             if not vals:
@@ -742,6 +751,7 @@ class HubDB:
             "n_ppk": len(ppks),
             "median_ppk": round(med_ppk, 1) if med_ppk is not None else None,
             "median_price": round(med_price, 0) if med_price is not None else None,
+            "median_km": round(med_km, 1) if med_km is not None else None,
             "p25_price": round(_pct(prices, 25), 0) if prices else None,
             "p75_price": round(_pct(prices, 75), 0) if prices else None,
             "p25_ppk": round(_pct(ppks, 25), 1) if ppks else None,

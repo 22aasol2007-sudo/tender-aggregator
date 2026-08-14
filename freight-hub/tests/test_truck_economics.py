@@ -8,10 +8,26 @@ def test_fuel_and_revenue_solve():
     priced = price_outbound_leg(km=174, p_find_backhaul=0.2)
     assert priced["ok"]
     assert priced["fuel_round_rub"] == 8352
+    assert priced["fuel_one_way_rub"] == 4176
     assert priced["suggested_min_total_rub"] > priced["expected_costs_rub"]
     assert priced["suggested_max_total_rub"] >= priced["suggested_min_total_rub"]
     # Empty-safe quote higher than EV quote when p_find > 0
     assert priced["suggested_empty_safe_rub"] >= priced["suggested_min_total_rub"]
+
+
+def test_backhaul_costs_use_outbound_leg_not_magic_factor():
+    priced = price_outbound_leg(km=200, p_find_backhaul=0.5)
+    assert priced["ok"]
+    # С обраткой: топливо в одну сторону + водитель на плечо «туда»
+    assert priced["costs_if_backhaul_rub"] == priced["fuel_one_way_rub"] + priced["driver_outbound_rub"]
+    # Порожняк дороже обратки
+    assert priced["costs_if_empty_rub"] > priced["costs_if_backhaul_rub"]
+    # Риск порожняка = (1-p) * разница сценариев
+    gap = priced["costs_if_empty_rub"] - priced["costs_if_backhaul_rub"]
+    assert abs(priced["empty_risk_rub"] - round(0.5 * gap, 0)) <= 1.0
+    # Ожидаемые затраты — смесь сценариев
+    exp = 0.5 * priced["costs_if_empty_rub"] + 0.5 * priced["costs_if_backhaul_rub"]
+    assert abs(priced["expected_costs_rub"] - round(exp, 0)) <= 1.0
 
 
 def test_net_tax_from_client_rate():

@@ -89,7 +89,7 @@ class RateAnalyzer:
                 listed_km = float(route_km_override)
             except (TypeError, ValueError):
                 listed_km = None
-        if listed_km is not None and listed_km > 20:
+        if listed_km is not None and listed_km >= 1:
             route_km = listed_km
             km_source = "manual"
         else:
@@ -179,8 +179,10 @@ class RateAnalyzer:
                 live = {"ok": False, "error": str(exc), "sources": [], "unwired_total": 0, "wired_live_total": 0}
 
         backhaul_n = feed_n + external_n
-        p_find = _p_find(backhaul_n, peer_median)
-        risk = _risk_label(p_find, backhaul_n)
+        # Live-доски могут частично пересекаться с лентой — для p_find не раздуваем сверх меры
+        p_find_n = feed_n + (external_n if feed_n == 0 else min(external_n, max(3, feed_n)))
+        p_find = _p_find(p_find_n, peer_median)
+        risk = _risk_label(p_find, p_find_n)
 
         out_ppk = outbound.get("median_ppk") or DEFAULT_LOADED_PPK
         bh_ppk = backhaul_broad.get("median_ppk") or backhaul.get("median_ppk")
@@ -209,48 +211,106 @@ class RateAnalyzer:
             p=params,
         )
 
-        # Market band: exact → hub → corridor; never invent DEFAULT as "market"
+        # Market band: exact → hub → corridor (similar km); prefer ₽/км when possible
         market = None
         scopes_tried: list[dict[str, Any]] = []
         candidates: list[tuple[str, dict[str, Any]]] = [("exact", outbound)]
         if dest_hub and dest_hub != dest_n:
             hub_out = await self.db.route_stats(from_city=base_n, to_city=dest_hub, days=7)
             candidates.append(("hub", hub_out))
-        if int(outbound.get("n_priced") or 0) < 3:
-            for peer in ("санкт-петербург", "тула", "владимир", "рязань", "тверь"):
+
+        need_corridor = True
+        for _scope, cand in candidates:
+            if int(cand.get("n_priced") or 0) >= 3 and (
+                cand.get("median_ppk") or cand.get("median_price")
+            ):
+                need_corridor = False
+                break
+        if need_corridor and km > 0:
+            peer_cities = (
+                "санкт-петербург",
+                "тула",
+                "владимир",
+                "рязань",
+                "тверь",
+                "калуга",
+                "ярославль",
+                "нижний новгород",
+            )
+            best_peer: tuple[str, dict[str, Any], float] | None = None
+            for peer in peer_cities:
                 if peer in {dest_n, dest_hub or "", base_n}:
                     continue
                 peer_stats = await self.db.route_stats(from_city=base_n, to_city=peer, days=7)
-                if int(peer_stats.get("n_priced") or 0) >= 3:
-                    candidates.append(("corridor", peer_stats))
-                    break
+                n_p = int(peer_stats.get("n_priced") or 0)
+                if n_p < 3:
+                    continue
+                peer_km = peer_stats.get("median_km")
+                if peer_km is None:
+                    peer_km, _ = calc_price_per_km(None, base_n, peer)
+                if peer_km is None or peer_km <= 0:
+                    continue
+                ratio = float(peer_km) / km
+                if ratio < 0.75 or ratio > 1.25:
+                    continue
+                dist_score = abs(1.0 - ratio)
+                if best_peer is None or dist_score < best_peer[2]:
+                    best_peer = (peer, peer_stats, dist_score)
+            if best_peer:
+                candidates.append(("corridor", best_peer[1]))
 
         chosen: dict[str, Any] | None = None
         scope_name = "exact"
         for scope_name, cand in candidates:
             n_p = int(cand.get("n_priced") or 0)
-            scopes_tried.append({"scope": scope_name, "n": n_p, "median": cand.get("median_price")})
-            if n_p >= 3 and cand.get("median_price"):
+            scopes_tried.append(
+                {
+                    "scope": scope_name,
+                    "n": n_p,
+                    "median": cand.get("median_price"),
+                    "median_ppk": cand.get("median_ppk"),
+                    "median_km": cand.get("median_km"),
+                }
+            )
+            if n_p >= 3 and (cand.get("median_ppk") or cand.get("median_price")):
                 chosen = cand
                 break
 
-        if suggested_min_total is not None and chosen:
+        if suggested_min_total is not None and chosen and km > 0:
             n_priced = int(chosen.get("n_priced") or 0)
-            med_price = float(chosen["median_price"])
-            p25 = chosen.get("p25_price")
-            p75 = chosen.get("p75_price")
-            real_ppk = chosen.get("median_ppk")
             your = float(suggested_min_total)
-            lo = float(p25 or med_price)
-            hi = float(p75 or med_price)
-            span = max(hi - lo, med_price * 0.2, 1.0)
+            your_ppk = your / km
+            use_ppk = bool(chosen.get("median_ppk") and int(chosen.get("n_ppk") or 0) >= 3)
+
+            if use_ppk:
+                med_ppk = float(chosen["median_ppk"])
+                lo_ppk = float(chosen.get("p25_ppk") or med_ppk)
+                hi_ppk = float(chosen.get("p75_ppk") or med_ppk)
+                lo = lo_ppk * km
+                hi = hi_ppk * km
+                med_price = med_ppk * km
+                unit = "ppk"
+                your_cmp = your_ppk
+                lo_cmp, hi_cmp, med_cmp = lo_ppk, hi_ppk, med_ppk
+            else:
+                med_raw = float(chosen.get("median_price") or 0)
+                market_km = float(chosen.get("median_km") or km)
+                scale = km / market_km if market_km > 0 else 1.0
+                med_price = med_raw * scale
+                lo = float(chosen.get("p25_price") or med_raw) * scale
+                hi = float(chosen.get("p75_price") or med_raw) * scale
+                unit = "total_scaled"
+                your_cmp = your
+                lo_cmp, hi_cmp, med_cmp = lo, hi, med_price
+
+            span = max(hi_cmp - lo_cmp, med_cmp * 0.2, 0.01)
 
             def _pos(v: float) -> float:
-                return max(0.0, min(100.0, ((v - lo) / span) * 100.0))
+                return max(0.0, min(100.0, ((v - lo_cmp) / span) * 100.0))
 
-            if your > hi * 1.08:
+            if your_cmp > hi_cmp * 1.08:
                 vs = "above_market"
-            elif your < lo * 0.92:
+            elif your_cmp < lo_cmp * 0.92:
                 vs = "below_market"
             else:
                 vs = "in_band"
@@ -259,18 +319,20 @@ class RateAnalyzer:
                 "n": n_priced,
                 "window_days": 7,
                 "scope": scope_name,
+                "unit": unit,
                 "p25_rub": round(lo, 0),
                 "median_total_rub": round(med_price, 0),
                 "p75_rub": round(hi, 0),
-                "median_ppk": round(float(real_ppk), 1) if real_ppk else None,
+                "median_ppk": round(float(chosen["median_ppk"]), 1) if chosen.get("median_ppk") else None,
                 "your_min_rub": round(your, 0),
+                "your_ppk": round(your_ppk, 1),
                 "delta_rub": round(your - med_price, 0),
                 "vs": vs,
                 "scale": {
-                    "p25_pct": round(_pos(lo), 1),
-                    "median_pct": round(_pos(med_price), 1),
-                    "p75_pct": round(_pos(hi), 1),
-                    "your_pct": round(_pos(your), 1),
+                    "p25_pct": round(_pos(lo_cmp), 1),
+                    "median_pct": round(_pos(med_cmp), 1),
+                    "p75_pct": round(_pos(hi_cmp), 1),
+                    "your_pct": round(_pos(your_cmp), 1),
                 },
             }
         elif suggested_min_total is not None:
@@ -332,6 +394,7 @@ class RateAnalyzer:
                 "count_exact": feed_exact,
                 "count_radius": int(nearby.get("count_radius") or 0),
                 "count_external": external_n,
+                "count_for_p_find": p_find_n,
                 "radius_km": radius,
                 "median_ppk": bh_ppk,
                 "median_price": backhaul_broad.get("median_price") or backhaul.get("median_price"),

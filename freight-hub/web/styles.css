@@ -309,6 +309,14 @@ body {
 .verdict-hero.take { border-color: rgba(47,191,120,.5); }
 .verdict-hero.raise, .verdict-hero.propose { border-color: rgba(255,186,73,.45); }
 .verdict-hero.skip { border-color: rgba(255,90,90,.45); }
+.offer-summary {
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.04);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
 .verdict-light {
   font-size: 0.95rem;
   font-weight: 800;
@@ -452,7 +460,8 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .analyze-table th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; }
-.analyze-notes { color: var(--muted); font-size: 0.8rem; line-height: 1.45; margin: 0; }
+.analyze-notes { color: var(--muted); font-size: 0.8rem; line-height: 1.45; margin: 12px 0 0; padding-left: 1.1rem; }
+.analyze-notes li { margin: 0.2rem 0; }
 .analyze-loading, .analyze-err { color: var(--muted); }
 .analyze-err { color: #ff9b9b; }
 
