@@ -66,6 +66,7 @@ DRIVER_PATTERNS = [
 
 EXCLUDE_PATTERNS = [
     r"вакансия",
+    r"ваканси[ия]",
     r"требуется\s+водител",
     r"ищу\s+водител",
     r"работа\s+водител",
@@ -75,7 +76,30 @@ EXCLUDE_PATTERNS = [
     r"ставки\s+на\s+",
     r"18\+",
     r"интим",
+    r"добро\s+пожаловать\s+в\s+группу",
+    r"бот-модератор",
+    r"easymoderbot",
+    r"дополнительн\w*\s+доход",
+    r"подработка",
+    r"\busdt\b",
+    r"обмен\s+цифровых",
+    r"погладить\s+скатерт",
+    r"выкопать\s+транше",
 ]
+
+# Must look like freight; otherwise → noise (no fake cities from chat spam).
+FREIGHT_SIGNAL_RE = re.compile(
+    r"(?:"
+    r"тент|реф(?:рижератор)?|изотерм|фура|еврофур|мега|паравоз|штор\w*|"
+    r"тонн(?:а|ы)?|\bтн\b|\d+[.,]?\d*\s*т\b|куб\.?\s*м|\bм3\b|"
+    r"погрузк|выгрузк|разгрузк|загрузк|догруз|"
+    r"есть\s+груз|груз\s+есть|ищу\s+машин|нужн\w*\s+машин|"
+    r"ищу\s+фур|нужн\w*\s+фур|ставк|фрахт|растамож|таможн|"
+    r"паллет|палет|юк\b|\$|usd|безнал|наличн|"
+    r"дсп|мдф|осб|фанер|сендвич|оцилиндров"
+    r")",
+    re.I,
+)
 
 BODY_MAP = {
     "реф": "reefer",
@@ -516,20 +540,40 @@ CITY_ALIASES: dict[str, str] = {
     "улан-удэ": "улан-удэ",
     "ташкент": "ташкент",
     "тошкент": "ташкент",
+    "тошкен": "ташкент",
+    "toshkent": "ташкент",
     "джизак": "джизак",
     "джиззак": "джизак",
     "урганч": "ургенч",
     "ургенч": "ургенч",
     "хорезм": "ургенч",
     "хоразм": "ургенч",
+    "хоразим": "ургенч",
+    "xorazm": "ургенч",
     "навои": "навои",
     "навоий": "навои",
+    "navoiy": "навои",
+    "navoi": "навои",
     "нур ота": "навои",
     "нур-ота": "навои",
     "нурота": "навои",
     "нукус": "нукус",
     "чирчик": "чирчик",
     "ангрен": "ангрен",
+    "газалкент": "газалкент",
+    "фергана": "фергана",
+    "фаргана": "фергана",
+    "коканд": "коканд",
+    "кукон": "коканд",
+    "қўқон": "коканд",
+    "андижан": "андижан",
+    "андижон": "андижан",
+    "наманган": "наманган",
+    "бухоро": "бухара",
+    "bukhara": "бухара",
+    "кибрай": "кибрай",
+    "қибрай": "кибрай",
+    "назарбек": "назарбек",
     "мерсин": "мерсин",
     "худжанд": "худжанд",
     "поти": "поти",
@@ -537,11 +581,27 @@ CITY_ALIASES: dict[str, str] = {
     "алматы": "алматы",
     "алма-ата": "алматы",
     "бишкек": "бишкек",
+    "бешкик": "бишкек",
     "самарканд": "самарканд",
+    "самарқанд": "самарканд",
     "бухара": "бухара",
     "астана": "астана",
     "нур-султан": "астана",
     "шымкент": "шымкент",
+    "кызылорда": "кызылорда",
+    "қызылорда": "кызылорда",
+    "беларусь": "минск",
+    "беларуссия": "минск",
+    "белоруссия": "минск",
+    "речица": "речица",
+    "речитца": "речица",
+    "могилев": "могилев",
+    "магілёў": "могилев",
+    "борисов": "борисов",
+    "шексна": "шексна",
+    "толятти": "тольятти",
+    "тольятти": "тольятти",
+    "togliatti": "тольятти",
 }
 
 
@@ -646,8 +706,34 @@ _CITY_STOP = {
     "сегодня",
     "завтра",
     "срочно",
+    "срочна",
     "есть",
     "фура",
+    "мега",
+    "паравоз",
+    "дсп",
+    "мдф",
+    "осб",
+    "фанера",
+    "фанер",
+    "тахта",
+    "юк",
+    "нархи",
+    "имо",
+    "imo",
+    "max",
+    "whatsapp",
+    "телеграм",
+    "ватсап",
+    "алока",
+    "учун",
+    "керак",
+    "тайор",
+    "тайер",
+    "гласс",
+    "глонасс",
+    "комбо",
+    "аванс",
     "погрузка",
     "погрузки",
     "разгрузка",
@@ -668,6 +754,55 @@ _CITY_STOP = {
     "рубль",
     "рублей",
     "адрес",
+    "человек",
+    "обед",
+    "день",
+    "часов",
+    "часа",
+    "бонус",
+    "bot",
+    "полная",
+    "сценариев",
+    "максимально",
+    "результат",
+    "каждый",
+    "кто",
+    "него",
+    "бота",
+    "подходит",
+    "занятости",
+    "нагрузка",
+    "предсказуемая",
+    "поддерживать",
+    "условиям",
+    "помогать",
+    "результата",
+    "держать",
+    "общения",
+    "требуется",
+    "снимки",
+    "паллет",
+    "сегоня",
+    "выезд",
+    "продавцов",
+    "договориться",
+    "пацаны",
+    "движ",
+    "актуальный",
+    "пишите",
+    "самый",
+    "логистика",
+    "группа",
+    "добро",
+    "пожаловать",
+    "понятный",
+    "процесс",
+    "integrity",
+    "safe",
+    "efficient",
+    "stable",
+    "увурлар",
+    "қувурлар",
     "готов",
     "готова",
     "готово",
@@ -794,34 +929,43 @@ def _canon_city_flex(token: str) -> str | None:
     return None
 
 
-def _city_token(token: str) -> str | None:
-    """Canonize known city or keep plausible unknown place name."""
+def _city_token(token: str, *, allow_unknown: bool = False) -> str | None:
+    """Canonize known city; optionally keep plausible unknown place name."""
     t = (token or "").strip().lower().replace("ё", "е")
     t = _EMOJI_RE.sub(" ", t)
     t = re.sub(r"^[^а-яa-z0-9]+|[^а-яa-z0-9.\-]+$", "", t)
     t = _WS.sub(" ", t).strip(" .,;:()[]")
     if not t:
         return None
-    c = _canon_city_flex(t)
-    if c:
-        return c
     if t in _CITY_STOP:
         return None
+    c = _canon_city_flex(t)
+    if c:
+        return c if c not in _CITY_STOP else None
     # multi-word: try first 1–2 tokens
     words = t.split()
     if len(words) >= 2:
         c2 = _canon_city_flex(" ".join(words[:2]))
-        if c2:
+        if c2 and c2 not in _CITY_STOP:
             return c2
         c1 = _canon_city_flex(words[0])
-        if c1:
+        if c1 and c1 not in _CITY_STOP:
             return c1
+    # Route ends must be gazetteer-only (junk «мега→паравоз» / «имо→max»).
+    if not allow_unknown:
+        return None
     if _looks_like_city(t):
         return t
     if words and _looks_like_city(words[0]):
         return words[0]
     return None
 
+
+def _is_known_city(name: str | None) -> bool:
+    if not name:
+        return False
+    c = _canon_city_flex(str(name).lower().replace("ё", "е"))
+    return bool(c) and c not in _CITY_STOP
 
 _ROUTE_PAIR_RE = re.compile(
     r"([А-ЯЁа-яёA-Za-z][А-ЯЁа-яёA-Za-z.\-]{2,28})"
@@ -950,31 +1094,8 @@ def _place_from_segment(seg: str) -> str | None:
 
 
 def _cities_on_line(line: str) -> list[str]:
-    """Ordered unique-ish city tokens on one offer line (known + plausible)."""
-    raw = (line or "").lower().replace("ё", "е")
-    # Keep parenthetical settlements visible as tokens
-    raw = re.sub(r"[()]", " ", raw)
-    words = re.findall(r"[а-яa-z][а-яa-z.\-]{2,28}", raw)
-    out: list[str] = []
-    i = 0
-    while i < len(words):
-        two = " ".join(words[i : i + 2]) if i + 1 < len(words) else ""
-        hit = None
-        if two:
-            hit = _canon_city_flex(two) or (
-                _city_token(two) if _canon_city(two) else None
-            )
-        if hit:
-            if not out or out[-1] != hit:
-                out.append(hit)
-            i += 2
-            continue
-        one = _city_token(words[i])
-        if one and one not in _CITY_STOP and (not out or out[-1] != one):
-            out.append(one)
-        i += 1
-    return out
-
+    """Ordered known city tokens on one offer line (gazetteer only)."""
+    return _known_cities_on_line(line)
 
 def _extract_route(norm: str) -> tuple[str | None, str | None]:
     # Prefer explicit A-B routes first. Labeled "погрузка: готов" must not win.
@@ -1241,8 +1362,22 @@ def parse_load(text: str) -> ParsedLoad:
     shipper = shipper_strong + shipper_weak
     driver = _first_match(DRIVER_PATTERNS, norm)
     frm, to = _extract_route(norm)
+    # Drop unknown / stop junk as route ends
+    if frm and not _is_known_city(frm):
+        frm = None
+    if to and not _is_known_city(to):
+        to = None
     tonnage = _extract_tonnage(norm)
     price = _extract_price(norm, text)
+    freightish = bool(FREIGHT_SIGNAL_RE.search(norm)) or bool(shipper_strong) or bool(driver)
+
+    # Noise gate: chat spam / jobs without freight markers → no cities
+    if not freightish and not (frm and to):
+        return ParsedLoad(text=text, norm=norm, kind="noise", fp=fingerprint(text))
+    if not freightish and frm and to:
+        # Bare «Фрязино Душанбе» still counts as a load ad
+        freightish = True
+
     if shipper_strong and driver:
         kind = "mixed"
     elif shipper_strong:
@@ -1256,6 +1391,9 @@ def parse_load(text: str) -> ParsedLoad:
     # Cargo ads often omit keywords: any clear route ⇒ shipper (TG «Фрязино Душанбе»)
     if kind == "other" and not driver and frm and to:
         kind = "shipper"
+    if not freightish:
+        kind = "noise"
+        frm, to = None, None
 
     return ParsedLoad(
         text=text,
@@ -1263,14 +1401,14 @@ def parse_load(text: str) -> ParsedLoad:
         kind=kind,
         from_city=frm,
         to_city=to,
-        tonnage=tonnage,
-        volume_m3=_extract_volume(norm),
-        body=_extract_body(norm),
-        temps=_extract_temps(norm),
+        tonnage=tonnage if kind != "noise" else None,
+        volume_m3=_extract_volume(norm) if kind != "noise" else None,
+        body=_extract_body(norm) if kind != "noise" else None,
+        temps=_extract_temps(norm) if kind != "noise" else [],
         phones=_extract_phones(text),
         contacts=_extract_contacts(text),
-        price=price,
-        load_date=_extract_load_date(text),
+        price=price if kind != "noise" else None,
+        load_date=_extract_load_date(text) if kind != "noise" else None,
         shipper_hits=shipper,
         driver_hits=driver,
         fp=fingerprint(text),
@@ -1286,4 +1424,4 @@ def parse_load_blocks(text: str) -> list[ParsedLoad]:
         if p.kind != "noise"
         and (p.from_city or p.to_city or p.kind in {"shipper", "mixed"} or p.tonnage)
     ]
-    return useful or parsed[:1] or [parse_load(text)]
+    return useful

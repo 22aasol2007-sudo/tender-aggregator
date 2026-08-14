@@ -1027,8 +1027,12 @@ async def reparse_kinds(limit: int = Query(500, ge=1, le=5000)) -> dict[str, Any
 async def reparse_routes(
     days: float = Query(7, ge=0.5, le=30),
     limit: int = Query(2000, ge=1, le=8000),
+    all_messenger: bool = Query(
+        True,
+        description="Reparse all messenger posts (not only CIS/customs markers).",
+    ),
 ) -> dict[str, Any]:
-    """Re-split/reparse messenger posts (fixes «Фрязино→Москва» instead of «→Душанбе»)."""
+    """Re-split/reparse messenger posts (junk cities, CIS aliases, noise)."""
     import time as _time
 
     from app.ingest import ingest_raw
@@ -1041,6 +1045,7 @@ async def reparse_routes(
     markers = (
         "душанбе",
         "ташкент",
+        "тошкент",
         "бишкек",
         "алматы",
         "худжанд",
@@ -1051,6 +1056,9 @@ async def reparse_routes(
         "нур-ота",
         "растаможк",
         "мытищи",
+        "хоразм",
+        "хоразим",
+        "ургенч",
     )
     # NOTE: SQLite LOWER() is ASCII-only — filter Cyrillic markers in Python.
     cur = await db._db.execute(
@@ -1067,6 +1075,9 @@ async def reparse_routes(
     raw_rows = [dict(r) for r in await cur.fetchall()]
     rows: list[dict[str, Any]] = []
     for r in raw_rows:
+        if all_messenger:
+            rows.append(r)
+            continue
         blob = (r.get("body") or "").lower().replace("ё", "е")
         if any(m in blob for m in markers):
             rows.append(r)
@@ -1085,6 +1096,7 @@ async def reparse_routes(
     fixed = 0
     created = 0
     deleted = 0
+    skipped_noise = 0
     examples: list[dict[str, Any]] = []
 
     for (source, base_ext), sample in groups.items():
@@ -1092,15 +1104,15 @@ async def reparse_routes(
         if not body.strip():
             continue
         blocks = parse_load_blocks(body)
-        if not blocks:
-            continue
-
-        # Drop old rows for this message (single + split)
+        # Drop old rows even when the post is now classified as noise
         del_cur = await db._db.execute(
             "DELETE FROM loads WHERE source=? AND (external_id=? OR external_id LIKE ?)",
             (source, base_ext, f"{base_ext}#%"),
         )
         deleted += int(del_cur.rowcount or 0)
+        if not blocks:
+            skipped_noise += 1
+            continue
 
         raw = RawLoad(
             source=source,
@@ -1124,6 +1136,8 @@ async def reparse_routes(
                     if b.from_city or b.to_city
                 ]
                 examples.append({"external_id": base_ext, "routes": routes, "status": status})
+        elif status == "skipped":
+            skipped_noise += 1
 
     # Patch any remaining false Moscow destinations when CIS marker is in body
     patched = 0
@@ -1159,12 +1173,15 @@ async def reparse_routes(
     return {
         "ok": True,
         "scanned_messenger": len(raw_rows),
+        "matched": len(rows),
         "matched_markers": len(rows),
         "groups": len(groups),
         "fixed": fixed,
         "created_batches": created,
         "deleted_old": deleted,
+        "skipped_noise": skipped_noise,
         "patched_moscow": patched,
+        "all_messenger": all_messenger,
         "examples": examples,
     }
 

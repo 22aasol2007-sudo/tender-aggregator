@@ -228,6 +228,9 @@ async def _persist(
     if is_archived_text(raw.body) or is_archived_text(raw.title):
         record("skipped_other", source=raw.source)
         return "skipped"
+    if getattr(parsed, "kind", None) == "noise":
+        record("skipped_other", source=raw.source)
+        return "skipped"
     result = score_load(parsed, profile_user, min_score=min_score, scoring=scoring)
     messenger = raw.source in {"telegram", "tg_public", "max"}
     # Messengers: keep rows even outside corridor / with weak geo — UI filters later.
@@ -430,6 +433,11 @@ async def ingest_raw(
         )
 
     blocks = parse_load_blocks(raw.body)
+    if not blocks:
+        from app.ingest_metrics import record
+
+        record("skipped_other", source=raw.source)
+        return "skipped"
     statuses: list[str] = []
     for i, parsed in enumerate(blocks):
         part = RawLoad(
